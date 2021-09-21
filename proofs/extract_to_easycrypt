@@ -1,2 +1,0 @@
-#!/usr/bin/env bash
-jasminc -ec montgomery_REDC -oec montgomery.ec montgomery.jazz
