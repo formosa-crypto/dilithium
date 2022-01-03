@@ -6,9 +6,7 @@ op mod_pm m d =
   let r = m %% d in
   if r < m %/ 2 then r else r - d.
 
-op t = !true.
-
-module Li2_Rounding = {
+module Li2_Rounding_impl = {
   proc power2round(r : int, d : int) : int = {
     var r0 : int;
     r <- r %% Li2_q;
