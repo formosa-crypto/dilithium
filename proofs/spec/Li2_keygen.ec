@@ -1,6 +1,6 @@
 require import AllCore.
 require import List.
-require import Li2_params Li2_hashing Li2_rounding.
+require import Li2_params Li2_hashing Li2_rounding Li2_poly.
 
 import Li2_Matrix.
 import Li2_Matrix.Matrix.
@@ -20,7 +20,7 @@ module Keygen(H : RO) = {
     a <@ Expand_impl(H).expandA(rho);
     (s1, s2) <@ Expand_impl(H).expandS(rho');
     t <- a *^ s1 + s2;
-    (* (t1, t0) <@ Li2_Rounding_impl.power2round(t, Li2_d); *)
+    (t1, t0) <@ Polyvec_impl.power2round_veck(t, Li2_d);
     H.init(SHAKE256);
     H.absorb(rho);
     (* pack t1 so it can be absorbed by H? *)

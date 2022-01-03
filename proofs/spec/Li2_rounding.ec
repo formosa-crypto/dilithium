@@ -6,12 +6,12 @@ op mod_pm m d =
   let r = m %% d in
   if r < m %/ 2 then r else r - d.
 
-module Li2_Rounding_impl = {
-  proc power2round(r : int, d : int) : int = {
+module Rounding_impl = {
+  proc power2round(r : int, d : int) : int * int = {
     var r0 : int;
     r <- r %% Li2_q;
     r0 <- mod_pm r (2 ^ d);
-    return (r - r0) %/ (2 ^ d);
+    return ((r - r0) %/ (2 ^ d), r0);
   }
 
   proc decompose(r : int, alpha : int) : int * int = {
