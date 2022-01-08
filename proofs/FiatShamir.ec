@@ -1,11 +1,17 @@
-require import AllCore SigmaProtocol.
+require import AllCore SigmaProtocol List.
 
 theory FiatShamirWithAbort.
 
-  clone import SigmaProtocol.
+  op key_len : int.
+  op max_kappa : int.
+  type response_t.
+
+  clone import SigmaProtocol with
+    type response <- response_t option. (* for correctness error *)
+  type response = response_t option.
 
   module type CommitmentRecoverableScheme = {
-    (* same as other sigma protocols *)
+    (* same as the built-in ID schemes from the SigmaProtocol module *)
     proc gen() : statement * witness
     proc commit(pk: statement, sk: witness) : message * secret
     proc test(pk: statement, w: message) : challenge
@@ -17,31 +23,76 @@ theory FiatShamirWithAbort.
   }.
 
   section Correctness.
+    (* Is this syntax out of date? I see `<:` instead of `:` on newer versions of Easycrypt *)
+    (* Also, is there a way to multiple-inherit with this syntax? I might have to do that later... *)
     declare module ID : CommitmentRecoverableScheme.
+    (* I've seen `declare axiom` instead of just `axiom`. What's the deal? *)
     axiom recover_correct :
       forall c0 z0 pk0 sk0,
-        !(phoare[ID.gen : true ==> res = (pk0, sk0)] = 0%r) =>
-        exists w0, hoare[ID.recover_commitment : pk = pk0 && c = c0 && z = z0 ==> res = w0] =>
+        (* valid key pair *)
+        !(phoare[ID.gen : true ==> res = (pk0, sk0)] = 0%r)
+          (* somehow when I did `> 0%r` above instead, it doesn't parse. *) =>
+        (* exists unique result from recover_commitment *)
+        exists w0, hoare[ID.recover_commitment : pk = pk0 && c = c0 && z = z0 ==> res = w0] &&
+        (* recover_commitment output is correct *)
         hoare[ID.verify : pk = pk0 && c = c0 && z = z0 ==> res = true].
   end section Correctness.
 
   require PKS.
   clone PKS with
     type pkey <- statement,
-    type skey <- witness
+    type skey <- statement * witness,
+    type signature <- (challenge * response) option
   proof *.
 
-  (*
-  module FiatShamirWithAbort(ID : CommitmentRecoverableScheme) : PKS.Scheme = {
-    proc init() = {}
-    proc keygen = ID.gen
-    proc sign(sk, m) = {
-      
+  (* Random oracle with the appropriate input/output formats for Fiat-Shamir *)
+  module type RO_Challenge = {
+    proc * init() : unit
+    proc hash(w : SigmaProtocol.message, m : PKS.message) : challenge
+  }.
+
+  (* Taken from [KLS17] *)
+  module FiatShamirWithAbort(ID: CommitmentRecoverableScheme, H: RO_Challenge) : PKS.Scheme = {
+    proc init() = {
+      H.init();
     }
-    proc verify
-  }.*)
-  
+    proc keygen() = {
+      var pk_ID, sk_ID;
+      (pk_ID, sk_ID) <- ID.gen();
+      return (pk_ID, (pk_ID, sk_ID));
+    }
+
+    proc sign(pksk_ID, m) = {
+      var kappa : int;
+      var z : response;
+      var w, st, c;
+      var pk_ID, sk_ID;
+
+      (pk_ID, sk_ID) <- pksk_ID;
+      z <- None;
+      kappa <- 0;
+      while(z = None && kappa <= max_kappa) {
+        kappa <- kappa + 1;
+        (w, st) <- ID.commit(pk_ID, sk_ID);
+        c <- H.hash(w, m);
+        z <- ID.respond((pk_ID, sk_ID), (w, st), c);
+      }
+      return (if z = None then None else Some (c, z));
+    }
+
+    proc verify(pk, m, signature) = {
+      var result;
+      var w, z, c, c';
+      if(signature = None) {
+        result <- false;
+      } else {
+        (c, z) <- oget signature;
+        w <@ ID.recover_commitment(pk, c, z);
+        c' <- H.hash(w, m);
+        result <- (c = c');
+      }
+      return result;
+    }
+  }.
   
 end FiatShamirWithAbort.
-
-
