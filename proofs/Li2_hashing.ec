@@ -2,15 +2,7 @@ require import AllCore.
 require import Li2_params.
 require import List.
 require import IntDiv.
-
-type hash_t = [SHAKE128 | SHAKE256].
-
-(* Not sure how compatible is this with existing work... *)
-module type RO = {
-  proc init(t : hash_t) : unit
-  proc absorb(data : int list) : unit
-  proc squeeze(len : int) : int list
-}.
+require import SpongeROM.
 
 import PolyModQ.
 import Li2_field.
