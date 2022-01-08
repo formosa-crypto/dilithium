@@ -2,13 +2,17 @@ require import AllCore SigmaProtocol List.
 
 theory FiatShamirWithAbort.
 
+  (* parameters *)
   op key_len : int.
   op max_kappa : int.
-  type response_t.
 
-  clone import SigmaProtocol with
-    type response <- response_t option. (* for correctness error *)
+  (* ID scheme response type should be nullable for correctness error *)
+  type response_t.
   type response = response_t option.
+
+  (* Take the built-in ID scheme *)
+  clone import SigmaProtocol with
+    type response <- response.
 
   module type CommitmentRecoverableScheme = {
     (* same as the built-in ID schemes from the SigmaProtocol module *)
@@ -23,21 +27,28 @@ theory FiatShamirWithAbort.
   }.
 
   section Correctness.
-    (* Is this syntax out of date? I see `<:` instead of `:` on newer versions of Easycrypt *)
-    (* Also, is there a way to multiple-inherit with this syntax? I might have to do that later... *)
+    (**
+     * Is this syntax out of date? I see `<:` instead of `:` on newer versions of Easycrypt.
+     *
+     * Is there a way to multiple-inherit with this syntax?
+     * If not, I may have a workaround, but it's not really clean...
+     *)
     declare module ID : CommitmentRecoverableScheme.
     (* I've seen `declare axiom` instead of just `axiom`. What's the deal? *)
     axiom recover_correct :
       forall c0 z0 pk0 sk0,
-        (* valid key pair *)
-        !(phoare[ID.gen : true ==> res = (pk0, sk0)] = 0%r)
-          (* somehow when I did `> 0%r` above instead, it doesn't parse. *) =>
+        (**
+         * Valid key pair.
+         * When I tried `> 0%r` instead, it doesn't parse...
+         *)
+        !(phoare[ID.gen : true ==> res = (pk0, sk0)] = 0%r) =>
         (* exists unique result from recover_commitment *)
         exists w0, hoare[ID.recover_commitment : pk = pk0 && c = c0 && z = z0 ==> res = w0] &&
         (* recover_commitment output is correct *)
         hoare[ID.verify : pk = pk0 && c = c0 && z = z0 ==> res = true].
   end section Correctness.
 
+  (* Take the built-in public key signature scheme *)
   require PKS.
   clone PKS with
     type pkey <- statement,
@@ -45,7 +56,7 @@ theory FiatShamirWithAbort.
     type signature <- (challenge * response) option
   proof *.
 
-  (* Random oracle with the appropriate input/output formats for Fiat-Shamir *)
+  (* Random oracle with the appropriate input/output types for our Fiat-Shamir *)
   module type RO_Challenge = {
     proc * init() : unit
     proc hash(w : SigmaProtocol.message, m : PKS.message) : challenge
