@@ -17,6 +17,16 @@ import Li2_field.
 import Li2_Matrix.
 import Li2_Matrix.Matrix.
 type entry_t = Li2_ring.qT.
+require import Li2_packing.
+
+print Li2_packing.
+
+print offunv.
+print coeff.
+
+print oget.
+print witness.
+print odflt.
 
 module Expand_impl(H : RO) = {
   proc expandA_entry(rho : int list, i j : int) : entry_t = {
@@ -86,7 +96,7 @@ module Expand_impl(H : RO) = {
         }
       }
     }
-    return Li2_ring.pi poly0;
+    return Li2_ring.pi p;
   }
 
   proc expandS(rho' : int list) : vector * vector = {
@@ -111,5 +121,37 @@ module Expand_impl(H : RO) = {
     }
 
     return (offunv s1, offunv s2);
+  }
+
+  proc expandMask_entry(rho' : int list, kappa : int) : entry_t = {
+    var entry : entry_t;
+    var buf : int list;
+
+    H.init(SHAKE256);
+    H.absorb(rho');
+    H.absorb([kappa %% 256; kappa %/ 256]);
+    (* Next two lines are level 3 settings. *)
+    (* TODO abstract with respect to gamma2 value? *)
+    buf <@ H.squeeze(Li2_n * 20 %/ 8);
+    entry <@ Packing_impl.polyz_unpack(buf);
+
+    return entry;
+  }
+
+  proc expandMask(rho' : int list, nonce : int) : vector = {
+    var v : entry_t list;
+    var entry : entry_t;
+    var kappa : int;
+    var i : int;
+
+    v <- [];
+    i <- 0;
+    while(i < Li2_l) {
+      kappa <- Li2_l * nonce + i;
+      entry <@ expandMask_entry(rho', kappa);
+      v <- rcons v entry;
+      i <- i + 1;
+    }
+    return offunv (fun i => oget (onth v i));
   }
 }.
