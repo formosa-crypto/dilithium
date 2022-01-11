@@ -11,8 +11,6 @@ import Li2_field.
 import Li2_Matrix.
 import Li2_Matrix.Matrix.
 
-print inzmod.
-
 module Packing_impl = {
   proc polyt1_pack(t1 : entry_t) : int list = {
     var coeffs, all_bits;

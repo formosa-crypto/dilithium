@@ -36,6 +36,8 @@ clone Li2_polyIdeals.RingQuotient as Li2_ring with op p = ideal.
 
 require Matrix.
 
-clone Matrix as Li2_Matrix with type ZR.t = Li2_ring.qT.
+clone import Matrix as Li2_Matrix with type ZR.t = Li2_ring.qT.
 (* -- TODO proof *. -- *)
 
+type pk_t = int list * vector.
+type sk_t = int list * int list * int list * vector * vector * vector.

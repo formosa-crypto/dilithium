@@ -2,13 +2,10 @@ require import AllCore.
 require import List.
 require import Li2_params Li2_hashing Li2_rounding Li2_poly.
 require import Li2_packing.
+require import SpongeROM.
 
-print Li2_packing.
 import Li2_Matrix.
 import Li2_Matrix.Matrix.
-
-type pk_t = int list * vector.
-type sk_t = int list * int list * int list * vector * vector * vector.
 
 module Keygen(H : RO) = {
   proc keygen(seed : int list) : pk_t * sk_t = {

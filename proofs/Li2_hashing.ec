@@ -11,15 +11,6 @@ import Li2_Matrix.Matrix.
 type entry_t = Li2_ring.qT.
 require import Li2_packing.
 
-print Li2_packing.
-
-print offunv.
-print coeff.
-
-print oget.
-print witness.
-print odflt.
-
 module Expand_impl(H : RO) = {
   proc expandA_entry(rho : int list, i j : int) : entry_t = {
     var deg : int;
