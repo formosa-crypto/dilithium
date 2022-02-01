@@ -25,45 +25,45 @@ module type RO_Challenge = {
 (* Taken from [KLS17] *)
 module FiatShamirWithAbort(ID: KLS_ID, H: RO_Challenge) : PKS.Scheme = {
   proc init() = {
-  H.init();
+    H.init();
   }
   proc keygen() = {
-      var pk_ID, sk_ID;
+    var pk_ID, sk_ID;
     (pk_ID, sk_ID) <- ID.gen();
-      return (pk_ID, (pk_ID, sk_ID));
+    return (pk_ID, (pk_ID, sk_ID));
   }
 
   proc sign(pksk_ID, m) = {
-      var kappa : int;
-      var z : unveil_t;
-      var w, st, c;
-      var pk_ID, sk_ID;
+    var kappa : int;
+    var z : unveil_t;
+    var w, st, c;
+    var pk_ID, sk_ID;
 
-      c <- witness; (* suppresses unused warning *)
+    c <- witness; (* suppresses unused warning *)
 
     (pk_ID, sk_ID) <- pksk_ID;
-      z <- None;
-      kappa <- 0;
+    z <- None;
+    kappa <- 0;
     while(z = None && kappa <= max_kappa) {
       kappa <- kappa + 1;
       (w, st) <- ID.commit(pk_ID, sk_ID);
-	c <- H.hash(w, m);
-	z <- ID.respond((pk_ID, sk_ID), (w, st), c);
+      c <- H.hash(w, m);
+      z <- ID.respond((pk_ID, sk_ID), (w, st), c);
     }
     return (if z = None then None else Some (c, z));
   }
 
   proc verify(pk, m, signature) = {
-      var result;
-      var w, z, c, c';
+    var result;
+    var w, z, c, c';
     if(signature = None) {
       result <- false;
     } else {
       (c, z) <- oget signature;
-	w <@ ID.recover_commitment(pk, c, z);
-	c' <- H.hash(w, m);
-	result <- (c = c');
+      w <@ ID.recover_commitment(pk, c, z);
+      c' <- H.hash(w, m);
+      result <- (c = c');
     }
-        return result;
+    return result;
   }
 }.
