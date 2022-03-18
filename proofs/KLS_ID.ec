@@ -36,10 +36,7 @@ theory KLS_ID.
   }.
 
   section Correctness.
-    (**
-     * Is this syntax out of date? I see `<:` instead of `:` on newer versions of Easycrypt.
-     *)
-    declare module ID_inst : KLS_ID.
+    declare module ID_inst <: KLS_ID.
     (* I've seen `declare axiom` instead of just `axiom`. What's the deal? *)
     axiom recover_correct c0 z0 pk0 sk0 &m :
         (* valid key pair *)
