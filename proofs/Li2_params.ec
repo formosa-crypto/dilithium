@@ -1,4 +1,9 @@
-require import AllCore IntDiv.
+require import AllCore IntDiv List.
+require import PolyReduce.
+require ZModP Matrix BitWord.
+
+clone import BitWord as Byte with op n = 8.
+(* -- TODO proof *. -- *)
 
 op Li2_q : int = 8380417.
 op Li2_d : int = 13.
@@ -10,34 +15,22 @@ op Li2_l : int.
 op Li2_eta : int.
 op Li2_beta : int = Li2_tau * Li2_eta.
 op Li2_omega : int.
-
+op Li2_n : int = 256.
 axiom Li2_matrix_size : 4 <= Li2_l <= Li2_k.
 
-require ZModP.
-
-clone ZModP.ZModField as Li2_field with op p = Li2_q.
-require Poly.
-
-clone import Poly.Poly as PolyModQ with type coeff = Li2_field.zmod.
+clone import ZModP.ZModField as Zq with op p = Li2_q.
 (* -- TODO proof *. -- *)
 
-require Ideal.
-
-clone Ideal.IdealComRing as Li2_polyIdeals with type t = PolyModQ.poly.
+clone import PolyReduceZp as R with
+  type Zp = Zq.zmod, (* Is this required? Why or why not? *)
+  op p = Li2_q,
+  op n = Li2_n.
 (* -- TODO proof *. -- *)
 
-require import List.
+type byte = Byte.word.
 
-op Li2_n = 256.
-
-op ideal = Li2_polyIdeals.idgen [(polyXn Li2_n) + (polyXn 0)].
-
-clone Li2_polyIdeals.RingQuotient as Li2_ring with op p = ideal.
-
-require Matrix.
-
-clone import Matrix as Li2_Matrix with type ZR.t = Li2_ring.qT.
+clone import Matrix as Li2_Matrix with type ZR.t = R.polyXnD1.
 (* -- TODO proof *. -- *)
 
-type pk_t = int list * vector.
-type sk_t = int list * int list * int list * vector * vector * vector.
+type pk_t = byte list * vector.
+type sk_t = byte list * byte list * byte list * vector * vector * vector.
