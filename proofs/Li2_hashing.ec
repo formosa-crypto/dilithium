@@ -3,42 +3,50 @@ require import Li2_params.
 require import List.
 require import IntDiv.
 require import SpongeROM.
-
-import PolyModQ.
-import Li2_field.
 import Li2_Matrix.
-import Li2_Matrix.Matrix.
-type entry_t = Li2_ring.qT.
 require import Li2_packing.
+import Li2_PolyReduceZp.
+require import BitEncoding.
+import BS2Int.
+import Zp.
+
+print BasePoly.polyXn.
+print BasePoly.polyZ.
+print BasePoly.prepolyZ.
+
+op int_to_byte (x : int) = Byte.mkword (BS2Int.int2bs 8 x).
+op byte_to_int (x : byte) = bs2int (Byte.ofword x).
 
 module Expand_impl(H : RO) = {
-  proc expandA_entry(rho : int list, i j : int) : entry_t = {
+  proc expandA_entry(rho : byte list, i j : int) : R = {
     var deg : int;
-    var p : poly;
+    var p : R;
     var ext;
     var val;
 
     H.init(SHAKE128);
     H.absorb(rho);
-    H.absorb([j; i]);
+    H.absorb([int_to_byte j; int_to_byte i]);
     deg <- 0;
-    p <- poly0;
+    p <- zeroXnD1;
     while(deg < Li2_n) {
       ext <@ H.squeeze(3);
-      val <- (nth 0 ext 0) + (nth 0 ext 1) * (2 ^ 8) + ((nth 0 ext 2) %% 128) * (2 ^ 16);
+      val <- byte_to_int (nth witness ext 0)
+             + (byte_to_int (nth witness ext 1)) * (2 ^ 8)
+             + (byte_to_int ((nth witness ext 2)) %% 128) * (2 ^ 16);
       if(val < Li2_q) {
-        p <- p + polyZ (inzmod val) (polyXn deg);
+        p <- p + inzmod val ** pinject (BasePoly.polyXn deg);
         deg <- deg + 1;
       }
     }
-    return Li2_ring.pi p;
+    return p;
   }
 
-  proc expandA(rho : int list) : matrix = {
-    var result : (int -> int -> entry_t);
+  proc expandA(rho : byte list) : matrix = {
+    var result : (int -> int -> R);
     var i, j : int;
     var entry;
-    result <- fun _ _ => Li2_ring.pi poly0;
+    result <- fun _ _ => zeroXnD1;
     i <- 0;
     j <- 0;
     while(i < Li2_k) {
@@ -52,42 +60,42 @@ module Expand_impl(H : RO) = {
     return offunm result;
   }
 
-  proc expandS_entry(rho' : int list, i : int) : entry_t = {
+  proc expandS_entry(rho' : byte list, i : int) : R = {
     var deg : int;
-    var p : poly;
+    var p : R;
     var ext;
     var val;
 
-    p <- poly0;
+    p <- zeroXnD1;
 
     H.init(SHAKE256);
     H.absorb(rho');
-    H.absorb([i; 0]);
+    H.absorb([int_to_byte i; int_to_byte 0]);
     deg <- 0;
     while(deg < Li2_n) {
       ext <@ H.squeeze(1);
-      val <- (nth 0 ext 0) %% 16;
+      val <- (byte_to_int (nth witness ext 0)) %% 16;
       if(val <= 2 * Li2_eta) {
-        p <- p + polyZ (inzmod val) (polyXn deg);
+        p <- p + (inzmod val ** pinject (BasePoly.polyXn deg));
         deg <- deg + 1;
       }
       if(deg < Li2_n) {
-        val <- (nth 0 ext 0) %/ 16;
+        val <- (byte_to_int (nth witness ext 0)) %/ 16;
         if(val <= 2 * Li2_eta) {
-          p <- p + polyZ (inzmod val) (polyXn deg);
+          p <- p + (inzmod val ** pinject (BasePoly.polyXn deg));
           deg <- deg + 1;
         }
       }
     }
-    return Li2_ring.pi p;
+    return p;
   }
 
-  proc expandS(rho' : int list) : vector * vector = {
-    var s1, s2 : (int -> entry_t);
+  proc expandS(rho' : byte list) : vector * vector = {
+    var s1, s2 : (int -> R);
     var i : int;
     var entry;
 
-    s1 <- fun _ => Li2_ring.pi poly0;
+    s1 <- fun _ => zeroXnD1;
     i <- 0;
     while(i < Li2_l) {
       entry <@ expandS_entry(rho', i);
@@ -95,7 +103,7 @@ module Expand_impl(H : RO) = {
       i <- i + 1;
     }
 
-    s2 <- fun _ => Li2_ring.pi poly0;
+    s2 <- fun _ => zeroXnD1;
     i <- 0;
     while(i < Li2_k) {
       entry <@ expandS_entry(rho', Li2_l + i);
@@ -106,24 +114,24 @@ module Expand_impl(H : RO) = {
     return (offunv s1, offunv s2);
   }
 
-  proc expandMask_entry(rho' : int list, kappa : int) : entry_t = {
-    var entry : entry_t;
-    var buf : int list;
+  proc expandMask_entry(rho' : byte list, kappa : int) : R = {
+    var entry : R;
+    var buf : byte list;
 
     H.init(SHAKE256);
     H.absorb(rho');
-    H.absorb([kappa %% 256; kappa %/ 256]);
+    H.absorb([int_to_byte (kappa %% 256); int_to_byte (kappa %/ 256)]);
     (* Next two lines are level 3 settings. *)
     (* TODO abstract with respect to gamma2 value? *)
     buf <@ H.squeeze(Li2_n * 20 %/ 8);
-    entry <@ Packing_impl.polyz_unpack(buf);
+    entry <- polyz_unpack buf;
 
     return entry;
   }
 
-  proc expandMask(rho' : int list, nonce : int) : vector = {
-    var v : entry_t list;
-    var entry : entry_t;
+  proc expandMask(rho' : byte list, nonce : int) : vector = {
+    var v : R list;
+    var entry : R;
     var kappa : int;
     var i : int;
 
@@ -135,6 +143,6 @@ module Expand_impl(H : RO) = {
       v <- rcons v entry;
       i <- i + 1;
     }
-    return offunv (fun i => oget (onth v i));
+    return offunv (fun i => nth witness v i);
   }
 }.
