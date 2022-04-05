@@ -17,14 +17,14 @@ print BasePoly.prepolyZ.
 op int_to_byte (x : int) = Byte.mkword (BS2Int.int2bs 8 x).
 op byte_to_int (x : byte) = bs2int (Byte.ofword x).
 
-module Expand_impl(H : RO) = {
+module Expand_impl(H : SpongeRO) = {
   proc expandA_entry(rho : byte list, i j : int) : R = {
     var deg : int;
     var p : R;
     var ext;
     var val;
 
-    H.init(SHAKE128);
+    H.reset(SHAKE128);
     H.absorb(rho);
     H.absorb([int_to_byte j; int_to_byte i]);
     deg <- 0;
@@ -68,7 +68,7 @@ module Expand_impl(H : RO) = {
 
     p <- zeroXnD1;
 
-    H.init(SHAKE256);
+    H.reset(SHAKE256);
     H.absorb(rho');
     H.absorb([int_to_byte i; int_to_byte 0]);
     deg <- 0;
@@ -118,7 +118,7 @@ module Expand_impl(H : RO) = {
     var entry : R;
     var buf : byte list;
 
-    H.init(SHAKE256);
+    H.reset(SHAKE256);
     H.absorb(rho');
     H.absorb([int_to_byte (kappa %% 256); int_to_byte (kappa %/ 256)]);
     (* Next two lines are level 3 settings. *)

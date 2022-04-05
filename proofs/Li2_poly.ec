@@ -7,6 +7,8 @@ import Li2_Matrix.Vector.
 
 import Zp.
 
+print Zp.
+
 op poly_power2round (p : R) (d : int) : R * R =
   let coeffs = mkseq (fun deg => Zp.asint p.[deg]) Li2_n in
   let results = map (fun r => power2round r d) coeffs in
@@ -16,3 +18,11 @@ op poly_power2round (p : R) (d : int) : R * R =
 op polyveck_power2round (v : vector) (d : int) : vector * vector =
   (offunv (fun i => (poly_power2round v.[i] d).`1),
    offunv (fun i => (poly_power2round v.[i] d).`2)).
+
+op poly_highbits (p : R) (alpha : int) : R =
+  let coeffs = mkseq (fun deg => Zp.asint p.[deg]) Li2_n in
+  let results = map (fun r => inzmod (highbits r alpha)) coeffs in
+  (pinject \o BasePoly.polyL) results.
+
+op polyveck_highbits (v : vector) alpha : vector =
+  offunv (fun i => poly_highbits v.[i] alpha).
