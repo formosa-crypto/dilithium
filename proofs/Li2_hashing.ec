@@ -145,4 +145,42 @@ module Expand_impl(H : SpongeRO) = {
     }
     return offunv (fun i => nth witness v i);
   }
+
+  proc sampleInBall(c_tilde : byte list) : polyXnD1 = {
+    var coeffs : Zp list;
+    var sign_bytes : byte list;
+    var signs : bool list;
+
+    var i : int;
+    var j : int;
+    var b : byte list;
+
+    H.reset(SHAKE128);
+    H.absorb(c_tilde);
+    sign_bytes <@ H.squeeze(8);
+    signs <- flatten (map Byte.ofword sign_bytes);
+
+    coeffs <- nseq Li2_n (inzmod 0);
+
+    i <- Li2_n - Li2_tau;
+    while(i < Li2_n) {
+      (* do-while.
+       * rejection sampling to get j <= i. *)
+      b <@ H.squeeze(1);
+      j <- byte_to_int (oget (ohead b));
+      while(i < j) {
+        b <@ H.squeeze(1);
+        j <- byte_to_int (oget (ohead b));
+      }
+      (* coeffs[i] = coeffs[j] *)
+      coeffs <- put coeffs i (oget (onth coeffs j));
+      (* coeffs[j] = 1 - 2 * sign *)
+      coeffs <- put coeffs j (inzmod (1 - 2 * b2i (oget (ohead signs))));
+      signs <- behead signs;
+      
+      i <- i + 1;
+    }
+
+    return pinject (BasePoly.polyL coeffs);
+  }
 }.
