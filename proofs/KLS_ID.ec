@@ -26,6 +26,9 @@ clone import SigmaProtocol as Li2_SigmaProtocol with
 require import Li2_poly.
 require import Li2_packing.
 
+import Li2_PolyReduceZp.
+
+import Vector.ZModule.
 
 module KLS_ID_P (H : SpongeRO) = {
   var w : vector
@@ -65,56 +68,38 @@ module KLS_ID_P (H : SpongeRO) = {
   proc respond(sk: sk_t, c_tilde: challenge_t) : response_t = {
     var rho, k, tr, s1, s2, t0;
     var z, h;
-    var c : R;
+    var c : polyXnD1;
+    var good : bool;
+    var r0;
+
+    (* Suppresses "unused variable" warning *)
+    h <- zerov;
+
     (rho, k, tr, s1, s2, t0) <- sk;
-    (* TODO init c *)
+    c <@ Expand_impl(H).sampleInBall(c_tilde);
     z <- y + (diagc c) *^ s1;
+
+    r0 <- polyveck_lowbits (w - (diagc c) *^ s2) (2 * Li2_gamma2);
+
+    good <- polyvec_max Li2_l z < Li2_gamma1 - Li2_beta;
+    good <- good || polyvec_max Li2_k r0 < Li2_gamma2 - Li2_beta;
+
+    if (good) {
+      h <- polyveck_makeHint
+             (- (diagc c) *^ t0)
+             (w - (diagc c) *^ s2 + (diagc c) *^ t0)
+             (2 * Li2_gamma2);
+      good <- good || polyveck_weight h <= Li2_omega;
+    }
+
     return
-      if true (* TODO *) then
-        None
+      if good then
+        Some (z, h)
       else
-        Some (z, h);
-  }
-}.
-
-module KLS_ID (H : SpongeRO) (* : SigmaScheme *) = {
-  proc gen() : pk_t * sk_t = {
-    (* This doesn't work.
-       It requires "seed" as parameter for the RO.
-       Which isn't a thing in SigmaProtocol.
- *)
-    return witness;
+        None;
   }
 
-  proc commit(pk : pk_t, sk : sk_t) : vector * state_t = {
-    (* TODO *)
-    return witness;
-  }
-
-  (** This makes zero sense.
-      Why does this even take any input?
-  proc test( (* pk: pk_t, w : vector *) ) : challenge_t = {
-    (* TODO *)
-    return witness;
-  }
-
-  *)
-  
-  proc respond(sk : sk_t, w1: vector, c : challenge_t, st : state_t) : response_t = {
-    (* TODO *)
-    return witness;
-  }
-    
-  proc verify(pk : pk_t, w1 : vector, c : challenge_t, z : response_t) : bool = {
-    (* TODO *)
-    return witness;
-  }
-
-  (* new procedure *)
-  proc recover_commitment(pk: pk_t, c: byte list, z: response_t) : challenge_t = {
-    (* TODO *)
-    return witness;
-  }
+  (* TODO recover commitment... *)
 }.
 
 (* Umm...
@@ -126,8 +111,4 @@ module KLS_ID (H : SpongeRO) (* : SigmaScheme *) = {
         exists w0, hoare[ID_inst.recover_commitment : pk = pk0 && c = c0 && z = z0 ==> res = w0] /\
         (* recover_commitment output is correct *)
         hoare[ID_inst.verify : pk = pk0 && c = c0 && z = z0 ==> res = true].
-
-  module type NaHvzkSim = {
-    proc main(pk : pk_t) : commit_t * challenge_t * unveil_t
-  }.
 *)

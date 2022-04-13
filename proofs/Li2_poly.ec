@@ -25,6 +25,14 @@ op poly_highbits (p : R) (alpha : int) : R =
 op polyveck_highbits (v : vector) alpha : vector =
   offunv (fun i => poly_highbits v.[i] alpha).
 
+op poly_lowbits (p : R) (alpha : int) : R =
+  let coeffs = mkseq (fun deg => Zp.asint p.[deg]) Li2_n in
+  let results = map (fun r => inzmod (lowbits r alpha)) coeffs in
+  (pinject \o BasePoly.polyL) results.
+
+op polyveck_lowbits (v : vector) alpha : vector =
+  offunv (fun i => poly_lowbits v.[i] alpha).
+
 op poly_makeHint (z : R) (r : R) (alpha : int) : R =
   let zcoeffs = mkseq (fun deg => Zp.asint z.[deg]) Li2_n in
   let rcoeffs = mkseq (fun deg => Zp.asint r.[deg]) Li2_n in
@@ -35,3 +43,22 @@ op poly_makeHint (z : R) (r : R) (alpha : int) : R =
 
 op polyveck_makeHint (z : vector) (r : vector) (alpha : int) : vector =
   offunv (fun i => poly_makeHint z.[i] r.[i] alpha).
+
+op poly_max (p : R) : int =
+  let coeffs = mkseq (fun deg => Zp.asint p.[deg]) Li2_n in
+  let coeffs' = map (fun x => if Li2_q < 2 * x then x - Li2_q else x) coeffs in
+  foldr max 0 coeffs'.
+
+op polyvec_max (vlen : int) (v : vector) =
+  let polys = mkseq (fun i => v.[i]) vlen in
+  let p_maxs = map poly_max polys in
+  foldr max 0 p_maxs.
+
+op poly_weight (p : polyXnD1) =
+  let coeffs = mkseq (fun deg => Zp.asint p.[deg]) Li2_n in
+  foldr (+)%Int 0 coeffs.
+
+op polyveck_weight (v : vector) =
+  let polys = mkseq (fun i => v.[i]) Li2_k in
+  let weights = map poly_weight polys in
+  foldr (+)%Int 0 weights.
