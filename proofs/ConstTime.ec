@@ -40,11 +40,14 @@ op keygen : (pk_t * sk_t) distr =
 *)
 
 type hashfn_t = digest_t -> commit_t -> challenge_t.
+
 (* this may be ok since everything here is a finite set? *)
 op [lossless full uniform] dH : hashfn_t distr.
+
 module H = {
   var hashfn : hashfn_t
   proc init () = { hashfn <$ dH; }
+
   proc hash (mu : digest_t, w : commit_t) = {
     return hashfn mu w;
   }
@@ -68,9 +71,8 @@ module Sign = {
     t0 <- lowbits (a *^ s1 + s2);
 
     good <- false;
-    while(good) {
-      AbstractLeakage.leak(false);
-
+    while(!good) {
+      AbstractLeakage.leak(true);
       y <$ dy;
       w <- a *^ y;
       w1 <- highbits w;
@@ -104,21 +106,22 @@ axiom line12_magic :
   (dlet (dbiased line12_magicnumber) (fun b => if b then dmap dsimz Some else dunit None)).
 
 module SimLeak = {
-  proc simulate(pk : pk_t) = {
+  proc simulate(pk : pk_t, mu : digest_t) = {
     var a, t, t0;
     var z, c, h;
     var good, b;
     (a, t) <- pk;
     t0 <- lowbits t;
     good <- false;
-    while(good) {
-      AbstractLeakage.leak(false);
+    while(!good) {
+      AbstractLeakage.leak(true);
 
       b <$ dbiased line12_magicnumber;
       AbstractLeakage.leak(b);
       if(b) {
         z <$ dsimz;
         c <$ dC;
+
         AbstractLeakage.leak(check_lowbits z);
         if(check_lowbits z) {
           h <- makehint (a *^ z + (-(diagc c) *^ t) + (diagc c) *^ t0);
@@ -132,14 +135,16 @@ module SimLeak = {
   }
 }.
 
-lemma ct : forall (a : matrix) (s1 s2 : vector) (sig : sig_t),
+lemma ct : forall (a : matrix) (s1 s2 : vector),
   (s1 \in ds1) => (s2 \in ds2) =>
   let t = a *^ s1 + s2 in
+
   equiv[Sign.sign ~ SimLeak.simulate :
     ={AbstractLeakage.leakage} /\ sk{1} = (a, s1, s2) /\ pk{2} = (a, t)
     ==>
     (* QUESTION: No way to state joint distributions as equivs? *)
     (res{1}, AbstractLeakage.leakage{1}) = (res{1}, AbstractLeakage.leakage{2})].
 proof.
-  move => a s1 s2 sig s1_short s2_short t /=.
+  move => a s1 s2 s1_short s2_short t.
+  move => /=.
 admitted.
