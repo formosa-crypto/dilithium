@@ -1,7 +1,6 @@
 (* Identification schemes found in KLS *)
 
 require import AllCore List.
-require import SigmaProtocol.
 require import DBool.
 require import Li2_params.
 import Li2_Matrix.
@@ -10,18 +9,6 @@ require import Li2_hashing.
 
 type challenge_t = byte list. (* length = 256? *)
 type response_t = (vector * vector) option. (* (z, h) *)
-
-(* Interface incompatible.
-   SigmaScheme keygen has to take a seed for RO
-
-clone import SigmaProtocol as Li2_SigmaProtocol with
-  type statement = pk_t,
-  type witness = sk_t,
-  type message = vector, (* w1 *)
-  type secret = state_t, (* This seems extraneous *)
-  type challenge = challenge_t,
-  type response = response_t.
-*)
 
 require import Li2_poly.
 require import Li2_packing.
