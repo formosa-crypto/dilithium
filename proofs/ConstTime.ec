@@ -107,11 +107,84 @@ lemma zero_knowledge :
 proof.
 admitted.
 
+require import Real RealSeries Distr AllCore.
+
+lemma trans_leak_supp :
+  forall sk leak,
+  leak <> [false] =>
+  leak <> [true; false] =>
+  leak <> [true; true; false] =>
+    (None, leak) \notin trans sk.
+proof.
+move => sk L notF notTF notTTF /=.
+rewrite /support => /=.
+suff: mu1 (trans sk) (None, L) = 0%r.
+  move => H; rewrite H; by trivial.
+rewrite /trans.
+rewrite dlet1E; apply sum0_eq => sig /=.
+rewrite RField.mulf_eq0; right => /=.
+case: sig => /= st.
+rewrite dlet1E; apply sum0_eq => /= c.
+rewrite RField.mulf_eq0; right => /=.
+rewrite /(\o) dunit1E => /=.
+suff:
+  (let (resp, leak) = respond sk c st in
+   (if resp = None then None else Some (c, oget resp), leak)) <>
+   (None, L).
+  move => H; rewrite H; trivial.
+rewrite /respond => /=.
+case sk => /= a s1 s2.
+case st => /= y w.
+case (check_znorm (y + diagc c *^ s1)).
++ move => _ /=.
+  case (check_lowbits (y + diagc c *^ s1)) => /=.
+  - move => _ /=.
+    case (checkhint
+         (makehint
+            ((w + (- diagc c *^ s2))%Vector.ZModule +
+             diagc c *^ lowbits (a *^ s1 + s2)))).
+    * move => _ => /=; trivial.
+    * move => _; rewrite eq_sym; assumption.
+  - move => _; rewrite eq_sym; assumption.
++ move => _; rewrite eq_sym; assumption.
+qed.
+
+lemma simu_leak_supp :
+  forall pk sk leak, (pk, sk) \in keygen =>
+  leak <> [false] =>
+  leak <> [true; false] =>
+  leak <> [true; true; false] =>
+    (None, leak) \notin simu pk.
+proof.
+admitted.
+
+op leakage_simulable (leak : leak_t) =
+  forall pk sk, (pk, sk) \in keygen =>
+    mu1 (trans sk) (None, leak) = mu1 (simu pk) (None, leak).
+
+lemma leak_simulable_F :
+  leakage_simulable [false].
+proof.
+admitted.
+
+lemma leak_simulable_TF :
+  leakage_simulable [true; false].
+proof.
+admitted.
+
+lemma leak_simulable_TTF :
+  leakage_simulable [true; true; false].
+proof.
+admitted.
+
 lemma leak_simulable :
   forall leak pk sk, (pk, sk) \in keygen =>
     mu1 (trans sk) (None, leak) = mu1 (simu pk) (None, leak).
 proof.
-  move => leak pk sk keys_valid.
+  move => leak pk sk keys_valid /=.
+  rewrite /trans /simu /=.
+  search dlet.
+
 admitted.
 
 lemma signleak_perfect_simu :
