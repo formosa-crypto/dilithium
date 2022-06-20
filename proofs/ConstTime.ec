@@ -1,3 +1,5 @@
+
+require import Real RealSeries Distr AllCore.
 require import List Distr DBool.
 clone import Biased.
 require Matrix.
@@ -29,10 +31,10 @@ op line12_magicnumber : real.
 op dsimz : vector distr.
 
 axiom line12_magic :
-  forall c s1, (exists mu w1, c = hash mu w1) => s1 \in ds1 =>
+  forall c s1, c \in dC => s1 \in ds1 =>
   (dmap dy (fun y =>
-      let z = y + (diagc c) *^ s1 in
-      if check_znorm z then Some z else None
+    let z = y + (diagc c) *^ s1 in
+    if check_znorm z then Some z else None
   )) =
   (dlet (dbiased line12_magicnumber) (fun b => if b then dmap dsimz Some else dunit None)).
 
@@ -107,8 +109,6 @@ lemma zero_knowledge :
 proof.
 admitted.
 
-require import Real RealSeries Distr AllCore.
-
 lemma trans_leak_supp :
   forall sk leak,
   leak <> [false] =>
@@ -139,9 +139,8 @@ case (check_znorm (y + diagc c *^ s1)).
 + move => _ /=.
   case (check_lowbits (y + diagc c *^ s1)) => /=.
   - move => _ /=.
-    case (checkhint
-         (makehint
-            ((w + (- diagc c *^ s2))%Vector.ZModule +
+    case (checkhint (makehint
+           ((w + (- diagc c *^ s2)) +
              diagc c *^ lowbits (a *^ s1 + s2)))).
     * move => _ => /=; trivial.
     * move => _; rewrite eq_sym; assumption.
@@ -162,9 +161,95 @@ op leakage_simulable (leak : leak_t) =
   forall pk sk, (pk, sk) \in keygen =>
     mu1 (trans sk) (None, leak) = mu1 (simu pk) (None, leak).
 
+lemma valid_keys_decomp :
+  forall pk sk, (pk, sk) \in keygen => exists a s1 s2, s1 \in ds1 /\ s2 \in ds2 /\ sk = (a, s1, s2) /\ pk = (a, a *^ s1 + s2).
+proof.
+  move => pk sk.
+  case sk => a s1 s2.
+  case pk => a' t.
+  move => valid_keys.
+  exists a s1 s2.
+  
+admitted.
+
+lemma trans_F_closedform :
+  forall a s1 s2,
+    mu1 (trans (a, s1, s2)) (None, [false]) =
+    mu1 (dlet dy (fun y =>
+      dmap dC (fun c =>
+        let z = y + (diagc c) *^ s1 in
+        if check_znorm z then Some z else None
+      )
+    )) None.
+proof.
+  rewrite /trans => a s1 s2.
+  rewrite /commit => /=.
+  rewrite dlet_dmap => /=.
+  (* questionable stuff below *)
+
+  (* How to rewrite more than 1 times again? *)
+  rewrite dlet1E dlet1E => /=.
+  apply eq_sum => y /=.
+  congr.
+  rewrite dmap1E dmap1E => /=.
+  congr => /=.
+  apply fun_ext => c /=.
+  rewrite /(\o) /(\o) => /=.
+  rewrite /respond => /=.
+  case (check_znorm (y + diagc c *^ s1)) => /=.
+  + case (check_lowbits (y + diagc c *^ s1)) => /=.
+    - case (checkhint
+           (makehint
+              ((a *^ y + (- diagc c *^ s2)) +
+               diagc c *^ lowbits (a *^ s1 + s2)))) => /=;
+      rewrite /pred1 /pred1 /=; by trivial.
+    - rewrite /pred1 /pred1 /=; by trivial.
+  + by trivial.
+qed.
+
+lemma simu_F_closedform :
+  forall a t,
+    mu1 (simu (a, t)) (None, [false]) =
+    mu1 (dlet (dbiased line12_magicnumber) (fun b => if b then dmap dsimz Some else dunit None)) None.
+proof.
+  rewrite /simu => a t /=.
+  rewrite dlet1E dlet1E => /=.
+  congr => /=.
+  apply fun_ext => b.
+  congr.
+  case b.
+  - move => bT /=.
+    rewrite dlet1E sum0_eq => /=.
+    + move => z.
+      case (check_lowbits z) => /= _.
+      * rewrite RField.mulf_eq0; right => /=.
+        rewrite dlet1E; apply sum0_eq => /= y.
+        rewrite RField.mulf_eq0; right => /=.
+        rewrite dlet1E; apply sum0_eq => /= c.
+        rewrite RField.mulf_eq0; right => /=.
+        case (checkhint
+          (makehint
+           ((a *^ z + (- diagc c *^ t)) + diagc c *^ lowbits t))) => /= _;
+        apply dunit1E.
+      * rewrite RField.mulf_eq0; right => /=.
+        apply dunit1E.
+    + rewrite dmap1E.
+      rewrite /(\o) /pred1 mu0; done.
+  - move => bF.
+    rewrite dunit1xx dunit1xx; done.
+qed.
+
 lemma leak_simulable_F :
   leakage_simulable [false].
 proof.
+  rewrite /leakage_simulable.
+  move => pk sk valid_keys.
+  apply valid_keys_decomp in valid_keys; case valid_keys => a s1 s2 keys_tuples.
+  case keys_tuples => s1_supp keys_tuples.
+  case keys_tuples => s2_supp keys_tuples.
+  case keys_tuples => sk_val pk_val; subst.
+  rewrite /trans => /=.
+  rewrite dlet1E => /=.
 admitted.
 
 lemma leak_simulable_TF :
