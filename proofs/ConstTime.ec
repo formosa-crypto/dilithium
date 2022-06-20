@@ -1,7 +1,6 @@
 require import List Distr DBool.
 clone import Biased.
 require Matrix.
-require Leak.
 
 type poly_t.
 clone import Matrix as PolyMatrix with type ZR.t <- poly_t.
@@ -15,13 +14,6 @@ type st_t = vector * vector.
 type challenge_t = poly_t.
 type resp_t = vector * vector.
 type sig_t = challenge_t * resp_t.
-
-clone import Leak as SpecLeak with
-  type Sig.sk_t <- sk_t,
-  type Sig.pk_t <- pk_t,
-  type Sig.msg_t <- digest_t,
-  type leak_t <- bool list,
-  type Sig.sig_t <- sig_t.
 
 op [lossless full uniform] dA : matrix distr.
 op [lossless uniform] ds1 : vector distr.
@@ -85,65 +77,46 @@ op trans (sk : sk_t) : (sig_t option * leak_t) distr =
     )
   ).
 
-op simu (pk : pk_t) : (sig_t option * leak_t). (* TODO *)
+op simu (pk : pk_t) : (sig_t option * leak_t) distr =
+  let (a, t) = pk in
+  let t0 = lowbits t in
+  dlet (dbiased line12_magicnumber) (fun b =>
+    if b then
+      dlet dsimz (fun z =>
+        if check_lowbits z then
+          dlet dy (fun y =>
+            let w = a *^ y in
+            let w1 = highbits w in
+            dlet dC (fun c =>
+              let h = makehint (a *^ z + (-(diagc c) *^ t) + (diagc c) *^ t0) in
+              if checkhint h then
+                dunit (Some (c, (z, h)), [true; true; true])
+              else
+                dunit (None, [true; true; false])
+            )
+          )
+        else
+          dunit (None, [true; false])
+      )
+    else
+      dunit (None, [false])).
 
-(*
-  proc leakage(pk: pk_t, mu: digest_t, sig: sig_t) : leak_t = {
-    var a, t, t0;
-    var z, c, h;
-    var w, w1, y;
-    var good, b;
-    var leak;
-
-    leak <- [];
-    (a, t) <- pk;
-    t0 <- lowbits t;
-    good <- false;
-    while(!good) {
-      leak <- true :: leak;
-
-      b <$ dbiased line12_magicnumber;
-      leak <- b :: leak;
-      if(b) {
-        z <$ dsimz;
-
-        y <$ dy;
-        w <- a *^ y;
-        w1 <- highbits w;
-        c <- hash mu w1;       
-
-        leak <- check_lowbits z :: leak;
-        if(check_lowbits z) {
-          h <- makehint (a *^ z + (-(diagc c) *^ t) + (diagc c) *^ t0);
-          leak <- checkhint h :: leak;
-          if(checkhint h) {
-            good <- true;
-          }
-        }
-      }
-    }
-    return leak;
-  }
-
-section Analysis.
-
-declare module A <: Adv_LEAK{-Stateless.BaseOracle}.
-
-module S = SimplifiedSpec.
-
-lemma ct :
-  forall &m,
-    Pr [ LEAK_real(S, A).main() @ &m: res ] =
-    Pr [ LEAK_sim(S, A).main() @ &m: res ].
+lemma zero_knowledge :
+  forall sig pk sk, (pk, sk) \in keygen =>
+    mu1 (trans sk) (Some sig, [true; true; true]) = mu1 (simu pk) (Some sig, [true; true; true]).
 proof.
-  move => &m /=.
-  byequiv => /=.
-  proc => /=.
-  call (: true).
-  proc => /=.
-  wp.
-  inline * => /=.
-  sp.
+admitted.
 
-  inline *.
-*)
+lemma leak_simulable :
+  forall leak pk sk, (pk, sk) \in keygen =>
+    mu1 (trans sk) (None, leak) = mu1 (simu pk) (None, leak).
+proof.
+  move => leak pk sk keys_valid.
+admitted.
+
+lemma signleak_perfect_simu :
+  forall sig leak pk sk, (pk, sk) \in keygen =>
+    mu1 (trans sk) (sig, leak) = mu1 (simu pk) (sig, leak).
+proof.
+admitted.
+
