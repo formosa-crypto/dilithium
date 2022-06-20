@@ -11,10 +11,10 @@ type sk_t = matrix * vector * vector.
 type pk_t = matrix * vector.
 type digest_t.
 type commit_t = vector.
+type st_t = vector * vector.
 type challenge_t = poly_t.
-type hint_t = vector.
-type resp_t = vector.
-type sig_t = challenge_t * resp_t * hint_t.
+type resp_t = vector * vector.
+type sig_t = challenge_t * resp_t.
 
 clone import Leak as SpecLeak with
   type Sig.sk_t <- sk_t,
@@ -28,6 +28,7 @@ op [lossless uniform] ds1 : vector distr.
 op [lossless uniform] ds2 : vector distr.
 op hash : digest_t -> commit_t -> challenge_t.
 op dy : vector distr.
+op dC : challenge_t distr.
 op highbits, lowbits : vector -> vector.
 op makehint : vector -> vector.
 op check_znorm, check_lowbits, checkhint : vector -> bool.
@@ -43,60 +44,50 @@ axiom line12_magic :
   )) =
   (dlet (dbiased line12_magicnumber) (fun b => if b then dmap dsimz Some else dunit None)).
 
-module SimplifiedSpec : SchemeL = {
-  proc keygen() = {
-    var a, s1, s2, t;
-    a <$ dA;
-    s1 <$ ds1;
-    s2 <$ ds2;
-    t <- a *^ s1 + s2;
-    return ((a, t), (a, s1, s2));
-  }
-  proc signL(sk : sk_t, mu : digest_t) : sig_t * leak_t = {
-    var a, s1, s2, t0;
-    var w, w1, y, c, z, h;
-    var good;
-    var leak;
+op keygen : (pk_t * sk_t) distr =
+  dlet dA (fun a =>
+    dlet ds1 (fun s1 =>
+      dlet ds2 (fun s2 =>
+        let t = a *^ s1 + s2 in
+        dunit ((a, t), (a, s1, s2))
+  ))).
 
-    leak <- [];
+op commit (sk : sk_t) : (commit_t * st_t) distr =
+  let (a, s1, s2) = sk in
+    dmap dy (fun y =>
+      let w = a *^ y in
+      (highbits w, (y, w))).
 
-    (* suppress "uninitialized" warning *)
-    (c, z, h) <- (ZR.zeror, zerov, zerov);
+op respond (sk : sk_t) (c : challenge_t) (st : st_t) : resp_t option * leak_t =
+  let (a, s1, s2) = sk in
+  let t0 = lowbits (a *^ s1 + s2) in
+  let (y, w) = st in
+  let z = y + (diagc c) *^ s1 in
+  if check_znorm z then
+    if check_lowbits z then
+      let h = makehint ((w + (-(diagc c) *^ s2) + (diagc c) *^ t0)) in
+      if checkhint h then
+        (Some (z, h), [true; true; true])
+      else
+        (None, [true; true; false])
+    else
+      (None, [true; false])
+  else
+    (None, [false]).
 
-    (a, s1, s2) <- sk;
-    t0 <- lowbits (a *^ s1 + s2);
+op trans (sk : sk_t) : (sig_t option * leak_t) distr =
+  dlet (commit sk) (fun W =>
+    let (w1, st) = W in
+    dmap dC (fun c =>
+      let (resp, leak) = respond sk c st in
+      let sig = if resp = None then None else Some (c, oget resp) in
+      (sig, leak)
+    )
+  ).
 
-    good <- false;
-    while(!good) {
-      leak <- true :: leak;
-      y <$ dy;
-      w <- a *^ y;
-      w1 <- highbits w;
-      c <- hash mu w1;
-      z <- y + (diagc c) *^ s1;
-      leak <- check_znorm z :: leak;
-      if(check_znorm z) {
-        leak <- check_lowbits z :: leak;
-        if(check_lowbits z) {
-          h <- makehint (w + (-(diagc c) *^ s2) + (diagc c) *^ t0);
-          leak <- checkhint h :: leak;
-          if(checkhint h) {
-            good <- true;
-          }
-        }
-      }
-    }
-    return ((c, z, h), leak);
-  }
-  proc sign(sk : sk_t, mu : digest_t) : sig_t = {
-    var sigleak;
-    sigleak <- signL(sk, mu);
-    return sigleak.`1;
-  }
-  proc verify(pk:pk_t, mu:digest_t, s:sig_t) = {
-    (* NYI *)
-    return true;
-  }
+op simu (pk : pk_t) : (sig_t option * leak_t). (* TODO *)
+
+(*
   proc leakage(pk: pk_t, mu: digest_t, sig: sig_t) : leak_t = {
     var a, t, t0;
     var z, c, h;
@@ -133,5 +124,26 @@ module SimplifiedSpec : SchemeL = {
     }
     return leak;
   }
-}.
 
+section Analysis.
+
+declare module A <: Adv_LEAK{-Stateless.BaseOracle}.
+
+module S = SimplifiedSpec.
+
+lemma ct :
+  forall &m,
+    Pr [ LEAK_real(S, A).main() @ &m: res ] =
+    Pr [ LEAK_sim(S, A).main() @ &m: res ].
+proof.
+  move => &m /=.
+  byequiv => /=.
+  proc => /=.
+  call (: true).
+  proc => /=.
+  wp.
+  inline * => /=.
+  sp.
+
+  inline *.
+*)
