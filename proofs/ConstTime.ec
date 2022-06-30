@@ -1,6 +1,5 @@
-
 require import Real RealSeries Distr AllCore.
-require import List Distr DBool.
+require import List Distr DBool Finite.
 clone import Biased.
 require Matrix.
 
@@ -21,22 +20,147 @@ op [lossless full uniform] dA : matrix distr.
 op [lossless uniform] ds1 : vector distr.
 op [lossless uniform] ds2 : vector distr.
 op hash : digest_t -> commit_t -> challenge_t.
-op dy : vector distr.
+op [lossless uniform] dy : vector distr.
 op dC : challenge_t distr.
 op highbits, lowbits : vector -> vector.
 op makehint : vector -> vector.
 op check_znorm, check_lowbits, checkhint : vector -> bool.
 
-op line12_magicnumber : real.
-op dsimz : vector distr.
+op line12_magicnumber : real = (size (to_seq check_znorm))%r / (size (to_seq (support dy)))%r.
+op [lossless uniform] dsimz : vector distr.
 
-axiom line12_magic :
-  forall c s1, c \in dC => s1 \in ds1 =>
-  (dmap dy (fun y =>
+axiom dsimz_supp :
+  forall z, z \in dsimz <=> check_znorm z.
+
+(* Potentially provable from dsimz_supp and dsimz_ll? *)
+axiom dsimz1E :
+  forall z, check_znorm z =>
+    mu1 dsimz z = inv (size (to_seq check_znorm))%r.
+
+axiom masking_range :
+  forall c s1 z0, c \in dC => s1 \in ds1 => check_znorm z0 =>
+    z0 + (- diagc c *^ s1) \in dy.
+
+op transz c s1 =
+  dmap dy (fun y =>
     let z = y + (diagc c) *^ s1 in
     if check_znorm z then Some z else None
-  )) =
+  ).
+
+(* print mu1_uni_ll. *)
+lemma line12_magic_some :
+  forall c s1 z0, c \in dC => s1 \in ds1 => check_znorm z0 =>
+    mu1 (transz c s1) (Some z0) = 1%r / (size (to_seq (support dy)))%r.
+proof.
+  move => c s1 z0 c_valid s1_valid z0_valid.
+  rewrite /transz dmap1E /pred1 /(\o) => /=.
+  rewrite (mu_eq _ _ (fun y => y + diagc c *^ s1 = z0)). move => y. smt().
+  have -> : (fun y => y + diagc c *^ s1 = z0) = pred1 (z0 + (- diagc c *^ s1)).
+    apply fun_ext => y. rewrite /pred1.
+    rewrite - Vector.ZModule.subr_eq => /=.
+    by rewrite Vector.ZModule.opprK => /#.
+  rewrite mu1_uni_ll ?dy_uni ?dy_ll.
+  suff -> : (z0 + (- diagc c *^ s1)) \in dy by trivial.
+  exact masking_range.
+qed.
+
+lemma line12_outofbound :
+  forall c s1 z0, c \in dC => s1 \in ds1 => ! (check_znorm z0) =>
+    (Some z0) \notin (transz c s1).
+proof.
+move => c s1 z0 c_valid s1_valid z0_invalid.
+rewrite /transz /pred1 /(\o) => /=.
+rewrite supp_dmap => /#.
+qed.
+
+lemma sumD1_None (f : 'a option -> real) :
+  summable f =>
+  sum f = sum (fun y => f (Some y)) + f None.
+proof.
+move => sum_f; rewrite (sumD1 f None) // RField.addrC; congr.
+rewrite (sum_partition Some (fun y => f (Some y))).
+exact (summable_inj Some).
+apply eq_sum => -[|x /=]; 1: by rewrite /= sum0.
+rewrite (sumE_fin _ [x]) // /#.
+qed.
+
+lemma line12_magic_none :
+  forall c s1, c \in dC => s1 \in ds1 =>
+    mu1 (transz c s1) None = 1%r - (size (to_seq check_znorm))%r / (size (to_seq (support dy)))%r.
+proof.
+move => c s1 c_valid s1_valid.
+have sumz : (sum (fun z => mu1 (transz c s1) z) = 1%r).
+  by rewrite - weightE; apply dmap_ll; apply dy_ll.
+rewrite sumD1_None in sumz.
+  by apply summable_mu1.
+suff: sum (fun y =>
+  (fun z => mu1 (transz c s1) z) (Some y)) = 
+  (size (to_seq check_znorm))%r / (size (to_seq (support dy)))%r by smt().
+(* how to combine next 2 lines with above again...? *)
+simplify.
+clear sumz.
+have -> :
+  (fun z => mu1 (transz c s1) (Some z)) =
+  (fun z => if check_znorm z then 1%r / (size (to_seq (support dy)))%r else 0%r).
+  apply fun_ext => z.
+  case (check_znorm z).
+  + move => z_good.
+    rewrite line12_magic_some => /#.
+  + move => z_out.
+    apply supportPn.
+    apply line12_outofbound; try assumption.
+(* sum of characteristic function... *)
+admit.
+qed.
+
+lemma sum_over_bool (f : bool -> real):
+  sum (fun b => f b) = f true + f false.
+proof.
+rewrite (sumE_fin _ [true; false]) //.
+move => -[|] //.
+qed.
+
+axiom mask_size :
+  size (to_seq check_znorm) < size (to_seq (support dy)).
+
+axiom mask_nonzero :
+  0 < size (to_seq check_znorm).
+
+(* Now 40% less magical! *)
+lemma line12_magic :
+  forall c s1, c \in dC => s1 \in ds1 =>
+  transz c s1 =
   (dlet (dbiased line12_magicnumber) (fun b => if b then dmap dsimz Some else dunit None)).
+proof.
+move => c s1 c_valid s1_valid.
+apply eq_distr => z.
+case z.
+- rewrite line12_magic_none //.
+  apply eq_sym; rewrite dlet1E sum_over_bool /=.
+  rewrite dmap1E /pred1 /(\o) mu0 /=.
+  rewrite dunit1E dbiased1E /line12_magicnumber /=.
+  rewrite clamp_id; smt(mask_nonzero mask_size).
+- move => z.
+  case (check_znorm z).
+  + move => z_valid.
+    rewrite line12_magic_some //.
+    rewrite eq_sym /line12_magicnumber dlet1E sum_over_bool /=.
+    rewrite dunit1E /=.
+    rewrite dmap1E /pred1 /(\o) /=.
+    rewrite dsimz1E //=.
+    rewrite dbiased1E /=.
+    rewrite clamp_id; smt(mask_nonzero mask_size).
+  + move => z_invalid.
+    have -> : mu1 (transz c s1) (Some z) = 0%r.
+      apply supportPn; apply line12_outofbound; by assumption.
+    apply eq_sym; apply supportPn.
+    rewrite supp_dlet.
+    apply negb_exists => b /=.
+    apply negb_and; right.
+    case b.
+    * rewrite supp_dmap; smt(dsimz_supp).
+    * rewrite supp_dunit => //.
+qed.
 
 op keygen : (pk_t * sk_t) distr =
   dlet dA (fun a =>
