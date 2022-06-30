@@ -1,10 +1,23 @@
 require import Real RealSeries Distr AllCore.
 require import List Distr DBool Finite.
 clone import Biased.
-require Matrix.
+require import FinType.
+require import StdBigop.
+import Bigreal BRA.
 
-type poly_t.
-clone import Matrix as PolyMatrix with type ZR.t <- poly_t.
+type matrix.
+type vector.
+type scalar.
+op ( *^ ) : matrix -> vector -> vector.
+op ( * ) : scalar -> vector -> vector.
+op ( + ) : vector -> vector -> vector.
+op ( - ) : vector -> vector -> vector.
+op [ - ] : vector -> vector.
+
+clone import FinType as FinVector_t with type t <- vector.
+
+axiom vector_move_add :
+  forall (u v w : vector), u + v = w <=> u = w - v.
 
 type leak_t = bool list.
 type sk_t = matrix * vector * vector.
@@ -12,7 +25,7 @@ type pk_t = matrix * vector.
 type digest_t.
 type commit_t = vector.
 type st_t = vector * vector.
-type challenge_t = poly_t.
+type challenge_t = scalar.
 type resp_t = vector * vector.
 type sig_t = challenge_t * resp_t.
 
@@ -25,6 +38,13 @@ op dC : challenge_t distr.
 op highbits, lowbits : vector -> vector.
 op makehint : vector -> vector.
 op check_znorm, check_lowbits, checkhint : vector -> bool.
+
+(* TODO maybe don't break this out? *)
+lemma finite_znorm :
+  is_finite check_znorm.
+proof.
+  apply (finite_leq predT<:vector> check_znorm) => //; apply finite_t.
+qed.
 
 op line12_magicnumber : real = (size (to_seq check_znorm))%r / (size (to_seq (support dy)))%r.
 op [lossless uniform] dsimz : vector distr.
@@ -39,11 +59,11 @@ axiom dsimz1E :
 
 axiom masking_range :
   forall c s1 z0, c \in dC => s1 \in ds1 => check_znorm z0 =>
-    z0 + (- diagc c *^ s1) \in dy.
+    z0 - c * s1 \in dy.
 
 op transz c s1 =
   dmap dy (fun y =>
-    let z = y + (diagc c) *^ s1 in
+    let z = y + c * s1 in
     if check_znorm z then Some z else None
   ).
 
@@ -54,13 +74,12 @@ lemma line12_magic_some :
 proof.
   move => c s1 z0 c_valid s1_valid z0_valid.
   rewrite /transz dmap1E /pred1 /(\o) => /=.
-  rewrite (mu_eq _ _ (fun y => y + diagc c *^ s1 = z0)). move => y. smt().
-  have -> : (fun y => y + diagc c *^ s1 = z0) = pred1 (z0 + (- diagc c *^ s1)).
+  rewrite (mu_eq _ _ (fun y => y + c * s1 = z0)). move => y. smt().
+  have -> : (fun y => y + c * s1 = z0) = pred1 (z0 - c * s1).
     apply fun_ext => y. rewrite /pred1.
-    rewrite - Vector.ZModule.subr_eq => /=.
-    by rewrite Vector.ZModule.opprK => /#.
+    by rewrite vector_move_add //.
   rewrite mu1_uni_ll ?dy_uni ?dy_ll.
-  suff -> : (z0 + (- diagc c *^ s1)) \in dy by trivial.
+  suff -> : (z0 - c * s1) \in dy by trivial.
   exact masking_range.
 qed.
 
@@ -84,6 +103,27 @@ apply eq_sum => -[|x /=]; 1: by rewrite /= sum0.
 rewrite (sumE_fin _ [x]) // /#.
 qed.
 
+lemma check_znorm_fin :
+  is_finite check_znorm.
+proof.
+  apply (finite_leq predT<:vector> check_znorm) => //; apply finite_t.
+qed.
+
+lemma sum_characteristic (P : 't -> bool) (v : real) :
+  is_finite P =>
+  sum (fun z => if P z then v else 0%r) = (size (to_seq P))%r * v.
+proof.
+move => P_finite.
+print sumr_const.
+print sumE_fin.
+rewrite (sumE_fin _ (to_seq P)) /=.
+- apply uniq_to_seq => //.
+- smt(mem_to_seq).
+rewrite -big_mkcond Bigreal.sumr_const; congr.
+rewrite count_predT_eq_in => //.
+move => z; apply mem_to_seq => //.
+qed.
+
 lemma line12_magic_none :
   forall c s1, c \in dC => s1 \in ds1 =>
     mu1 (transz c s1) None = 1%r - (size (to_seq check_znorm))%r / (size (to_seq (support dy)))%r.
@@ -91,26 +131,21 @@ proof.
 move => c s1 c_valid s1_valid.
 have sumz : (sum (fun z => mu1 (transz c s1) z) = 1%r).
   by rewrite - weightE; apply dmap_ll; apply dy_ll.
-rewrite sumD1_None in sumz.
+rewrite sumD1_None /= in sumz.
   by apply summable_mu1.
-suff: sum (fun y =>
-  (fun z => mu1 (transz c s1) z) (Some y)) = 
+suff: sum (fun (y : vector) => mu1 (transz c s1) (Some y)) = 
   (size (to_seq check_znorm))%r / (size (to_seq (support dy)))%r by smt().
-(* how to combine next 2 lines with above again...? *)
-simplify.
 clear sumz.
 have -> :
   (fun z => mu1 (transz c s1) (Some z)) =
   (fun z => if check_znorm z then 1%r / (size (to_seq (support dy)))%r else 0%r).
-  apply fun_ext => z.
-  case (check_znorm z).
+  apply fun_ext => z; case (check_znorm z).
   + move => z_good.
     rewrite line12_magic_some => /#.
   + move => z_out.
     apply supportPn.
-    apply line12_outofbound; try assumption.
-(* sum of characteristic function... *)
-admit.
+    apply line12_outofbound => //.
+apply sum_characteristic; exact check_znorm_fin.
 qed.
 
 lemma sum_over_bool (f : bool -> real):
@@ -180,10 +215,10 @@ op respond (sk : sk_t) (c : challenge_t) (st : st_t) : resp_t option * leak_t =
   let (a, s1, s2) = sk in
   let t0 = lowbits (a *^ s1 + s2) in
   let (y, w) = st in
-  let z = y + (diagc c) *^ s1 in
+  let z = y + c * s1 in
   if check_znorm z then
     if check_lowbits z then
-      let h = makehint ((w + (-(diagc c) *^ s2) + (diagc c) *^ t0)) in
+      let h = makehint (w - c * s2 + c * t0) in
       if checkhint h then
         (Some (z, h), [true; true; true])
       else
@@ -214,7 +249,7 @@ op simu (pk : pk_t) : (sig_t option * leak_t) distr =
             let w = a *^ y in
             let w1 = highbits w in
             dlet dC (fun c =>
-              let h = makehint (a *^ z + (-(diagc c) *^ t) + (diagc c) *^ t0) in
+              let h = makehint (a *^ z - c * t + c * t0) in
               if checkhint h then
                 dunit (Some (c, (z, h)), [true; true; true])
               else
@@ -259,13 +294,12 @@ suff:
 rewrite /respond => /=.
 case sk => /= a s1 s2.
 case st => /= y w.
-case (check_znorm (y + diagc c *^ s1)).
+case (check_znorm (y + c * s1)).
 + move => _ /=.
-  case (check_lowbits (y + diagc c *^ s1)) => /=.
+  case (check_lowbits (y + c * s1)) => /=.
   - move => _ /=.
     case (checkhint (makehint
-           ((w + (- diagc c *^ s2)) +
-             diagc c *^ lowbits (a *^ s1 + s2)))).
+           ((w - c * s2) + c * lowbits (a *^ s1 + s2)))).
     * move => _ => /=; trivial.
     * move => _; rewrite eq_sym; assumption.
   - move => _; rewrite eq_sym; assumption.
@@ -301,7 +335,7 @@ lemma trans_F_closedform :
     mu1 (trans (a, s1, s2)) (None, [false]) =
     mu1 (dlet dy (fun y =>
       dmap dC (fun c =>
-        let z = y + (diagc c) *^ s1 in
+        let z = y + c * s1 in
         if check_znorm z then Some z else None
       )
     )) None.
@@ -320,12 +354,12 @@ proof.
   apply fun_ext => c /=.
   rewrite /(\o) /(\o) => /=.
   rewrite /respond => /=.
-  case (check_znorm (y + diagc c *^ s1)) => /=.
-  + case (check_lowbits (y + diagc c *^ s1)) => /=.
+  case (check_znorm (y + c * s1)) => /=.
+  + case (check_lowbits (y + c * s1)) => /=.
     - case (checkhint
            (makehint
-              ((a *^ y + (- diagc c *^ s2)) +
-               diagc c *^ lowbits (a *^ s1 + s2)))) => /=;
+              ((a *^ y - c * s2) +
+               c * lowbits (a *^ s1 + s2)))) => /=;
       rewrite /pred1 /pred1 /=; by trivial.
     - rewrite /pred1 /pred1 /=; by trivial.
   + by trivial.
@@ -353,7 +387,7 @@ proof.
         rewrite RField.mulf_eq0; right => /=.
         case (checkhint
           (makehint
-           ((a *^ z + (- diagc c *^ t)) + diagc c *^ lowbits t))) => /= _;
+           ((a *^ z - c * t) + c * lowbits t))) => /= _;
         apply dunit1E.
       * rewrite RField.mulf_eq0; right => /=.
         apply dunit1E.
