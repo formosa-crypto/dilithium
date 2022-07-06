@@ -22,29 +22,33 @@ axiom vector_move_add :
 type leak_t = bool list.
 type sk_t = matrix * vector * vector.
 type pk_t = matrix * vector.
-type digest_t.
 type commit_t = vector.
 type st_t = vector * vector.
 type challenge_t = scalar.
-type resp_t = vector * vector.
-type sig_t = challenge_t * resp_t.
 
 op [lossless full uniform] dA : matrix distr.
 op [lossless uniform] ds1 : vector distr.
 op [lossless uniform] ds2 : vector distr.
-op hash : digest_t -> commit_t -> challenge_t.
 op [lossless uniform] dy : vector distr.
 op dC : challenge_t distr.
 op highbits, lowbits : vector -> vector.
-op makehint : vector -> vector.
-op check_znorm, check_lowbits, checkhint : vector -> bool.
+op check_znorm : vector -> bool.
 
-(* TODO maybe don't break this out? *)
-lemma finite_znorm :
-  is_finite check_znorm.
+op keygen : (pk_t * sk_t) distr =
+  dlet dA (fun a =>
+    dlet ds1 (fun s1 =>
+      dlet ds2 (fun s2 =>
+        let t = a *^ s1 + s2 in
+        dunit ((a, t), (a, s1, s2))
+  ))).
+
+lemma pk_decomp : forall a' t' a s1 s2,
+  ((a', t'), (a, s1, s2)) \in keygen =>
+  a' = a /\ t' = a *^ s1 + s2.
 proof.
-  apply (finite_leq predT<:vector> check_znorm) => //; apply finite_t.
-qed.
+move => a' t' a s1 s2 valid_keys.
+(* TODO this should be very provable *)
+admitted.
 
 op line12_magicnumber : real = (size (to_seq check_znorm))%r / (size (to_seq (support dy)))%r.
 op [lossless uniform] dsimz : vector distr.
@@ -52,20 +56,48 @@ op [lossless uniform] dsimz : vector distr.
 axiom dsimz_supp :
   forall z, z \in dsimz <=> check_znorm z.
 
-(* Potentially provable from dsimz_supp and dsimz_ll? *)
-axiom dsimz1E :
+lemma dsimz1E :
   forall z, check_znorm z =>
     mu1 dsimz z = inv (size (to_seq check_znorm))%r.
+proof.
+(* TODO provable from dsimz_supp and dsimz_ll *)
+admitted.
 
 axiom masking_range :
   forall c s1 z0, c \in dC => s1 \in ds1 => check_znorm z0 =>
     z0 - c * s1 \in dy.
+
+(* transcript + leakage
+ *
+ * Supposedly = sig_t option * leak_t.
+ * Probably doesn't matter that it does. *)
+type trans_leak_t.
+
+(* Failed on first znorm check *)
+op failed_znorm : trans_leak_t.
+
+(* Second half of transcript
+ * The actual definition probably doesn't matter here? *)
+op trans_second_half (z : vector) (c : scalar) (w' t0 : vector) : trans_leak_t. (* =
+  if check_znorm z then
+    if check_lowbits w' then
+      let h = makehint (w' + c * t0) in
+      if checkhint h then
+        (Some (c, (z, h)), [true; true; true])
+      else
+        (None, [true; true; false])
+    else
+      (None, [true; false])
+  else
+    (None, [false]). *)
 
 op transz c s1 =
   dmap dy (fun y =>
     let z = y + c * s1 in
     if check_znorm z then Some z else None
   ).
+
+op dsimoz = dlet (dbiased line12_magicnumber) (fun b => if b then dmap dsimz Some else dunit None).
 
 (* print mu1_uni_ll. *)
 lemma line12_magic_some :
@@ -101,12 +133,6 @@ rewrite (sum_partition Some (fun y => f (Some y))).
 exact (summable_inj Some).
 apply eq_sum => -[|x /=]; 1: by rewrite /= sum0.
 rewrite (sumE_fin _ [x]) // /#.
-qed.
-
-lemma check_znorm_fin :
-  is_finite check_znorm.
-proof.
-  apply (finite_leq predT<:vector> check_znorm) => //; apply finite_t.
 qed.
 
 lemma sum_characteristic (P : 't -> bool) (v : real) :
@@ -145,7 +171,8 @@ have -> :
   + move => z_out.
     apply supportPn.
     apply line12_outofbound => //.
-apply sum_characteristic; exact check_znorm_fin.
+apply sum_characteristic.
+by apply (finite_leq predT<:vector> check_znorm) => //; apply finite_t.
 qed.
 
 lemma sum_over_bool (f : bool -> real):
@@ -164,8 +191,7 @@ axiom mask_nonzero :
 (* Now 40% less magical! *)
 lemma line12_magic :
   forall c s1, c \in dC => s1 \in ds1 =>
-  transz c s1 =
-  (dlet (dbiased line12_magicnumber) (fun b => if b then dmap dsimz Some else dunit None)).
+  transz c s1 = dsimoz.
 proof.
 move => c s1 c_valid s1_valid.
 apply eq_distr => z.
@@ -190,20 +216,9 @@ case z.
       apply supportPn; apply line12_outofbound; by assumption.
     apply eq_sym; apply supportPn.
     rewrite supp_dlet.
-    apply negb_exists => b /=.
-    apply negb_and; right.
-    case b.
-    * rewrite supp_dmap; smt(dsimz_supp).
-    * rewrite supp_dunit => //.
+    (* abuse of smt? *)
+    smt(supp_dmap supp_dunit dsimz_supp).
 qed.
-
-op keygen : (pk_t * sk_t) distr =
-  dlet dA (fun a =>
-    dlet ds1 (fun s1 =>
-      dlet ds2 (fun s2 =>
-        let t = a *^ s1 + s2 in
-        dunit ((a, t), (a, s1, s2))
-  ))).
 
 op commit (sk : sk_t) : (commit_t * st_t) distr =
   let (a, s1, s2) = sk in
@@ -211,57 +226,154 @@ op commit (sk : sk_t) : (commit_t * st_t) distr =
       let w = a *^ y in
       (highbits w, (y, w))).
 
-op respond (sk : sk_t) (c : challenge_t) (st : st_t) : resp_t option * leak_t =
+op respond (sk : sk_t) (c : challenge_t) (st : st_t) : trans_leak_t =
   let (a, s1, s2) = sk in
   let t0 = lowbits (a *^ s1 + s2) in
   let (y, w) = st in
   let z = y + c * s1 in
+  let w' = w - c * s2 in
   if check_znorm z then
-    if check_lowbits z then
-      let h = makehint (w - c * s2 + c * t0) in
-      if checkhint h then
-        (Some (z, h), [true; true; true])
-      else
-        (None, [true; true; false])
-    else
-      (None, [true; false])
+    trans_second_half z c w' t0
   else
-    (None, [false]).
+    failed_znorm.
 
-op trans (sk : sk_t) : (sig_t option * leak_t) distr =
+op trans (sk : sk_t) : trans_leak_t distr =
   dlet (commit sk) (fun W =>
     let (w1, st) = W in
     dmap dC (fun c =>
-      let (resp, leak) = respond sk c st in
-      let sig = if resp = None then None else Some (c, oget resp) in
-      (sig, leak)
+      respond sk c st
     )
   ).
 
-op simu (pk : pk_t) : (sig_t option * leak_t) distr =
+op simu (pk : pk_t) : trans_leak_t distr =
   let (a, t) = pk in
   let t0 = lowbits t in
+  dlet dC (fun c =>
   dlet (dbiased line12_magicnumber) (fun b =>
     if b then
-      dlet dsimz (fun z =>
-        if check_lowbits z then
-          dlet dy (fun y =>
-            let w = a *^ y in
-            let w1 = highbits w in
-            dlet dC (fun c =>
-              let h = makehint (a *^ z - c * t + c * t0) in
-              if checkhint h then
-                dunit (Some (c, (z, h)), [true; true; true])
-              else
-                dunit (None, [true; true; false])
-            )
-          )
-        else
-          dunit (None, [true; false])
+      dmap dsimz (fun z =>
+        let w' = a *^ z - c * t in
+        trans_second_half z c w' t0
       )
     else
-      dunit (None, [false])).
+      dunit failed_znorm
+  )).
 
+(* HVZK game as found in KLS.
+ * Can be generalized for leakage.
+ * Commitment-recoverable optimization included *)
+module HVZK_Games = {
+  (* Adversary gets HVZK transcript *)
+  proc game0(sk: sk_t) = {
+    var w, c, z, st;
+    (w, st) <$ commit sk;
+    c <$ dC;
+    z <- respond sk c st;
+    return (c, z);
+  }
+
+  (* Another (equivalent) way to write game0.
+   * Mostly just inlining functions and reordering instructions. *)
+  proc game1(sk: sk_t) = {
+    var a, s1, s2, w, w', y, c, z, t, t0;
+    var result;
+
+    (a, s1, s2) <- sk;
+    t <- a *^ s1 + s2;
+    t0 <- lowbits t;
+    c <$ dC;
+    y <$ dy;
+    w <- a *^ y;
+    z <- y + c * s1;
+    if(check_znorm z) {
+      w' <- w - c * s2;
+      result <- trans_second_half z c w' t0;
+    } else {
+      result <- failed_znorm;
+    }
+    return result;
+  }
+
+  (* Compute w' using only public information *)
+  proc game2(sk: sk_t) = {
+    var a, s1, s2, w, w', y, c, z, t, t0;
+    var result;
+
+    (a, s1, s2) <- sk;
+    t <- a *^ s1 + s2;
+    t0 <- lowbits t;
+    c <$ dC;
+    y <$ dy;
+    w <- a *^ y;
+    z <- y + c * s1;
+    w' <- a *^ z + c * t;
+    if(check_znorm z) {
+      w' <- w - c * s2;
+      result <- trans_second_half z c w' t0;
+    } else {
+      result <- failed_znorm;
+    }
+    return result;
+  }
+
+  (* Rewrite relevant parts of the above as op *)
+  proc game3(sk: sk_t) = {
+    var a, s1, s2, oz, z, c, t, t0, w';
+    var result;
+    (a, s1, s2) <- sk;
+    t <- a *^ s1 + s2;
+    t0 <- lowbits t;
+    c <$ dC;
+    oz <$ transz c s1;
+    if(oz = None) {
+      result <- failed_znorm;
+    } else {
+      z <- oget oz;
+      w' <- a *^ z + c * t;
+      result <- trans_second_half z c w' t0;
+    }
+    return result;
+  }
+
+  (* Get (a, t) from public key *)
+  proc game4(sk: sk_t, pk: pk_t) = {
+    var a, a', s1, s2, oz, z, c, t, t0, w';
+    var result;
+    (a', s1, s2) <- sk;
+    (a, t) <- pk;
+    t0 <- lowbits t;
+    c <$ dC;
+    oz <$ transz c s1;
+    if(oz = None) {
+      result <- failed_znorm;
+    } else {
+      z <- oget oz;
+      w' <- a *^ z + c * t;
+      result <- trans_second_half z c w' t0;
+    }
+    return result;
+  }
+
+  (* Now simulate using only public information *)
+  proc game5(pk: pk_t) = {
+    var a, t, t0, w', c, oz, z;
+    var result;
+    (a, t) <- pk;
+    t0 <- lowbits t;
+    c <$ dC;
+    oz <$ dsimoz;
+    if(oz = None) {
+      result <- failed_znorm;
+    } else {
+      z <- oget oz;
+      w' <- a *^ z + c * t;
+      result <- trans_second_half z c w' t0;
+    }
+    return result;
+  }
+}.
+
+(*
 lemma zero_knowledge :
   forall sig pk sk, (pk, sk) \in keygen =>
     mu1 (trans sk) (Some sig, [true; true; true]) = mu1 (simu pk) (Some sig, [true; true; true]).
@@ -436,3 +548,4 @@ lemma signleak_perfect_simu :
 proof.
 admitted.
 
+*)
