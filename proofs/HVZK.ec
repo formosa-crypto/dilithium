@@ -122,28 +122,6 @@ op respond (sk : sk_t) (c : challenge_t) (st : st_t) : trans_leak_t =
   else
     failed_znorm.
 
-op trans (sk : sk_t) : trans_leak_t distr =
-  dlet (commit sk) (fun W =>
-    let (w1, st) = W in
-    dmap dC (fun c =>
-      respond sk c st
-    )
-  ).
-
-op simu (pk : pk_t) : trans_leak_t distr =
-  let (a, t) = pk in
-  let t0 = lowbits t in
-  dlet dC (fun c =>
-  dlet (dbiased line12_magicnumber) (fun b =>
-    if b then
-      dmap dsimz (fun z =>
-        let w' = a *^ z - c * t in
-        trans_second_half z c w' t0
-      )
-    else
-      dunit failed_znorm
-  )).
-
 (* HVZK game as found in KLS, generalized for leakage. *)
 module HVZK_Games = {
   (* Adversary gets HVZK transcript *)
