@@ -46,22 +46,24 @@ lemma pk_decomp : forall a' t' a s1 s2,
   ((a', t'), (a, s1, s2)) \in keygen =>
   a' = a /\ t' = a *^ s1 + s2.
 proof.
-move => a' t' a s1 s2 valid_keys.
-(* TODO this should be very provable *)
-admitted.
+(* So much for abusing smt... *)
+smt(supp_dlet supp_dunit).
+qed.
 
 op line12_magicnumber : real = (size (to_seq check_znorm))%r / (size (to_seq (support dy)))%r.
 op [lossless uniform] dsimz : vector distr.
 
-axiom dsimz_supp :
-  forall z, z \in dsimz <=> check_znorm z.
+axiom dsimz_supp : support dsimz = check_znorm.
 
 lemma dsimz1E :
   forall z, check_znorm z =>
     mu1 dsimz z = inv (size (to_seq check_znorm))%r.
 proof.
-(* TODO provable from dsimz_supp and dsimz_ll *)
-admitted.
+  move => z ?.
+  rewrite mu1_uni_ll ?dsimz_uni ?dsimz_ll; smt(dsimz_supp).
+qed.
+
+op dsimoz = dlet (dbiased line12_magicnumber) (fun b => if b then dmap dsimz Some else dunit None).
 
 axiom masking_range :
   forall c s1 z0, c \in dC => s1 \in ds1 => check_znorm z0 =>
@@ -97,9 +99,224 @@ op transz c s1 =
     if check_znorm z then Some z else None
   ).
 
-op dsimoz = dlet (dbiased line12_magicnumber) (fun b => if b then dmap dsimz Some else dunit None).
+op commit (sk : sk_t) : (commit_t * st_t) distr =
+  let (a, s1, s2) = sk in
+    dmap dy (fun y =>
+      let w = a *^ y in
+      (highbits w, (y, w))).
 
-(* print mu1_uni_ll. *)
+op respond (sk : sk_t) (c : challenge_t) (st : st_t) : trans_leak_t =
+  let (a, s1, s2) = sk in
+  let t0 = lowbits (a *^ s1 + s2) in
+  let (y, w) = st in
+  let z = y + c * s1 in
+  let w' = w - c * s2 in
+  if check_znorm z then
+    trans_second_half z c w' t0
+  else
+    failed_znorm.
+
+op trans (sk : sk_t) : trans_leak_t distr =
+  dlet (commit sk) (fun W =>
+    let (w1, st) = W in
+    dmap dC (fun c =>
+      respond sk c st
+    )
+  ).
+
+op simu (pk : pk_t) : trans_leak_t distr =
+  let (a, t) = pk in
+  let t0 = lowbits t in
+  dlet dC (fun c =>
+  dlet (dbiased line12_magicnumber) (fun b =>
+    if b then
+      dmap dsimz (fun z =>
+        let w' = a *^ z - c * t in
+        trans_second_half z c w' t0
+      )
+    else
+      dunit failed_znorm
+  )).
+
+(* HVZK game as found in KLS.
+ * Can be generalized for leakage.
+ * Commitment-recoverable optimization included *)
+module HVZK_Games = {
+  (* Adversary gets HVZK transcript *)
+  proc game0(sk: sk_t) : trans_leak_t = {
+    var w1, c, z, st;
+    (w1, st) <$ commit sk;
+    c <$ dC;
+    z <- respond sk c st;
+    return z;
+  }
+
+  (* Another (equivalent) way to write game0.
+   * Mostly just inlining functions and reordering instructions. *)
+  proc game1(sk: sk_t) : trans_leak_t = {
+    var a, s1, s2, w, w', y, c, z, t, t0;
+    var result;
+
+    (a, s1, s2) <- sk;
+    t <- a *^ s1 + s2;
+    t0 <- lowbits t;
+    c <$ dC;
+    y <$ dy;
+    w <- a *^ y;
+    z <- y + c * s1;
+    if(check_znorm z) {
+      w' <- w - c * s2;
+      result <- trans_second_half z c w' t0;
+    } else {
+      result <- failed_znorm;
+    }
+    return result;
+  }
+
+  (* Compute w' using only public information *)
+  proc game2(sk: sk_t) = {
+    var a, s1, s2, w, w', y, c, z, t, t0;
+    var result;
+
+    (a, s1, s2) <- sk;
+    t <- a *^ s1 + s2;
+    t0 <- lowbits t;
+    c <$ dC;
+    y <$ dy;
+    w <- a *^ y;
+    z <- y + c * s1;
+    w' <- a *^ z + c * t;
+    if(check_znorm z) {
+      w' <- w - c * s2;
+      result <- trans_second_half z c w' t0;
+    } else {
+      result <- failed_znorm;
+    }
+    return result;
+  }
+
+  (* Rewrite relevant parts of the above as op *)
+  proc game3(sk: sk_t) = {
+    var a, s1, s2, oz, z, c, t, t0, w';
+    var result;
+    (a, s1, s2) <- sk;
+    t <- a *^ s1 + s2;
+    t0 <- lowbits t;
+    c <$ dC;
+    oz <$ transz c s1;
+    if(oz = None) {
+      result <- failed_znorm;
+    } else {
+      z <- oget oz;
+      w' <- a *^ z + c * t;
+      result <- trans_second_half z c w' t0;
+    }
+    return result;
+  }
+
+  (* Get (a, t) from public key *)
+  proc game4(sk: sk_t, pk: pk_t) = {
+    var a, a', s1, s2, oz, z, c, t, t0, w';
+    var result;
+    (a', s1, s2) <- sk;
+    (a, t) <- pk;
+    t0 <- lowbits t;
+    c <$ dC;
+    oz <$ transz c s1;
+    if(oz = None) {
+      result <- failed_znorm;
+    } else {
+      z <- oget oz;
+      w' <- a *^ z + c * t;
+      result <- trans_second_half z c w' t0;
+    }
+    return result;
+  }
+
+  (* Now simulate using only public information *)
+  proc game5(pk: pk_t) = {
+    var a, t, t0, w', c, oz, z;
+    var result;
+    (a, t) <- pk;
+    t0 <- lowbits t;
+    c <$ dC;
+    oz <$ dsimoz;
+    if(oz = None) {
+      result <- failed_znorm;
+    } else {
+      z <- oget oz;
+      w' <- a *^ z + c * t;
+      result <- trans_second_half z c w' t0;
+    }
+    return result;
+  }
+}.
+
+(* Crutch for `rnd*` tactic reordering variables *)
+op swap_yw (wy : vector * vector) = let (w, y) = wy in (y, w).
+lemma swap_yw_bij : bijective swap_yw by smt().
+
+(* More crutch; dmap stuff...
+ * Is this really not in the standard library?
+ *)
+lemma dmap_surj ['a 'b 'c] (f: 'a -> 'b) (g: 'b -> 'c) da b :
+  bijective g => mu1 (dmap da f) b = mu1 (dmap da (g \o f)) (g b).
+proof.
+rewrite ?dmap1E ?/pred1 ?/(\o) => /#.
+qed.
+
+lemma HVZK_hop1 :
+  equiv[HVZK_Games.game0 ~ HVZK_Games.game1 : ={sk} ==> ={res}].
+proof.
+proc.
+swap{1} 1 1.
+swap{2} [1..3] 1.
+seq 1 1: (={sk, c}).
+  rnd => //.
+seq 0 1: (#pre /\ sk{2} = (a{2}, s1{2}, s2{2})).
+  auto => /#.
+seq 0 2: (#pre /\ t{2} = a{2} *^ s1{2} + s2{2} /\ t0{2} = lowbits t{2}).
+  auto => /#.
+seq 1 2: (#pre /\ st{1} = (y{2}, w{2})).
+  rnd swap_yw swap_yw: *0 *0; auto => /=.
+  move => &1 &2 H. (* TODO intro pattern? *)
+  case H => H H'; case H => H H''; case H => H H'''; subst.
+  case H' => H H'; subst.
+  split; 1: smt().
+  move => _.
+  split.
+  move => wy _.
+  rewrite /commit /swap_yw /=.
+  rewrite dmap_comp /=.
+  rewrite (dmap_surj _ swap_yw) ?swap_yw_bij.
+  congr.
+    congr; smt().
+    smt().
+  move => _ yw.
+  case yw => y w.
+  move => yw_valid.
+  rewrite supp_dmap in yw_valid.
+  (* There's gotta be a better way about these next 3 lines *)
+  case yw_valid => w1yw.
+  case w1yw => w1 yw.
+  case yw => y' w'.
+  move => H /=; case H.
+  move => H H'; case H' => ? ?; subst.
+  rewrite /commit /= supp_dmap /= in H.
+  smt(supp_dmap).
+auto => /#.
+qed.
+
+lemma HVZK_hop3 :
+  equiv[HVZK_Games.game2 ~ HVZK_Games.game3 : ={sk} ==> ={res}].
+proof.
+admitted.
+
+lemma HVZK_hop4 :
+  equiv[HVZK_Games.game3 ~ HVZK_Games.game4 : ={sk} /\ (pk{2}, sk{2}) \in keygen ==> ={res}].
+proof.
+admitted.
+
 lemma line12_magic_some :
   forall c s1 z0, c \in dC => s1 \in ds1 => check_znorm z0 =>
     mu1 (transz c s1) (Some z0) = 1%r / (size (to_seq (support dy)))%r.
@@ -220,158 +437,11 @@ case z.
     smt(supp_dmap supp_dunit dsimz_supp).
 qed.
 
-op commit (sk : sk_t) : (commit_t * st_t) distr =
-  let (a, s1, s2) = sk in
-    dmap dy (fun y =>
-      let w = a *^ y in
-      (highbits w, (y, w))).
+lemma HVZK_hop5 :
+  equiv[HVZK_Games.game4 ~ HVZK_Games.game5 : (pk{1}, sk{1}) \in keygen /\ ={pk} ==> ={res}].
+proof.
+admitted.
 
-op respond (sk : sk_t) (c : challenge_t) (st : st_t) : trans_leak_t =
-  let (a, s1, s2) = sk in
-  let t0 = lowbits (a *^ s1 + s2) in
-  let (y, w) = st in
-  let z = y + c * s1 in
-  let w' = w - c * s2 in
-  if check_znorm z then
-    trans_second_half z c w' t0
-  else
-    failed_znorm.
-
-op trans (sk : sk_t) : trans_leak_t distr =
-  dlet (commit sk) (fun W =>
-    let (w1, st) = W in
-    dmap dC (fun c =>
-      respond sk c st
-    )
-  ).
-
-op simu (pk : pk_t) : trans_leak_t distr =
-  let (a, t) = pk in
-  let t0 = lowbits t in
-  dlet dC (fun c =>
-  dlet (dbiased line12_magicnumber) (fun b =>
-    if b then
-      dmap dsimz (fun z =>
-        let w' = a *^ z - c * t in
-        trans_second_half z c w' t0
-      )
-    else
-      dunit failed_znorm
-  )).
-
-(* HVZK game as found in KLS.
- * Can be generalized for leakage.
- * Commitment-recoverable optimization included *)
-module HVZK_Games = {
-  (* Adversary gets HVZK transcript *)
-  proc game0(sk: sk_t) = {
-    var w, c, z, st;
-    (w, st) <$ commit sk;
-    c <$ dC;
-    z <- respond sk c st;
-    return (c, z);
-  }
-
-  (* Another (equivalent) way to write game0.
-   * Mostly just inlining functions and reordering instructions. *)
-  proc game1(sk: sk_t) = {
-    var a, s1, s2, w, w', y, c, z, t, t0;
-    var result;
-
-    (a, s1, s2) <- sk;
-    t <- a *^ s1 + s2;
-    t0 <- lowbits t;
-    c <$ dC;
-    y <$ dy;
-    w <- a *^ y;
-    z <- y + c * s1;
-    if(check_znorm z) {
-      w' <- w - c * s2;
-      result <- trans_second_half z c w' t0;
-    } else {
-      result <- failed_znorm;
-    }
-    return result;
-  }
-
-  (* Compute w' using only public information *)
-  proc game2(sk: sk_t) = {
-    var a, s1, s2, w, w', y, c, z, t, t0;
-    var result;
-
-    (a, s1, s2) <- sk;
-    t <- a *^ s1 + s2;
-    t0 <- lowbits t;
-    c <$ dC;
-    y <$ dy;
-    w <- a *^ y;
-    z <- y + c * s1;
-    w' <- a *^ z + c * t;
-    if(check_znorm z) {
-      w' <- w - c * s2;
-      result <- trans_second_half z c w' t0;
-    } else {
-      result <- failed_znorm;
-    }
-    return result;
-  }
-
-  (* Rewrite relevant parts of the above as op *)
-  proc game3(sk: sk_t) = {
-    var a, s1, s2, oz, z, c, t, t0, w';
-    var result;
-    (a, s1, s2) <- sk;
-    t <- a *^ s1 + s2;
-    t0 <- lowbits t;
-    c <$ dC;
-    oz <$ transz c s1;
-    if(oz = None) {
-      result <- failed_znorm;
-    } else {
-      z <- oget oz;
-      w' <- a *^ z + c * t;
-      result <- trans_second_half z c w' t0;
-    }
-    return result;
-  }
-
-  (* Get (a, t) from public key *)
-  proc game4(sk: sk_t, pk: pk_t) = {
-    var a, a', s1, s2, oz, z, c, t, t0, w';
-    var result;
-    (a', s1, s2) <- sk;
-    (a, t) <- pk;
-    t0 <- lowbits t;
-    c <$ dC;
-    oz <$ transz c s1;
-    if(oz = None) {
-      result <- failed_znorm;
-    } else {
-      z <- oget oz;
-      w' <- a *^ z + c * t;
-      result <- trans_second_half z c w' t0;
-    }
-    return result;
-  }
-
-  (* Now simulate using only public information *)
-  proc game5(pk: pk_t) = {
-    var a, t, t0, w', c, oz, z;
-    var result;
-    (a, t) <- pk;
-    t0 <- lowbits t;
-    c <$ dC;
-    oz <$ dsimoz;
-    if(oz = None) {
-      result <- failed_znorm;
-    } else {
-      z <- oget oz;
-      w' <- a *^ z + c * t;
-      result <- trans_second_half z c w' t0;
-    }
-    return result;
-  }
-}.
 
 (*
 lemma zero_knowledge :
