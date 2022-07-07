@@ -50,6 +50,13 @@ proof.
 smt(supp_dlet supp_dunit).
 qed.
 
+lemma keys_supp : forall a' t' a s1 s2,
+  ((a', t'), (a, s1, s2)) \in keygen =>
+  a \in dA /\ s1 \in ds1 /\ s2 \in ds2.
+proof.
+smt(supp_dlet supp_dunit).
+qed.
+
 op line12_magicnumber : real = (size (to_seq check_znorm))%r / (size (to_seq (support dy)))%r.
 op [lossless uniform] dsimz : vector distr.
 
@@ -185,9 +192,8 @@ module HVZK_Games = {
     y <$ dy;
     w <- a *^ y;
     z <- y + c * s1;
-    w' <- a *^ z + c * t;
     if(check_znorm z) {
-      w' <- w - c * s2;
+      w' <- a *^ z + c * t;
       result <- trans_second_half z c w' t0;
     } else {
       result <- failed_znorm;
@@ -306,6 +312,11 @@ seq 1 2: (#pre /\ st{1} = (y{2}, w{2})).
   smt(supp_dmap).
 auto => /#.
 qed.
+
+lemma HVZK_hop2 :
+  equiv[HVZK_Games.game2 ~ HVZK_Games.game3 : ={sk} ==> ={res}].
+proof.
+admitted.
 
 lemma HVZK_hop3 :
   equiv[HVZK_Games.game2 ~ HVZK_Games.game3 : ={sk} ==> ={res}].
@@ -440,182 +451,49 @@ qed.
 lemma HVZK_hop5 :
   equiv[HVZK_Games.game4 ~ HVZK_Games.game5 : (pk{1}, sk{1}) \in keygen /\ ={pk} ==> ={res}].
 proof.
-admitted.
+proc.
+seq 4 3 : (#pre /\ ={a, t, t0, c} /\ a{1} = a'{1} /\ sk{1} = (a'{1}, s1{1}, s2{1}) /\ pk{1} = (a{1}, t{1}) /\ c{1} \in dC).
+  auto; smt(pk_decomp).
+seq 1 1 : (#pre /\ ={oz}).
+  rnd; auto => //= &1 &2.
 
+  (* The following "housekeeping" is just annoying... *)
+  move => H; case H => H H'.
+  case H => H H''; subst.
+  case H' => H' H''; subst.
+  case H' => H' H'''; subst.
+  case H''' => H' H'''; subst.
+  case H''' => H' H'''; subst.
+  case H'' => H' H''; subst.
+  case H'' => H' H''; subst.
+  case H'' => H' c_valid; subst.
+  have a_supp : a'{1} \in dA by smt(keys_supp).
+  have s1_supp : s1{1} \in ds1 by smt(keys_supp).
+  have s2_supp : s2{1} \in ds2 by smt(keys_supp).
+  apply pk_decomp in H.
+  case H => H H'; subst.
+  clear H.
 
-(*
-lemma zero_knowledge :
-  forall sig pk sk, (pk, sk) \in keygen =>
-    mu1 (trans sk) (Some sig, [true; true; true]) = mu1 (simu pk) (Some sig, [true; true; true]).
-proof.
-admitted.
-
-lemma trans_leak_supp :
-  forall sk leak,
-  leak <> [false] =>
-  leak <> [true; false] =>
-  leak <> [true; true; false] =>
-    (None, leak) \notin trans sk.
-proof.
-move => sk L notF notTF notTTF /=.
-rewrite /support => /=.
-suff: mu1 (trans sk) (None, L) = 0%r.
-  move => H; rewrite H; by trivial.
-rewrite /trans.
-rewrite dlet1E; apply sum0_eq => sig /=.
-rewrite RField.mulf_eq0; right => /=.
-case: sig => /= st.
-rewrite dlet1E; apply sum0_eq => /= c.
-rewrite RField.mulf_eq0; right => /=.
-rewrite /(\o) dunit1E => /=.
-suff:
-  (let (resp, leak) = respond sk c st in
-   (if resp = None then None else Some (c, oget resp), leak)) <>
-   (None, L).
-  move => H; rewrite H; trivial.
-rewrite /respond => /=.
-case sk => /= a s1 s2.
-case st => /= y w.
-case (check_znorm (y + c * s1)).
-+ move => _ /=.
-  case (check_lowbits (y + c * s1)) => /=.
-  - move => _ /=.
-    case (checkhint (makehint
-           ((w - c * s2) + c * lowbits (a *^ s1 + s2)))).
-    * move => _ => /=; trivial.
-    * move => _; rewrite eq_sym; assumption.
-  - move => _; rewrite eq_sym; assumption.
-+ move => _; rewrite eq_sym; assumption.
+  (* Now comes the actual proof *)
+  split.
+  rewrite line12_magic //=.
+  move => H oz ?.
+  split; 1: smt(line12_magic).
+  move => _.
+  split.
+  split; 2: trivial.
+    (* keygen support... *)
+    rewrite /keygen.
+    apply supp_dlet => /=.
+    exists a'{1}.
+    split; 1: assumption.
+    apply supp_dlet => /=.
+    exists s1{1}.
+    split; 1: assumption.
+    apply supp_dlet => /=.
+    exists s2{1}.
+    split; 1: assumption.
+    by apply supp_dunit.
+  smt().
+by auto.
 qed.
-
-lemma simu_leak_supp :
-  forall pk sk leak, (pk, sk) \in keygen =>
-  leak <> [false] =>
-  leak <> [true; false] =>
-  leak <> [true; true; false] =>
-    (None, leak) \notin simu pk.
-proof.
-admitted.
-
-op leakage_simulable (leak : leak_t) =
-  forall pk sk, (pk, sk) \in keygen =>
-    mu1 (trans sk) (None, leak) = mu1 (simu pk) (None, leak).
-
-lemma valid_keys_decomp :
-  forall pk sk, (pk, sk) \in keygen => exists a s1 s2, s1 \in ds1 /\ s2 \in ds2 /\ sk = (a, s1, s2) /\ pk = (a, a *^ s1 + s2).
-proof.
-  move => pk sk.
-  case sk => a s1 s2.
-  case pk => a' t.
-  move => valid_keys.
-  exists a s1 s2.
-  
-admitted.
-
-lemma trans_F_closedform :
-  forall a s1 s2,
-    mu1 (trans (a, s1, s2)) (None, [false]) =
-    mu1 (dlet dy (fun y =>
-      dmap dC (fun c =>
-        let z = y + c * s1 in
-        if check_znorm z then Some z else None
-      )
-    )) None.
-proof.
-  rewrite /trans => a s1 s2.
-  rewrite /commit => /=.
-  rewrite dlet_dmap => /=.
-  (* questionable stuff below *)
-
-  (* How to rewrite more than 1 times again? *)
-  rewrite dlet1E dlet1E => /=.
-  apply eq_sum => y /=.
-  congr.
-  rewrite dmap1E dmap1E => /=.
-  congr => /=.
-  apply fun_ext => c /=.
-  rewrite /(\o) /(\o) => /=.
-  rewrite /respond => /=.
-  case (check_znorm (y + c * s1)) => /=.
-  + case (check_lowbits (y + c * s1)) => /=.
-    - case (checkhint
-           (makehint
-              ((a *^ y - c * s2) +
-               c * lowbits (a *^ s1 + s2)))) => /=;
-      rewrite /pred1 /pred1 /=; by trivial.
-    - rewrite /pred1 /pred1 /=; by trivial.
-  + by trivial.
-qed.
-
-lemma simu_F_closedform :
-  forall a t,
-    mu1 (simu (a, t)) (None, [false]) =
-    mu1 (dlet (dbiased line12_magicnumber) (fun b => if b then dmap dsimz Some else dunit None)) None.
-proof.
-  rewrite /simu => a t /=.
-  rewrite dlet1E dlet1E => /=.
-  congr => /=.
-  apply fun_ext => b.
-  congr.
-  case b.
-  - move => bT /=.
-    rewrite dlet1E sum0_eq => /=.
-    + move => z.
-      case (check_lowbits z) => /= _.
-      * rewrite RField.mulf_eq0; right => /=.
-        rewrite dlet1E; apply sum0_eq => /= y.
-        rewrite RField.mulf_eq0; right => /=.
-        rewrite dlet1E; apply sum0_eq => /= c.
-        rewrite RField.mulf_eq0; right => /=.
-        case (checkhint
-          (makehint
-           ((a *^ z - c * t) + c * lowbits t))) => /= _;
-        apply dunit1E.
-      * rewrite RField.mulf_eq0; right => /=.
-        apply dunit1E.
-    + rewrite dmap1E.
-      rewrite /(\o) /pred1 mu0; done.
-  - move => bF.
-    rewrite dunit1xx dunit1xx; done.
-qed.
-
-lemma leak_simulable_F :
-  leakage_simulable [false].
-proof.
-  rewrite /leakage_simulable.
-  move => pk sk valid_keys.
-  apply valid_keys_decomp in valid_keys; case valid_keys => a s1 s2 keys_tuples.
-  case keys_tuples => s1_supp keys_tuples.
-  case keys_tuples => s2_supp keys_tuples.
-  case keys_tuples => sk_val pk_val; subst.
-  rewrite /trans => /=.
-  rewrite dlet1E => /=.
-admitted.
-
-lemma leak_simulable_TF :
-  leakage_simulable [true; false].
-proof.
-admitted.
-
-lemma leak_simulable_TTF :
-  leakage_simulable [true; true; false].
-proof.
-admitted.
-
-lemma leak_simulable :
-  forall leak pk sk, (pk, sk) \in keygen =>
-    mu1 (trans sk) (None, leak) = mu1 (simu pk) (None, leak).
-proof.
-  move => leak pk sk keys_valid /=.
-  rewrite /trans /simu /=.
-  search dlet.
-
-admitted.
-
-lemma signleak_perfect_simu :
-  forall sig leak pk sk, (pk, sk) \in keygen =>
-    mu1 (trans sk) (sig, leak) = mu1 (simu pk) (sig, leak).
-proof.
-admitted.
-
-*)
