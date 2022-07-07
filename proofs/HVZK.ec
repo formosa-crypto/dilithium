@@ -327,8 +327,7 @@ seq 1 2: (#pre /\ st{1} = (y{2}, w{2})).
   rewrite supp_dmap in yw_valid.
   (* There's gotta be a better way about these next 3 lines *)
   case yw_valid => w1yw.
-  case w1yw => w1 yw.
-  case yw => y' w'.
+  case w1yw => w1 yw; case yw => y' w'.
   move => H /=; case H.
   move => H H'; case H' => ? ?; subst.
   rewrite /commit /= supp_dmap /= in H.
@@ -337,12 +336,17 @@ auto => /#.
 qed.
 
 lemma HVZK_hop2 :
-  equiv[HVZK_Games.game2 ~ HVZK_Games.game3 : ={sk} ==> ={res}].
+  equiv[HVZK_Games.game1 ~ HVZK_Games.game2 : ={sk} ==> ={res}].
+proof.
+admitted.
+
+lemma HVZK_hop2b :
+  equiv[HVZK_Games.game2 ~ HVZK_Games.game2b : ={sk} ==> ={res}].
 proof.
 admitted.
 
 lemma HVZK_hop3 :
-  equiv[HVZK_Games.game2 ~ HVZK_Games.game3 : ={sk} ==> ={res}].
+  equiv[HVZK_Games.game2b ~ HVZK_Games.game3 : ={sk} ==> ={res}].
 proof.
 admitted.
 
@@ -480,22 +484,12 @@ seq 4 3 : (#pre /\ ={a, t, t0, c} /\ a{1} = a'{1} /\ sk{1} = (a'{1}, s1{1}, s2{1
 seq 1 1 : (#pre /\ ={oz}).
   rnd; auto => //= &1 &2.
 
-  (* The following "housekeeping" is just annoying... *)
-  move => H; case H => H H'.
-  case H => H H''; subst.
-  case H' => H' H''; subst.
-  case H' => H' H'''; subst.
-  case H''' => H' H'''; subst.
-  case H''' => H' H'''; subst.
-  case H'' => H' H''; subst.
-  case H'' => H' H''; subst.
-  case H'' => H' c_valid; subst.
-  have a_supp : a'{1} \in dA by smt(keys_supp).
+  move => [#] valid_keys ? ? ? ? ? ? ? ? c_valid; subst.
+  have a_supp : a{2} \in dA by smt(keys_supp).
   have s1_supp : s1{1} \in ds1 by smt(keys_supp).
   have s2_supp : s2{1} \in ds2 by smt(keys_supp).
-  apply pk_decomp in H.
-  case H => H H'; subst.
-  clear H.
+  apply pk_decomp in valid_keys.
+  case valid_keys => [#] ? ?; subst.
 
   (* Now comes the actual proof *)
   split.
@@ -508,7 +502,7 @@ seq 1 1 : (#pre /\ ={oz}).
     (* keygen support... *)
     rewrite /keygen.
     apply supp_dlet => /=.
-    exists a'{1}.
+    exists a{2}.
     split; 1: assumption.
     apply supp_dlet => /=.
     exists s1{1}.
@@ -519,4 +513,32 @@ seq 1 1 : (#pre /\ ={oz}).
     by apply supp_dunit.
   smt().
 auto => /#.
+qed.
+
+lemma HVZK_main :
+  equiv[HVZK_Games.game0 ~ HVZK_Games.game5 : (pk{2}, sk{1}) \in keygen ==> ={res}].
+proof.
+transitivity HVZK_Games.game1 (={sk} ==> ={res}) ((pk{2}, sk{1}) \in keygen ==> ={res}).
+  smt().
+  smt().
+  apply HVZK_hop1.
+transitivity HVZK_Games.game2 (={sk} ==> ={res}) ((pk{2}, sk{1}) \in keygen ==> ={res}).
+  smt().
+  smt().
+  apply HVZK_hop2.
+transitivity HVZK_Games.game2b (={sk} ==> ={res}) ((pk{2}, sk{1}) \in keygen ==> ={res}).
+  smt().
+  smt().
+  apply HVZK_hop2b.
+transitivity HVZK_Games.game3 (={sk} ==> ={res}) ((pk{2}, sk{1}) \in keygen ==> ={res}).
+  smt().
+  smt().
+  apply HVZK_hop3.
+transitivity HVZK_Games.game4 (={sk} /\ (pk{2}, sk{2}) \in keygen ==> ={res}) ((pk{1}, sk{1}) \in keygen /\ ={pk} ==> ={res}).
+  move => &1 &2 ?.
+  exists (arg{1}, arg{2}).
+  smt().
+  smt().
+  apply HVZK_hop4.
+apply HVZK_hop5.
 qed.
