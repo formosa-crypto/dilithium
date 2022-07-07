@@ -193,7 +193,7 @@ module HVZK_Games = {
     w <- a *^ y;
     z <- y + c * s1;
     if(check_znorm z) {
-      w' <- a *^ z + c * t;
+      w' <- a *^ z - c * t;
       result <- trans_second_half z c w' t0;
     } else {
       result <- failed_znorm;
@@ -216,7 +216,7 @@ module HVZK_Games = {
     oz <- if check_znorm z then Some z else None;
     if(oz <> None) {
       z <- oget oz;
-      w' <- a *^ z + c * t;
+      w' <- a *^ z - c * t;
       result <- trans_second_half z c w' t0;
     } else {
       result <- failed_znorm;
@@ -235,7 +235,7 @@ module HVZK_Games = {
     oz <$ transz c s1;
     if(oz <> None) {
       z <- oget oz;
-      w' <- a *^ z + c * t;
+      w' <- a *^ z - c * t;
       result <- trans_second_half z c w' t0;
     } else {
       result <- failed_znorm;
@@ -254,7 +254,7 @@ module HVZK_Games = {
     oz <$ transz c s1;
     if(oz <> None) {
       z <- oget oz;
-      w' <- a *^ z + c * t;
+      w' <- a *^ z - c * t;
       result <- trans_second_half z c w' t0;
     } else {
       result <- failed_znorm;
@@ -272,7 +272,7 @@ module HVZK_Games = {
     oz <$ dsimoz;
     if(oz <> None) {
       z <- oget oz;
-      w' <- a *^ z + c * t;
+      w' <- a *^ z - c * t;
       result <- trans_second_half z c w' t0;
     } else {
       result <- failed_znorm;
@@ -335,25 +335,77 @@ seq 1 2: (#pre /\ st{1} = (y{2}, w{2})).
 auto => /#.
 qed.
 
+(* I'd rather axiomatize this than think about ring axioms... *)
+axiom some_vector_property :
+  forall (a : matrix) (c : scalar) (y s1 s2 : vector),
+  a *^ y - c * s2 = a *^ (y + c * s1) - c * (a *^ s1 + s2).
+
 lemma HVZK_hop2 :
   equiv[HVZK_Games.game1 ~ HVZK_Games.game2 : ={sk} ==> ={res}].
 proof.
-admitted.
+proc.
+seq 7 7: (={a, z, c, t, t0, w, s2} /\
+  w{1} - c{1} * s2{1} = a{2} *^ z{2} - c{2} * t{2}).
+auto => />.
+move => &2 c c_valid y y_valid.
+case (sk{2}) => a s1 s2 /=.
+apply some_vector_property.
+auto => /#.
+qed.
 
 lemma HVZK_hop2b :
   equiv[HVZK_Games.game2 ~ HVZK_Games.game2b : ={sk} ==> ={res}].
 proof.
-admitted.
+proc.
+seq 7 8: (={a, z, c, t, t0, w, s2} /\
+  (oz{2} = if check_znorm z{2} then Some z{2} else None) /\
+  check_znorm z{1} = (oz{2} <> None)).
+auto => /#.
+auto => /#.
+qed.
 
 lemma HVZK_hop3 :
-  equiv[HVZK_Games.game2b ~ HVZK_Games.game3 : ={sk} ==> ={res}].
+  equiv[HVZK_Games.game2b ~ HVZK_Games.game3 :
+    ={sk} /\
+    exists pk, (pk, sk{1}) \in keygen ==> ={res}].
 proof.
-admitted.
+proc.
+seq 4 4: (={sk, a, s1, s2, t, t0, c} /\
+    a{1} \in dA /\ s1{1} \in ds1 /\ s2{1} \in ds2).
+  auto => />.
+  move => &2 pk keys_valid c c_valid.
+  smt(keys_supp).
+seq 4 1: (#pre /\ ={oz}).
+  rnd: *0 *0.
+  auto => />.
+  move => &2 a_valid s1_valid s2_valid.
+  split.
+  - move => oz oz_valid.
+    rewrite /transz.
+    rewrite dmap_comp.
+    congr.
+    congr.
+    rewrite /(\o).
+    apply fun_ext => /#.
+  - move => _ oz oz_valid.
+    rewrite supp_dmap in oz_valid.
+    case oz_valid.
+    move => y /= [#] y_valid ?; subst => /=.
+    rewrite dmap_id_eq_in => //=.
+    rewrite /transz.
+    rewrite supp_dmap /=.
+    exists y => /#.
+auto => /#.
+qed.
 
 lemma HVZK_hop4 :
   equiv[HVZK_Games.game3 ~ HVZK_Games.game4 : ={sk} /\ (pk{2}, sk{2}) \in keygen ==> ={res}].
 proof.
-admitted.
+proc.
+seq 2 2: (#pre /\ ={a, s1, s2, t} /\ a{2} = a'{2}).
+  auto => />; smt(pk_decomp).
+auto => /#.
+qed.
 
 lemma line12_magic_some :
   forall c s1 z0, c \in dC => s1 \in ds1 => check_znorm z0 =>
@@ -433,8 +485,7 @@ qed.
 lemma sum_over_bool (f : bool -> real):
   sum (fun b => f b) = f true + f false.
 proof.
-rewrite (sumE_fin _ [true; false]) //.
-move => -[|] //.
+rewrite (sumE_fin _ [true; false]) /#.
 qed.
 
 axiom mask_size :
@@ -530,11 +581,13 @@ transitivity HVZK_Games.game2b (={sk} ==> ={res}) ((pk{2}, sk{1}) \in keygen ==>
   smt().
   smt().
   apply HVZK_hop2b.
-transitivity HVZK_Games.game3 (={sk} ==> ={res}) ((pk{2}, sk{1}) \in keygen ==> ={res}).
+transitivity HVZK_Games.game3 (={sk} /\
+    exists pk, (pk, arg{1}) \in keygen ==> ={res}) ((pk{2}, sk{1}) \in keygen ==> ={res}).
   smt().
   smt().
   apply HVZK_hop3.
-transitivity HVZK_Games.game4 (={sk} /\ (pk{2}, sk{2}) \in keygen ==> ={res}) ((pk{1}, sk{1}) \in keygen /\ ={pk} ==> ={res}).
+transitivity HVZK_Games.game4 (={sk} /\
+    (pk{2}, sk{2}) \in keygen ==> ={res}) ((pk{1}, sk{1}) \in keygen /\ ={pk} ==> ={res}).
   move => &1 &2 ?.
   exists (arg{1}, arg{2}).
   smt().
