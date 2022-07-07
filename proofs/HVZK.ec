@@ -144,9 +144,7 @@ op simu (pk : pk_t) : trans_leak_t distr =
       dunit failed_znorm
   )).
 
-(* HVZK game as found in KLS.
- * Can be generalized for leakage.
- * Commitment-recoverable optimization included *)
+(* HVZK game as found in KLS, generalized for leakage. *)
 module HVZK_Games = {
   (* Adversary gets HVZK transcript *)
   proc game0(sk: sk_t) : trans_leak_t = {
@@ -223,7 +221,7 @@ module HVZK_Games = {
     return result;
   }
 
-  (* Rewrite relevant parts of the above as op *)
+  (* Rewrite relevant parts of the above as operator *)
   proc game3(sk: sk_t) = {
     var a, s1, s2, oz, z, c, t, t0, w';
     var result;
