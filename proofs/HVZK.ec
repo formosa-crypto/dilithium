@@ -19,7 +19,6 @@ clone import FinType as FinVector_t with type t <- vector.
 axiom vector_move_add :
   forall (u v w : vector), u + v = w <=> u = w - v.
 
-type leak_t = bool list.
 type sk_t = matrix * vector * vector.
 type pk_t = matrix * vector.
 type commit_t = vector.
