@@ -307,9 +307,8 @@ seq 0 2: (#pre /\ t{2} = a{2} *^ s1{2} + s2{2} /\ t0{2} = lowbits t{2}).
   auto => /#.
 seq 1 2: (#pre /\ st{1} = (y{2}, w{2})).
   rnd swap_yw swap_yw: *0 *0; auto => /=.
-  move => &1 &2 H. (* TODO intro pattern? *)
-  case H => H H'; case H => H H''; case H => H H'''; subst.
-  case H' => H H'; subst.
+  move => />.
+  move => &2.
   split; 1: smt().
   move => _.
   split.
@@ -324,12 +323,10 @@ seq 1 2: (#pre /\ st{1} = (y{2}, w{2})).
   case yw => y w.
   move => yw_valid.
   rewrite supp_dmap in yw_valid.
-  (* There's gotta be a better way about these next 3 lines *)
   case yw_valid => w1yw.
-  case w1yw => w1 yw; case yw => y' w'.
-  move => H /=; case H.
-  move => H H'; case H' => ? ?; subst.
-  rewrite /commit /= supp_dmap /= in H.
+  case w1yw => [w1 [y' w']].
+  move => [#] H ? ?; subst.
+   rewrite /commit /= supp_dmap /= in H.
   smt(supp_dmap).
 auto => /#.
 qed.
