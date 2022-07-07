@@ -201,6 +201,29 @@ module HVZK_Games = {
     return result;
   }
 
+  (* If we must... Let's talk about `oz` *)
+  proc game2b(sk: sk_t) = {
+    var a, s1, s2, w, w', y, c, z, t, t0, oz;
+    var result;
+
+    (a, s1, s2) <- sk;
+    t <- a *^ s1 + s2;
+    t0 <- lowbits t;
+    c <$ dC;
+    y <$ dy;
+    w <- a *^ y;
+    z <- y + c * s1;
+    oz <- if check_znorm z then Some z else None;
+    if(oz <> None) {
+      z <- oget oz;
+      w' <- a *^ z + c * t;
+      result <- trans_second_half z c w' t0;
+    } else {
+      result <- failed_znorm;
+    }
+    return result;
+  }
+
   (* Rewrite relevant parts of the above as op *)
   proc game3(sk: sk_t) = {
     var a, s1, s2, oz, z, c, t, t0, w';
@@ -210,12 +233,12 @@ module HVZK_Games = {
     t0 <- lowbits t;
     c <$ dC;
     oz <$ transz c s1;
-    if(oz = None) {
-      result <- failed_znorm;
-    } else {
+    if(oz <> None) {
       z <- oget oz;
       w' <- a *^ z + c * t;
       result <- trans_second_half z c w' t0;
+    } else {
+      result <- failed_znorm;
     }
     return result;
   }
@@ -229,12 +252,12 @@ module HVZK_Games = {
     t0 <- lowbits t;
     c <$ dC;
     oz <$ transz c s1;
-    if(oz = None) {
-      result <- failed_znorm;
-    } else {
+    if(oz <> None) {
       z <- oget oz;
       w' <- a *^ z + c * t;
       result <- trans_second_half z c w' t0;
+    } else {
+      result <- failed_znorm;
     }
     return result;
   }
@@ -247,12 +270,12 @@ module HVZK_Games = {
     t0 <- lowbits t;
     c <$ dC;
     oz <$ dsimoz;
-    if(oz = None) {
-      result <- failed_znorm;
-    } else {
+    if(oz <> None) {
       z <- oget oz;
       w' <- a *^ z + c * t;
       result <- trans_second_half z c w' t0;
+    } else {
+      result <- failed_znorm;
     }
     return result;
   }
@@ -495,5 +518,5 @@ seq 1 1 : (#pre /\ ={oz}).
     split; 1: assumption.
     by apply supp_dunit.
   smt().
-by auto.
+auto => /#.
 qed.
