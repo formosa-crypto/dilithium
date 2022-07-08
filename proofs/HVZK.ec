@@ -419,8 +419,6 @@ lemma sum_characteristic (P : 't -> bool) (v : real) :
   sum (fun z => if P z then v else 0%r) = (size (to_seq P))%r * v.
 proof.
 move => P_finite.
-print sumr_const.
-print sumE_fin.
 rewrite (sumE_fin _ (to_seq P)) /=.
 - apply uniq_to_seq => //.
 - smt(mem_to_seq).
