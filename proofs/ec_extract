@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+set -e
+
+mkdir -p extracted
+cd extracted
+jasminc -CT ../../src/all.jazz -ec keygen_jazz -ec sign_jazz -ec verify_jazz -oec JasminImpl.ec 
