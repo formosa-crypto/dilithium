@@ -2,6 +2,8 @@ require import AllCore IntDiv CoreMap List.
 require import Montgomery.
 from Jasmin require import JModel.
 
+(* TODO consider factor out some of these into generic Easycrypyt utils *)
+
 op dilithium_modulo = 8380417.
 op dilithium_modulo_left_shift41 = 18428731874223325184.
 op dilithium_modulo_inv = 58728449.
