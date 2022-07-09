@@ -1,4 +1,4 @@
-require import AllCore Li2_params BitEncoding List ZModP PolyReduce.
+require import AllCore Li2_params BitEncoding List ZModP.
 
 import Li2_PolyReduceZp.
 import Li2_Matrix.
@@ -6,6 +6,7 @@ import Zp.
 import BS2Int.
 import Byte.
 import BitChunking.
+import Li2_PolyReduceZp.ComRing.
 
 op poly_pack (bits_per_coeff : int) (p : polyXnD1) : byte list =
   let coeffs = mkseq (fun i => asint p.[i]) Li2_n in
