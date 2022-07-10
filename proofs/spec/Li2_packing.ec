@@ -7,6 +7,7 @@ import BS2Int.
 import Byte.
 import BitChunking.
 import Li2_PolyReduceZp.ComRing.
+require import IntDiv.
 
 op poly_pack (bits_per_coeff : int) (p : polyXnD1) : byte list =
   let coeffs = mkseq (fun i => asint p.[i]) Li2_n in
@@ -65,6 +66,16 @@ op pack_t0 = polyvec_pack pack_t0_entry Li2_k.
 op unpack_t0_entry = poly_unpack_neg 13 (2 ^ 12).
 op unpack_t0 = polyvec_unpack unpack_t0_entry 13.
 
+(* packing offsets *)
+op Li2_pack_eta_len = Li2_n %/ 2.
+op Li2_pack_s1_len = Li2_l * Li2_n %/ 2.
+op Li2_pack_s2_len = Li2_k * Li2_n %/ 2.
+op Li2_pack_s2_loc = 96 + Li2_pack_s1_len.
+op Li2_pack_t1_len = 10 * Li2_n %/ 8.
+op Li2_pack_t0_len = 416.
+op Li2_pack_sk_len = 4000.
+op Li2_pack_t0_loc = Li2_pack_sk_len - Li2_k * Li2_pack_t0_len.
+
 op pack_pk (pk: pk_t) : byte list =
   let (rho, t1) = pk in
   rho ++ pack_t1 t1.
@@ -77,3 +88,20 @@ op unpack_pk (buf: byte list) : pk_t =
 op pack_sk (sk: sk_t) : byte list =
   let (rho, k, tr, s1, s2, t0) = sk in
   rho ++ k ++ tr ++ pack_s1 s1 ++ pack_s2 s2 ++ pack_t0 t0.
+
+op unpack_sk (buf: byte list) : sk_t =
+  let rho = take 32 buf in
+  let k = take 32 (drop 32 buf) in
+  let tr = take 32 (drop 64 buf) in
+  let s1 = unpack_s1 (take Li2_pack_s1_len (drop 96 buf)) in
+  let s2 = unpack_s2 (take Li2_pack_s2_len (drop Li2_pack_s2_loc buf)) in
+  let t0 = unpack_t0 (take Li2_pack_t0_len (drop Li2_pack_t0_loc buf)) in
+  (rho, k, tr, s1, s2, t0).
+
+(* TODO Packing hints *)
+op pack_hint(h: vector) : byte list.
+op unpack_hint(buf: byte list) : vector.
+
+(* TODO packing signature *)
+op pack_sig(s: sig_t) : byte list.
+op unpapck_sig(buf: byte list) : sig_t.

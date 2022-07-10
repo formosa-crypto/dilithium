@@ -32,6 +32,7 @@ clone import Matrix as Li2_Matrix with type ZR.t = polyXnD1.
 
 type pk_t = byte list * vector.
 type sk_t = byte list * byte list * byte list * vector * vector * vector.
+type sig_t = byte list * vector * vector.
 
 (** NTT stuff **)
 
