@@ -143,6 +143,10 @@ op ( ** ) (c : coeff) (p : polyXnD1) =
   pinject (c ** (repr p)).
 
 (* -------------------------------------------------------------------- *)
+op peval (p : polyXnD1) (c : coeff) =
+  peval (repr p) c.
+
+(* -------------------------------------------------------------------- *)
 lemma scale0p (p : polyXnD1) : Coeff.zeror ** p = zeroXnD1.
 proof. by rewrite /( ** ) scale0p. qed.
 
