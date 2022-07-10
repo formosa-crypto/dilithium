@@ -23,6 +23,8 @@ clone import PolyReduceZp as Li2_PolyReduceZp with
   op n = Li2_n.
 (* -- TODO proof *. -- *)
 
+import Zp ZModpRing.
+
 type byte = Byte.word.
 
 clone import Matrix as Li2_Matrix with type ZR.t = polyXnD1.
@@ -30,3 +32,21 @@ clone import Matrix as Li2_Matrix with type ZR.t = polyXnD1.
 
 type pk_t = byte list * vector.
 type sk_t = byte list * byte list * byte list * vector * vector * vector.
+
+(** NTT stuff **)
+
+clone import Word as NTT_Domain with
+  op n = Li2_n,
+  type Alphabet.t = Zp.
+(* -- TODO proof *. -- *)
+type NTT_t = NTT_Domain.word.
+
+op primitive_root = inzmod 1753.
+
+(* We'll worry about fast, butterflies-based implementations later *)
+op ntt (p : polyXnD1) : NTT_t =
+  offun (fun i => peval p (exp primitive_root (2 * i - 1))).
+
+op invntt : NTT_t -> polyXnD1.
+axiom invntt_correct :
+  cancel ntt invntt /\ cancel invntt ntt.
