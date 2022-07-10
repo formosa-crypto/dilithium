@@ -10,10 +10,6 @@ require import BitEncoding.
 import BS2Int.
 import Zp.
 
-print BasePoly.polyXn.
-print BasePoly.polyZ.
-print BasePoly.prepolyZ.
-
 op int_to_byte (x : int) = Byte.mkword (BS2Int.int2bs 8 x).
 op byte_to_int (x : byte) = bs2int (Byte.ofword x).
 
@@ -124,7 +120,7 @@ module Expand_impl(H : SpongeRO) = {
     (* Next two lines are level 3 settings. *)
     (* TODO abstract with respect to gamma2 value? *)
     buf <@ H.squeeze(Li2_n * 20 %/ 8);
-    entry <- polyz_unpack buf;
+    entry <- unpack_z_entry buf;
 
     return entry;
   }
