@@ -14,30 +14,36 @@ op int_to_byte (x : int) = Byte.mkword (BS2Int.int2bs 8 x).
 op byte_to_int (x : byte) = bs2int (Byte.ofword x).
 
 module Expand_impl(H : SpongeRO) = {
-  proc expandA_entry(rho : byte list, i j : int) : R = {
-    var deg : int;
-    var p : R;
+  proc expandA_entry(rho : byte list, i j : int) : polyXnD1 = {
+    var coeffs : Zp list;
     var ext;
     var val;
 
     H.reset(SHAKE128);
     H.absorb(rho);
     H.absorb([int_to_byte j; int_to_byte i]);
-    deg <- 0;
-    p <- zeroXnD1;
-    while(deg < Li2_n) {
+    coeffs <- [];
+    while(size coeffs < Li2_n) {
       ext <@ H.squeeze(3);
       val <- byte_to_int (nth witness ext 0)
              + (byte_to_int (nth witness ext 1)) * (2 ^ 8)
              + (byte_to_int ((nth witness ext 2)) %% 128) * (2 ^ 16);
       if(val < Li2_q) {
-        p <- p + inzmod val ** pinject (BasePoly.polyXn deg);
-        deg <- deg + 1;
+        coeffs <- (inzmod val) :: coeffs;
       }
     }
-    return p;
+    (* TODO Maybe wrong order? *)
+    coeffs <- rev coeffs;
+    return invntt (NTT_Domain.mkword coeffs);
   }
 
+
+  (* Samples A from a seed rho.
+   * Undoing NTT here for now so we have a `Matrix` as far as EC is concerned.
+   *
+   * There is a strong argument to output in NTT domain instead.
+   * We'll worry about that later once NTT multiplication is possible.
+   *)
   proc expandA(rho : byte list) : matrix = {
     var result : (int -> int -> R);
     var i, j : int;

@@ -7,8 +7,9 @@ require import SpongeROM.
 import Li2_Matrix Li2_Matrix.Matrix.
 
 module Keygen(H : SpongeRO) = {
-  proc keygen(seed : byte list) : pk_t * sk_t = {
+  proc keygen(seed : byte list) : byte list * byte list = {
     var rho, rho', k, tr, s1, s2, t, t1, t0, t1_packed;
+    var sk, pk;
     var a;
     H.reset(SHAKE256);
     H.absorb(seed);
@@ -24,6 +25,8 @@ module Keygen(H : SpongeRO) = {
     H.absorb(rho);
     H.absorb(t1_packed);
     tr <@ H.squeeze(32);
-    return ((rho, t1), (rho, k, tr, s1, s2, t0));
+    pk <- (rho, t1);
+    sk <- (rho, k, tr, s1, s2, t0);
+    return (pack_pk pk, pack_sk sk);
   }
 }.
