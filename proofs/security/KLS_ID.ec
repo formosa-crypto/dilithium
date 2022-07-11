@@ -1,4 +1,9 @@
-(* Identification schemes found in KLS *)
+(* Identification schemes found in KLS
+ * TODO currently outdated. Potentially deprecated.
+ *
+ * First need to take care of ROM, then maybe deal with this after.
+ * Maybe this appears somewhere on the games to HVZK.
+ *)
 
 require import AllCore List.
 require import DBool.
@@ -14,9 +19,9 @@ require import Li2_poly.
 require import Li2_packing.
 
 import Li2_PolyReduceZp.
-
 import Vector.ZModule.
 
+(* Doesn't even compile anymore. Whatever. Maybe fix later, maybe can delete. *)
 module KLS_ID_P (H : SpongeRO) = {
   var w : vector
   var y : vector
