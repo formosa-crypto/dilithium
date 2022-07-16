@@ -9,6 +9,8 @@ import BitChunking.
 import Li2_PolyReduceZp.ComRing.
 require import IntDiv.
 
+(* TODO Ensure all_bits is multiple of 8.
+ * Otherwise `chunk` drops fractional words. *)
 op poly_pack (bits_per_coeff : int) (p : polyXnD1) : byte list =
   let coeffs = mkseq (fun i => asint p.[i]) Li2_n in
   let all_bits = flatten (map (int2bs bits_per_coeff) coeffs) in
@@ -98,10 +100,44 @@ op unpack_sk (buf: byte list) : sk_t =
   let t0 = unpack_t0 (take Li2_pack_t0_len (drop Li2_pack_t0_loc buf)) in
   (rho, k, tr, s1, s2, t0).
 
-(* TODO Packing hints *)
-op pack_hint(h: vector) : byte list.
-op unpack_hint(buf: byte list) : vector.
+op pack_hint_entry(h: polyXnD1) : byte list =
+  let locs = mkseq (fun i => mkword (int2bs 8 (i * asint h.[i]))) Li2_n in
+  filter (pred1 (mkword wordw)) locs.
 
-(* TODO packing signature *)
-op pack_sig(s: sig_t) : byte list.
-op unpapck_sig(buf: byte list) : sig_t.
+op max_hint_weight : int.
+
+(* Pack hint, assuming its weight is low enough.
+ * Returns garbage on invalid hints without checking.
+ *)
+op pack_hint(h: vector) : byte list =
+  let entries = mkseq (fun i => pack_hint_entry h.[i]) Li2_k in
+  let cumulative_weights = (fun j => sumz (map List.size (take j entries))) in
+  let num_zeroes = max_hint_weight - cumulative_weights Li2_k in
+  flatten entries ++ nseq num_zeroes (mkword wordw) ++ mkseq (fun i => mkword (int2bs 8 (cumulative_weights i))) Li2_k.
+
+op pack_sig(s: sig_t) : byte list =
+  let (c, z, h) = s in
+  c ++ pack_z z ++ pack_hint h.
+
+(* TODO define polyL for polyXnD1 *)
+(* TODO Check if input is valid *)
+op unpack_hint_entry(buf : byte list) : polyXnD1 =
+  pi (BasePoly.polyL (mkseq (fun i => inzmod (b2i (mkword (int2bs 8 i) \in buf))) Li2_n)).
+
+op slice ['a] (a b : int) (lst : 'a list) = drop a (take b lst).
+
+(* TODO Check if input is valid *)
+op unpack_hint(buf: byte list) : vector =
+  let cutoffs = 0 :: map (bs2int \o ofword) (drop max_hint_weight buf) in
+  let packed_entries = fun i => slice (nth 0 cutoffs i) (nth 0 cutoffs (i + 1)) buf in
+  offunv (fun i => unpack_hint_entry (packed_entries i)).
+
+op Li2_pack_z_len = Li2_n * 20 %/ 8.
+op Li2_pack_hstart = 32 + Li2_l * Li2_pack_z_len.
+
+(* TODO *)
+op unpack_sig(buf: byte list) : sig_t =
+  let c = take 32 buf in
+  let z = unpack_z (slice 32 Li2_pack_hstart buf) in
+  let h = unpack_hint (drop Li2_pack_hstart buf) in
+  (c, z, h).
