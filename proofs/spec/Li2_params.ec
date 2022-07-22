@@ -45,8 +45,9 @@ type NTT_t = NTT_Domain.word.
 op primitive_root = inzmod 1753.
 
 (* We'll worry about fast, butterflies-based implementations later *)
+
 op ntt (p : polyXnD1) : NTT_t =
-  offun (fun i => peval p (exp primitive_root (2 * i - 1))).
+  offun (fun i => pevalX p (exp primitive_root (2 * i - 1))).
 
 op invntt : NTT_t -> polyXnD1.
 axiom invntt_correct :
