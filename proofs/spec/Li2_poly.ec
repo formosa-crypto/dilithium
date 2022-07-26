@@ -36,13 +36,19 @@ op polyveck_lowbits (v : vector) alpha : vector =
 op poly_makeHint (z : R) (r : R) (alpha : int) : R =
   let zcoeffs = mkseq (fun deg => Zp.asint z.[deg]) Li2_n in
   let rcoeffs = mkseq (fun deg => Zp.asint r.[deg]) Li2_n in
+  (* TODO clean-up. This doesn't seem reasonable. *)
   let coeffs = zip zcoeffs rcoeffs in
-  (pinject \o BasePoly.polyL)
-    (map (fun (zr : int * int) => inzmod (makeHint zr.`1 zr.`2 alpha))
+  polyLX (map (fun (zr : int * int) => inzmod (makeHint zr.`1 zr.`2 alpha))
       coeffs).
 
 op polyveck_makeHint (z : vector) (r : vector) (alpha : int) : vector =
   offunv (fun i => poly_makeHint z.[i] r.[i] alpha).
+
+op poly_useHint (hs rs : R) (alpha : int) =
+  polyLX (mkseq (fun i => inzmod (useHint (asint hs.[i]) (asint rs.[i]) alpha)) Li2_n).
+
+op polyveck_useHint (hv rv :vector) alpha =
+  offunv (fun i => poly_useHint hv.[i] rv.[i] alpha).
 
 op poly_max (p : R) : int =
   let coeffs = mkseq (fun deg => Zp.asint p.[deg]) Li2_n in

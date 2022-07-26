@@ -119,25 +119,35 @@ op pack_sig(s: sig_t) : byte list =
   let (c, z, h) = s in
   c ++ pack_z z ++ pack_hint h.
 
-(* TODO define polyL for polyXnD1 *)
-(* TODO Check if input is valid *)
-op unpack_hint_entry(buf : byte list) : polyXnD1 =
-  pi (BasePoly.polyL (mkseq (fun i => inzmod (b2i (mkword (int2bs 8 i) \in buf))) Li2_n)).
+op is_ordered_aux (x0 : int) (lst : int list) : bool =
+  with lst = [] => true
+  with lst = x1 :: lst' =>
+    x0 < x1 && is_ordered_aux x1 lst'.
+
+op is_ordered = is_ordered_aux (-1).
+
+op unpack_hint_entry(buf : byte list) : polyXnD1 option =
+  let locs = mkseq (fun i => b2i (mkword (int2bs 8 i) \in buf)) Li2_n in
+  if !(is_ordered locs) then None else
+  Some (polyLX (map inzmod locs)).
 
 op slice ['a] (a b : int) (lst : 'a list) = drop a (take b lst).
 
-(* TODO Check if input is valid *)
-op unpack_hint(buf: byte list) : vector =
+op unpack_hint(buf: byte list) : vector option =
   let cutoffs = 0 :: map (bs2int \o ofword) (drop max_hint_weight buf) in
-  let packed_entries = fun i => slice (nth 0 cutoffs i) (nth 0 cutoffs (i + 1)) buf in
-  offunv (fun i => unpack_hint_entry (packed_entries i)).
+  if !(is_ordered cutoffs) then None else
+  if Li2_omega < last 0 cutoffs then None else
+  let packed_entries = mkseq (fun i => slice (nth 0 cutoffs i) (nth 0 cutoffs (i + 1)) buf) Li2_k in
+  let unpacked_entries = map unpack_hint_entry packed_entries in
+  if None \in unpacked_entries then None else
+  Some (offunv (fun i => oget (nth witness unpacked_entries i))).
 
 op Li2_pack_z_len = Li2_n * 20 %/ 8.
 op Li2_pack_hstart = 32 + Li2_l * Li2_pack_z_len.
 
-(* TODO *)
-op unpack_sig(buf: byte list) : sig_t =
+op unpack_sig(buf: byte list) : sig_t option =
   let c = take 32 buf in
   let z = unpack_z (slice 32 Li2_pack_hstart buf) in
   let h = unpack_hint (drop Li2_pack_hstart buf) in
-  (c, z, h).
+  if h = None then None else
+  Some (c, z, oget h).
