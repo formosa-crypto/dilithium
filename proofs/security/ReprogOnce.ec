@@ -1,6 +1,10 @@
 require import AllCore Distr DBool PROM.
 import Biased.
 
+
+require import Dexcepted.
+require import Dfilter.
+
 (* Define some necessary abstract stuff *)
 
 type M, W, C, Z, ST, PK, SK.
@@ -44,12 +48,7 @@ module G0 = {
 
 (* Moving RO.set outside while-loop *)
 module G1 = {
-  var sk : SK
-
-  proc init() = {
-    var pk;
-    (pk, sk) <$ keygen;
-  }
+  include var G0[init]
 
   proc sign(m: M) = {
     var w, st, c, oz;
@@ -82,21 +81,24 @@ op dWCZ sk : (W * C * Z option) distr =
   let z = respond st c in
   dunit (w, c, z))).
 
-(* Scales a subdistr. back to full *)
-op scale_full (d : 'a distr) : 'a distr =
-  mk (fun x => mu1 d x / weight d).
-
 (* Transcript distribution, conditioned on accept.
  * Main idea here is the use of `drestrict`.
  *)
-op dWCoZ_acc sk = scale_full (drestrict (dWCZ sk) (fun wcz => let (w, c, z) = wcz in z <> None)).
+
+op dWCoZ_acc sk = dscale (drestrict (dWCZ sk) (fun wcz => let (w, c, z) = wcz in z <> None)).
 op dWCZ_acc sk = dmap (dWCoZ_acc sk) (fun wcoz => let (w, c, oz) = wcoz in (w, c, oget oz)).
+
+(* Alternative definition:
+ *
+ * require import Dexcepted.
+ * op dWCoZ_acc' sk = dscale ((dWCZ sk) \ (fun wcz => let (w, c, z) = wcz in z = None)). *)
 
 (* Transcript, conditioned on reject.
  * Constructed similarly as above.
  *)
-op dWCoZ_rej sk = scale_full (drestrict (dWCZ sk) (fun wcz => let (w, c, z) = wcz in z = None)).
+op dWCoZ_rej sk = dscale (drestrict (dWCZ sk) (fun wcz => let (w, c, z) = wcz in z = None)).
 op dWC_rej sk = dmap (dWCoZ_rej sk) (fun wcz => let (w, c, _) = wcz in (w, c)).
+
 
 (* Accept and reject probabilities *)
 op p_acc sk = mu (dWCZ sk) (fun wcz => let (w, c, z) = wcz in z <> None).
@@ -128,12 +130,7 @@ admitted.
 
 (* Replaces the transcript generation with the above *)
 module G0A = {
-  var sk : SK
-
-  proc init() = {
-    var pk;
-    (pk, sk) <$ keygen;
-  }
+  include var G0[init]
 
   proc sign(m: M) = {
     var w, c, z, f;
@@ -158,20 +155,17 @@ module G0A = {
 
 equiv G0A_hop : G0.sign ~ G0A.sign :
   (* This`G0.sk{1} = Gg0A.sk{2}` looks sus *)
-  ={m} /\ G0.sk{1} = G0A.sk{2} ==> ={res}.
+  ={m, G0.sk} ==> ={res}.
 proof.
 (* Use the lemma proven earlier *)
+proc.
+
+
 admitted.
 
 (* Same idea with G0A *)
 module G1A = {
-  var sk : SK
-
-  proc init() = {
-    var pk;
-    (pk, sk) <$ keygen;
-  }
-
+  include var G0[init]
   proc sign(m: M) = {
     var w, c, z, f;
 
@@ -193,7 +187,7 @@ module G1A = {
 }.
 
 equiv G1A_hop : G1.sign ~ G1A.sign :
-  ={m} /\ G1.sk{1} = G1A.sk{2} ==> ={res}.
+  ={m, G0.sk} ==> ={res}.
 proof.
 (* Same idea as above *)
 admitted.
@@ -232,7 +226,7 @@ module G0B = {
 }.
 
 equiv G0B_hop : G0A.sign ~ G0B.sign :
-  ={m} /\ G0A.sk{1} = G0B.sk{2} ==> ={res}.
+  ={m, G0.sk} ==> ={res}.
 proof.
 (* Should be trivial up to proving termination. *)
 admitted.
@@ -269,7 +263,7 @@ module G1B = {
 }.
 
 equiv G1B_hop : G1A.sign ~ G1B.sign :
-  ={m} /\ G1A.sk{1} = G1B.sk{2} ==> ={res}.
+  ={m, G0.sk} ==> ={res}.
 proof.
 (* Should be trivial up to proving termination. *)
 admitted.
