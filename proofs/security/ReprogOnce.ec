@@ -1,6 +1,8 @@
 require import AllCore Distr DBool PROM.
 import Biased.
 
+(* Define some necessary abstract stuff *)
+
 type M, W, C, Z, ST, PK, SK.
 
 op [lossless] keygen : (PK * SK) distr.
@@ -73,7 +75,7 @@ module G1 = {
  *)
 
 (* Transcript distribution *)
-op dWCZ sk =
+op dWCZ sk : (W * C * Z option) distr =
   dlet (commit sk) (fun wst =>
   let (w, st) = wst in
   dlet dC (fun c =>
@@ -85,7 +87,7 @@ op scale_full (d : 'a distr) : 'a distr =
   mk (fun x => mu1 d x / weight d).
 
 (* Transcript distribution, conditioned on accept.
- * Main idea is the use of `drestrict`.
+ * Main idea here is the use of `drestrict`.
  *)
 op dWCoZ_acc sk = scale_full (drestrict (dWCZ sk) (fun wcz => let (w, c, z) = wcz in z <> None)).
 op dWCZ_acc sk = dmap (dWCoZ_acc sk) (fun wcoz => let (w, c, oz) = wcoz in (w, c, oget oz)).
@@ -93,15 +95,14 @@ op dWCZ_acc sk = dmap (dWCoZ_acc sk) (fun wcoz => let (w, c, oz) = wcoz in (w, c
 (* Transcript, conditioned on reject.
  * Constructed similarly as above.
  *)
-op dWCZ_rej sk = scale_full (drestrict (dWCZ sk) (fun wcz => let (w, c, z) = wcz in z = None)).
-op dWC_rej sk = dmap (dWCZ_rej sk) (fun wcz => let (w, c, _) = wcz in (w, c)).
+op dWCoZ_rej sk = scale_full (drestrict (dWCZ sk) (fun wcz => let (w, c, z) = wcz in z = None)).
+op dWC_rej sk = dmap (dWCoZ_rej sk) (fun wcz => let (w, c, _) = wcz in (w, c)).
 
-(* Accept and reject probability *)
+(* Accept and reject probabilities *)
 op p_acc sk = mu (dWCZ sk) (fun wcz => let (w, c, z) = wcz in z <> None).
 op p_rej sk = mu (dWCZ sk) (fun wcz => let (w, c, z) = wcz in z = None).
 
-
-(* The following lemma may help the following...
+(* Helper lemma...
  * Hopefully it's in the standard library.
  * If not, things get somewhat interesting.
  *)
@@ -112,7 +113,7 @@ lemma conditional_probability_fact ['a 'b] (dAB : ('a * 'b) distr) :
 proof.
 admitted.
 
-(* Now the alternative way of sampling transcript is correct *)
+(* Now state the alternative way of sampling transcript is correct *)
 lemma conditional_sampling_transcript sk :
   dWCZ sk = dlet (dbiased (p_acc sk)) (fun f =>
     if f then
@@ -120,7 +121,9 @@ lemma conditional_sampling_transcript sk :
     else
       dlet (dWC_rej sk) (fun wc => let (w, c) = wc in dunit (w, c, None))).
 proof.
-(* Some nasty conditional probability manipulation... *)
+(* Some nasty conditional probability manipulation...
+ * Maybe helper lemma above helps.
+ *)
 admitted.
 
 (* Replaces the transcript generation with the above *)
@@ -139,7 +142,7 @@ module G0A = {
     w <- witness;
     c <- witness;
 
-    (* Maybe there's an argument to do another game with oz first? *)
+    (* Maybe there's an argument to do another game with `oz` first? *)
     f <- false;
     while(!f) {
       f <$ dbiased (p_acc sk);
@@ -195,7 +198,8 @@ proof.
 (* Same idea as above *)
 admitted.
 
-(* Clean up. Equivalent to G0A up to reordering instructions. *)
+(* Clean up and line up interface.
+ * Equivalent to G0A up to reordering instructions. *)
 module G0B = {
   var sk : SK
 
@@ -361,7 +365,7 @@ module GameB = {
 }.
 
 (* TODO Lemma
- * Bound GameA and GameB distance in terms of alpha?
+ * Bound GameA and GameB distinguishing advantage in terms of alpha?
  * TODO query counting too...
  *)
 
@@ -396,7 +400,10 @@ module G0R = {
   }
 }.
 
-(* TODO equiv G0R.sign ~ G0B.sign? *)
+(* TODO equiv G0R.sign ~ G0B.sign?
+ * Need to argue min-entropy of dW.
+ * Everything else seems trivial.
+ *)
 
 (* Reduction - G1 corresponds to GB.
  *
@@ -435,4 +442,6 @@ module G1R = {
   }
 }.
 
-(* TODO equiv G1R.sign ~ G1B.sign? *)
+(* TODO equiv G1R.sign ~ G1B.sign?
+ * Should be trivial.
+ *)
