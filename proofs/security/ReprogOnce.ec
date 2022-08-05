@@ -19,8 +19,7 @@ clone import FullRO with
   type out_t <- C,
   op dout <- (fun _ => dC).
 
-(* G0, G1: Pair of games that we want to distinguish *)
-module G0 = {
+module ReprogOnce0 = {
   var sk : SK
 
   proc init() = {
@@ -47,8 +46,8 @@ module G0 = {
 }.
 
 (* Moving RO.set outside while-loop *)
-module G1 = {
-  include var G0[init]
+module ReprogOnce1 = {
+  include var ReprogOnce0[init]
 
   proc sign(m: M) = {
     var w, st, c, oz;
@@ -129,7 +128,7 @@ admitted.
 
 (* Helper module to call bypr... *)
 module LoopBodies = {
-  include var G0[init]
+  include var ReprogOnce0[init]
   proc body1() = {
     var w, c, oz;
     (w, c, oz) <$ dWCoZ sk;
@@ -156,11 +155,11 @@ module LoopBodies = {
 }.
 
 lemma pr_body1 x &m sk :
-  G0.sk{m} = sk =>
+  ReprogOnce0.sk{m} = sk =>
   Pr[LoopBodies.body1() @ &m : res = x] = mu1 (dWCoZ sk) x.
 proof.
 move => *.
-byphoare (_ : (G0.sk = sk) ==> (res = x)) => //=.
+byphoare (_ : (ReprogOnce0.sk = sk) ==> (res = x)) => //=.
 proc.
 rnd (fun r => r = x).
 auto => /#.
@@ -168,17 +167,17 @@ qed.
 
 equiv hop_body2 :
   LoopBodies.body1 ~ LoopBodies.body2 :
-  ={G0.sk} ==> ={res}.
+  ={ReprogOnce0.sk} ==> ={res}.
 proof. admitted.
 
 lemma pr_body2 x &m sk :
-  G0.sk{m} = sk =>
+  ReprogOnce0.sk{m} = sk =>
   Pr[LoopBodies.body2() @ &m : res = x] = mu1 (dWCoZ sk) x.
 proof.
 move => *.
 have <- : Pr[LoopBodies.body1() @ &m : res = x] = Pr[LoopBodies.body2() @ &m : res = x].
   byequiv.
-  conseq (_ : ={G0.sk} ==> ={res}). trivial. trivial.
+  conseq (_ : ={ReprogOnce0.sk} ==> ={res}). trivial. trivial.
   apply hop_body2. trivial. trivial.
 rewrite (pr_body1 x &m sk) => /#.
 qed.
@@ -191,14 +190,14 @@ qed.
 
 equiv hop_body3 :
   LoopBodies.body2 ~ LoopBodies.body3 :
-  ={G0.sk} ==> ={res}.
+  ={ReprogOnce0.sk} ==> ={res}.
 proof.
   bypr res{1} res{2}; 1: auto => /#.
 move => &1 &2 x eq_sk.
-rewrite (pr_body2 x &1 G0.sk{1}) => //.
-byphoare (_: (G0.sk = G0.sk{1}) ==> (res = x)) => //=; 2: subst => //=.
+rewrite (pr_body2 x &1 ReprogOnce0.sk{1}) => //.
+byphoare (_: (ReprogOnce0.sk = ReprogOnce0.sk{1}) ==> (res = x)) => //=; 2: subst => //=.
 proc.
-seq 1: f (p_acc G0.sk{1}) (mu1 (dWCoZ_acc G0.sk{1}) x) (p_rej G0.sk{1}) (mu1 (dWCoZ_rej G0.sk{1}) x) #pre => //=.
+seq 1: f (p_acc ReprogOnce0.sk{1}) (mu1 (dWCoZ_acc ReprogOnce0.sk{1}) x) (p_rej ReprogOnce0.sk{1}) (mu1 (dWCoZ_rej ReprogOnce0.sk{1}) x) #pre => //=.
 - by auto.
 - rnd; auto => /> /=.
   rewrite dbiasedE => /=.
@@ -222,7 +221,7 @@ qed.
 
 (* Replaces the transcript generation with the above *)
 module G0A = {
-  include var G0[init]
+  include var ReprogOnce0[init]
 
   proc sign(m: M) = {
     var w, c, z, f;
@@ -246,17 +245,17 @@ module G0A = {
   }
 }.
 
-equiv G0A_hop : G0.sign ~ G0A.sign :
-  (* This`G0.sk{1} = Gg0A.sk{2}` looks sus *)
-  ={m, G0.sk} ==> ={res}.
+equiv G0A_hop : ReprogOnce0.sign ~ G0A.sign :
+  (* This`ReprogOnce0.sk{1} = Gg0A.sk{2}` looks sus *)
+  ={m, ReprogOnce0.sk} ==> ={res}.
 proof.
 proc.
 while (#pre /\ (oz{1} <> None => (={w, c} /\ oget oz{1} = z{2}))).
 call (_ : true ==> true); first proc; auto => //=.
 transitivity{1}
-  {(w, c, oz) <$ dWCoZ G0.sk;}
-  (={G0.sk} ==> ={m, G0.sk, w, c, oz})
-  (={G0.sk} ==> (={m, G0.sk} /\ (oz{1} <> None => ={w, c} /\ oget oz{1} = z{2})) /\ (oz{1} = None <=> !f{2})).
+  {(w, c, oz) <$ dWCoZ ReprogOnce0.sk;}
+  (={ReprogOnce0.sk} ==> ={m, ReprogOnce0.sk, w, c, oz})
+  (={ReprogOnce0.sk} ==> (={m, ReprogOnce0.sk} /\ (oz{1} <> None => ={w, c} /\ oget oz{1} = z{2})) /\ (oz{1} = None <=> !f{2})).
   smt(). smt().
 
 rnd: *0 *0; auto => />.
@@ -275,7 +274,7 @@ qed.
 
 (* Same idea with G0A *)
 module G1A = {
-  include var G0[init]
+  include var ReprogOnce0[init]
   proc sign(m: M) = {
     var w, c, z, f;
 
@@ -296,8 +295,8 @@ module G1A = {
   }
 }.
 
-equiv G1A_hop : G1.sign ~ G1A.sign :
-  ={m, G0.sk} ==> ={res}.
+equiv G1A_hop : ReprogOnce1.sign ~ G1A.sign :
+  ={m, ReprogOnce0.sk} ==> ={res}.
 proof.
 (* Same idea as above *)
 admitted.
@@ -336,7 +335,7 @@ module G0B = {
 }.
 
 equiv G0B_hop : G0A.sign ~ G0B.sign :
-  ={m, G0.sk} ==> ={res}.
+  ={m, ReprogOnce0.sk} ==> ={res}.
 proof.
 (* Should be trivial up to proving termination. *)
 admitted.
@@ -373,7 +372,7 @@ module G1B = {
 }.
 
 equiv G1B_hop : G1A.sign ~ G1B.sign :
-  ={m, G0.sk} ==> ={res}.
+  ={m, ReprogOnce0.sk} ==> ={res}.
 proof.
 (* Should be trivial up to proving termination. *)
 admitted.
