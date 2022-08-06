@@ -10,14 +10,19 @@ require import Real RealSeries.
 type M, W, C, Z, ST, PK, SK.
 
 op [lossless] keygen : (PK * SK) distr.
-op commit : SK -> (W * ST) distr.
+op [lossless] commit : SK -> (W * ST) distr.
 op [lossless uniform] dC : C distr.
 op respond : ST -> C -> Z option.
 
-clone import FullRO with
-  type in_t <- W * M,
-  type out_t <- C,
-  op dout <- (fun _ => dC).
+require ReprogRej.
+
+clone import ReprogRej as Li2_ReprogRej with
+  type M = M,
+  type X = W * M,
+  type Y = C,
+  type Z = Z.
+
+import FullRO.
 
 module ReprogOnce0 = {
   var sk : SK
@@ -80,6 +85,16 @@ op dWCoZ sk : (W * C * Z option) distr =
   let z = respond st c in
   dunit (w, c, z))).
 
+lemma dWCoZ_ll sk :
+  is_lossless (dWCoZ sk).
+proof.
+(* TODO don't use smt once Easycrypt is fixed *)
+apply dlet_ll; first smt(commit_ll).
+move => x; case x; move => * /=; apply dlet_ll; first apply dC_ll.
+move => * /=; apply dunit_ll.
+qed.
+
+
 (* Transcript distribution, conditioned on accept.
  * Main idea here is the use of `drestrict`.
  *)
@@ -104,7 +119,15 @@ op p_rej sk = mu (dWCoZ sk) (fun wcz => let (w, c, oz) = wcz in oz = None).
 
 lemma p_rej_E sk :
   p_rej sk = 1%r - p_acc sk.
-proof. admitted.
+proof.
+print mu_not.
+print p_rej.
+rewrite /p_rej.
+have ->: (fun wcz : (W * C * Z option)=> let (w, c, oz) = wcz in oz = None) =
+      predC (fun wcz => let (w, c, oz) = wcz in oz <> None) by apply fun_ext => ? /#.
+have <-: weight (dWCoZ sk) = 1%r by apply dWCoZ_ll.
+rewrite mu_not; rewrite /p_acc => //.
+qed.
 
 (* Helper lemma, hopefully in the standard library *)
 lemma conditional_probability_fact ['a 'b] (dAB : ('a * 'b) distr) :
@@ -152,7 +175,23 @@ module LoopBodies = {
       (w, c, oz) <$ dWCoZ_rej sk;
     return (w, c, oz);
   }
+
+  proc body4() = {
+    var w, c, z, f;
+    f <$ dbiased (p_acc sk);
+    z <- witness; (* silences unused variable warning *)
+    if(f)
+      (w, c, z) <$ dWCZ_acc sk;
+    else
+      (w, c) <$ dWC_rej sk;
+    return (w, c, f, z);
+  }
 }.
+
+(*
+lemma linearize sk :
+  dlet (commit sk) (fun (w_st: W * ST) => dmap dC (fun c => (w_st.`1, c, respond w_st.`2 c)))
+= dWCoZ sk.*)
 
 lemma pr_body1 x &m sk :
   ReprogOnce0.sk{m} = sk =>
@@ -165,10 +204,32 @@ rnd (fun r => r = x).
 auto => /#.
 qed.
 
+lemma dWCoZ_linearize sk :
+  (dlet (commit sk)
+        (fun (w_st : W * ST) =>
+           dmap dC (fun (c0 : C) => (w_st.`1, c0, respond w_st.`2 c0)))) =
+  (dmap (dWCoZ sk)
+        (fun (w_c_oz : W * C * Z option) => (w_c_oz.`1, w_c_oz.`2, w_c_oz.`3))).
+proof.
+  rewrite /dWCoZ => /=.
+  have ->: (fun (w_c_oz : W * C * Z option) => (w_c_oz.`1, w_c_oz.`2, w_c_oz.`3)) =
+           (fun x => x) by smt().
+  rewrite dmap_id; congr => /=.
+  apply fun_ext => wst; case wst => ?? /=.
+  rewrite /dmap /(\o) => /#.
+qed.
+
 equiv hop_body2 :
   LoopBodies.body1 ~ LoopBodies.body2 :
   ={ReprogOnce0.sk} ==> ={res}.
-proof. admitted.
+proof.
+proc.
+rnd: *0 *0.
+auto => /> &2.
+split.
+- move => * /=; congr; apply dWCoZ_linearize.
+- move => _ wcoz H'. rewrite dWCoZ_linearize => //.
+qed.
 
 lemma pr_body2 x &m sk :
   ReprogOnce0.sk{m} = sk =>
@@ -192,7 +253,7 @@ equiv hop_body3 :
   LoopBodies.body2 ~ LoopBodies.body3 :
   ={ReprogOnce0.sk} ==> ={res}.
 proof.
-  bypr res{1} res{2}; 1: auto => /#.
+bypr res{1} res{2}; 1: auto => /#.
 move => &1 &2 x eq_sk.
 rewrite (pr_body2 x &1 ReprogOnce0.sk{1}) => //.
 byphoare (_: (ReprogOnce0.sk = ReprogOnce0.sk{1}) ==> (res = x)) => //=; 2: subst => //=.
@@ -218,6 +279,34 @@ seq 1: f (p_acc ReprogOnce0.sk{1}) (mu1 (dWCoZ_acc ReprogOnce0.sk{1}) x) (p_rej 
   rewrite !clamp_id => //=.
   smt(p_rej_E).
 qed.
+
+equiv hop_body4 :
+  LoopBodies.body3 ~ LoopBodies.body4 :
+  ={ReprogOnce0.sk} ==> (res{1}.`1 = res{2}.`1 /\
+                         res{1}.`2 = res{2}.`2 /\
+                         res{1}.`3 <> None <=> res{2}.`3 /\
+                         res{1}.`3 <> None => oget res{1}.`3 = res{2}.`4).
+proof.
+proc; auto.
+seq 1 1: (#pre /\ ={f}); 1: auto.
+seq 0 1: (#pre); 1: auto.
+if; 1: auto.
+rnd (fun wcoz => let (w, c, oz) = wcoz in (w, c, oget oz))
+    (fun wcz => let (w, c, z) = wcz in (w, c, Some z)).
+auto => &2 /> f.
+split; first smt().
+move => *.
+split.
+- move => *.
+  (* TODO state and proof fact relating dWCZ_acc and dWCoZ_acc *)
+  admit.
+move => *.
+split.
+admit.
+move => *.
+split; last smt().
+admit.
+admitted.
 
 (* Replaces the transcript generation with the above *)
 module G0A = {
@@ -246,30 +335,23 @@ module G0A = {
 }.
 
 equiv G0A_hop : ReprogOnce0.sign ~ G0A.sign :
-  (* This`ReprogOnce0.sk{1} = Gg0A.sk{2}` looks sus *)
   ={m, ReprogOnce0.sk} ==> ={res}.
 proof.
 proc.
-while (#pre /\ (oz{1} <> None => (={w, c} /\ oget oz{1} = z{2}))).
+while (#pre /\ (oz{1} <> None => (={m, w, c} /\ oget oz{1} = z{2}))); 2: by auto => />.
 call (_ : true ==> true); first proc; auto => //=.
 transitivity{1}
   {(w, c, oz) <$ dWCoZ ReprogOnce0.sk;}
-  (={ReprogOnce0.sk} ==> ={m, ReprogOnce0.sk, w, c, oz})
-  (={ReprogOnce0.sk} ==> (={m, ReprogOnce0.sk} /\ (oz{1} <> None => ={w, c} /\ oget oz{1} = z{2})) /\ (oz{1} = None <=> !f{2})).
-  smt(). smt().
-
-rnd: *0 *0; auto => />.
-move => *.
-split.
-  admit.
-move => *.
-split.
-  admit.
-  admit.
+  (={ReprogOnce0.sk, m} ==> ={m, ReprogOnce0.sk, w, c, oz})
+  (={ReprogOnce0.sk, m} ==> (={m, ReprogOnce0.sk} /\ (oz{1} <> None => ={w, c} /\ oget oz{1} = z{2})) /\ (oz{1} = None <=> !f{2})); 1: smt(); 1: smt().
+- rnd: *0 *0; auto => />.
+  move => *; split.
+  - move => ? _; congr.
+    rewrite dWCoZ_linearize => //.
+  - move => _ ? ? /=; rewrite -dWCoZ_linearize => //.
+print hop_bodies.
 
 admit.
-
-auto => />.
 qed.
 
 (* Same idea with G0A *)
@@ -281,6 +363,7 @@ module G1A = {
     (* Silences unused variables warning *)
     w <- witness;
     c <- witness;
+    z <- witness;
 
     f <- false;
     while(!f) {
@@ -317,6 +400,7 @@ module G0B = {
     (* Silences unused variables warning *)
     w <- witness;
     c <- witness;
+    z <- witness;
 
     f <- false;
     while(!f) {
@@ -355,6 +439,7 @@ module G1B = {
     (* Silences unused variables warning *)
     w <- witness;
     c <- witness;
+    z <- witness;
 
     f <- false;
     while(!f) {
@@ -377,100 +462,7 @@ proof.
 (* Should be trivial up to proving termination. *)
 admitted.
 
-(* Now let's define the basic RO game that we plan to reduce to. *)
-
-(* First, a couple ingredients. *)
-op min_entropy ['a] (d : 'a distr) : real.
-(* don't ask *)
-op marginal3 (dABC : ('a * 'b * 'c) distr) : 'a distr.
-(* min-entropy required *)
-op alpha : real.
-
-(*
- * GameA, GameB: Basic RO games that we plan to reduce to.
- * Adversary can make three possible queries, as discussed.
- * Only third query (reprog_rej) is different between GameA and GameB.
- *
- * The games are indistinguishable in ROM.
- * I hope same is true in QROM.
- *)
-module GameA = {
-  var good : bool
-
-  proc init() = {
-    good <- true;
-  }
-
-  proc h(w, m) = {
-    var z;
-    z <@ RO.get((w, m));
-    return z;
-  }
-
-  proc reprog_acc(dWCZ_acc : (W * C * Z) distr, m : M) = {
-    var w, c, z;
-    if(min_entropy (marginal3 dWCZ_acc) < alpha) {
-      good <- false;
-    }
-    (w, c, z) <$ dWCZ_acc;
-    RO.set((w, m), c);
-    return (w, c, z);
-  }
-
-  proc reprog_rej(dWC_rej : (W * C) distr, m : M) = {
-    var w, c;
-    if(min_entropy (dfst dWC_rej) < alpha) {
-      good <- false;
-    }
-    (w, c) <$ dWC_rej;
-    (* No reprog. *)
-    (* RO.set((w, m), c); *)
-    (* no return *)
-  }
-}.
-
-(* Should this actually be a different module,
- * or should I just let the above take a coin?
- *)
-module GameB = {
-  var good : bool
-
-  proc init() = {
-    good <- true;
-  }
-
-  proc h(w, m) = {
-    var z;
-    z <@ RO.get((w, m));
-    return z;
-  }
-
-  proc reprog_acc(dWCZ_acc : (W * C * Z) distr, m : M) = {
-    var w, c, z;
-    if(min_entropy (marginal3 dWCZ_acc) < alpha) {
-      good <- false;
-    }
-    (w, c, z) <$ dWCZ_acc;
-    RO.set((w, m), c);
-    return (w, c, z);
-  }
-
-  proc reprog_rej(dWC_rej : (W * C) distr, m : M) = {
-    var w, c;
-    if(min_entropy (dfst dWC_rej) < alpha) {
-      good <- false;
-    }
-    (w, c) <$ dWC_rej;
-    (* reprog *)
-    RO.set((w, m), c);
-    (* no return *)
-  }
-}.
-
-(* TODO Lemma
- * Bound GameA and GameB distinguishing advantage in terms of alpha?
- * TODO query counting too...
- *)
+(**
 
 (* Reduction - G0 corresponds to GA *)
 module G0R = {
@@ -545,6 +537,6 @@ module G1R = {
   }
 }.
 
-(* TODO equiv G1R.sign ~ G1B.sign?
- * Should be trivial.
- *)
+
+
+**)
