@@ -1,0 +1,87 @@
+require import AllCore Distr List.
+
+type in_t, out_t.
+
+op d : in_t -> out_t distr.
+
+op alpha : real.
+
+axiom d_max : forall z x, mu1 (d z) x <= alpha.
+
+op qs : { int | 0 < qs } as qs_gt0.
+op qg : { int | 0 < qg } as qg_gt0.
+
+module type SGOracle = { 
+  proc sample (z : in_t) : unit
+  proc guess (x : out_t) : unit
+}.
+
+module type Adversary (O:SGOracle) = { 
+  proc run () : unit
+}.
+
+module type SGOracle_i = {
+  include SGOracle
+  proc init () : unit
+  proc get_win () : bool
+}.
+
+module SGO = { 
+  var out : out_t list
+  var win : bool
+
+  proc init () = { 
+    out <- []; 
+    win <- false;
+  }
+
+  proc sample (z : in_t) = { 
+    var x;
+    x <$ d z; 
+    out <- x :: out;    
+  }
+
+  proc guess (x : out_t) = { 
+    if (x \in out) { win <- true; }
+  }
+  
+  proc get_win () = { return win; }
+}.
+
+(* Counting Wrapper *)
+module Count (O : SGOracle) : SGOracle = { 
+  var cs, cg : int
+
+  proc init () = { 
+    cs <- 0;
+    cg <- 0;
+  }
+
+  proc guess (x) = { 
+    cg <- cg + 1;
+    O.guess(x);
+  }
+
+  proc sample (z) = { 
+    cg <- cg + 1;
+    O.sample(z);
+  }
+}.
+
+module SG_Game (A : Adversary) = { 
+  proc main () = { 
+    SGO.init();
+    Count(SGO).init(); (* Add counting wrapper or not? *)
+    A(Count(SGO)).run();
+    return SGO.win /\ Count.cs <= qs /\ Count.cg <= qg;
+  }
+}.
+
+section PROOF.
+
+declare module A <: Adversary {-Count,-SGO}.
+
+lemma SG_bound &m : Pr [ SG_Game(A).main() @ &m : res ] <= qs%r * qg%r * alpha.
+admitted.
+
+end section PROOF.
