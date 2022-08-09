@@ -1,6 +1,5 @@
 require import AllCore Distr DBool PROM List.
 import Biased.
-
 require import Dexcepted.
 require import Dfilter.
 require import Real RealSeries.
@@ -12,6 +11,12 @@ op [lossless] dXYZ_acc (m : M) : (X * Y * Z) distr.
 op [lossless] dXY_rej (m : M) : (X * Y) distr.
 op [lossless uniform] dY : Y distr.
 
+require Guessing.
+
+clone import Guessing as ReprogRejGuessing with
+  type in_t <- M,
+  type out_t <- X,
+  op d <- fun (m : M) => dmap (dXYZ_acc m) (fun (xyz : X * Y * Z) => let (x, y, z) = xyz in x).
 (* TODO min-entropy axioms... *)
 
 clone import FullRO with
