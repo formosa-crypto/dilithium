@@ -19,6 +19,8 @@ clone import Guessing as ReprogRejGuessing with
   op d <- fun (m : M) => dmap (dXYZ_acc m) (fun (xyz : X * Y * Z) => let (x, y, z) = xyz in x).
 (* TODO min-entropy axioms... *)
 
+op qH, qR : int.
+
 clone import FullRO with
   type in_t <- X,
   type out_t <- Y,
@@ -71,6 +73,31 @@ module ReprogRejO1 : ReprogRejOI = {
     (* reprog *)
     RO.set(x, y);
     (* no return *)
+  }
+}.
+
+module ReprogRejCount(O: ReprogRejOI) : ReprogRejOI = {
+  include var ReprogRejO0 [reprog_acc]
+
+  var countH : int
+  var countR : int
+
+  proc init() = {
+    O.init();
+    countH <- 0;
+    countR <- 0;
+  }
+
+  proc h(x) = {
+    var y;
+    countH <- countH + 1;
+    y <@ O.h(x);
+    return y;
+  }
+
+  proc reprog_rej(m) = {
+    countR <- countR + 1;
+    O.reprog_rej(m);
   }
 }.
 
@@ -127,7 +154,7 @@ module ReprogRejO1_rec : ReprogRejOI = {
   }
 }.
 
-declare module A <: AdvReprogRej {-ReprogRejO0_rec, -RO}.
+declare module A <: AdvReprogRej {-ReprogRejO0_rec, -RO, -ReprogRejCount}.
 declare axiom A_ll : (forall (O <: ReprogRejO{-A}),
   islossless O.h =>
   islossless O.reprog_acc =>
@@ -135,16 +162,30 @@ declare axiom A_ll : (forall (O <: ReprogRejO{-A}),
   islossless A(O).distinguish).
 
 lemma ReprogRejBound &m :
-  `| Pr[GReprogRej(ReprogRejO0_rec, A).main() @ &m : res]
-   - Pr[GReprogRej(ReprogRejO1_rec, A).main() @ &m : res] |
-  <= Pr[GReprogRej(ReprogRejO1_rec, A).main() @ &m : ReprogRejO0_rec.bad].
+  `| Pr[GReprogRej(ReprogRejCount(ReprogRejO0_rec), A).main() @ &m :
+       res /\ ReprogRejCount.countH < qH /\ ReprogRejCount.countR < qR]
+   - Pr[GReprogRej(ReprogRejCount(ReprogRejO1_rec), A).main() @ &m :
+       res /\ ReprogRejCount.countH < qH /\ ReprogRejCount.countR < qR] |
+  <= Pr[GReprogRej(ReprogRejCount(ReprogRejO1_rec), A).main() @ &m :
+       ReprogRejO0_rec.bad /\ ReprogRejCount.countH < qH /\ ReprogRejCount.countR < qR].
 proof.
 byequiv (_: ={glob A, RO.m, ReprogRejO0_rec.bad, ReprogRejO0_rec.rej_lst} ==>
-  ={ReprogRejO0_rec.bad} /\ (!ReprogRejO0_rec.bad{1} => ={res})) :
-  ReprogRejO0_rec.bad; 2, 3: smt().
+  ={ReprogRejO0_rec.bad} /\ (!ReprogRejO0_rec.bad{1} =>
+    ={ReprogRejCount.countR, ReprogRejCount.countH, res})) :
+  (ReprogRejO0_rec.bad /\ ReprogRejCount.countH < qH /\ ReprogRejCount.countR < qR).
+admit. (* hopefully doable *)
+smt().
+admit. (* nonsense. *)
+admitted.
+
+(*
 proc.
-seq 1 1: (#pre /\ !ReprogRejO0_rec.bad{1} /\ !ReprogRejO0_rec.bad{2}).
-- inline ReprogRejO0_rec.init; by auto.
+seq 1 1: (#pre /\ !ReprogRejO0_rec.bad{1} /\ !ReprogRejO0_rec.bad{2}
+               /\ ReprogRejCount.countR{1} = 0 /\ ReprogRejCount.countR{2} = 0
+               /\ ReprogRejCount.countH{1} = 0 /\ ReprogRejCount.countH{2} = 0).
+- inline ReprogRejCount(ReprogRejO0_rec).init.
+  inline ReprogRejCount(ReprogRejO1_rec).init.
+  by inline ReprogRejO0_rec.init; auto.
 call (_: ReprogRejO0_rec.bad,
      ={ReprogRejO0_rec.bad, ReprogRejO0_rec.rej_lst} /\
      (forall x, (!(x \in ReprogRejO0_rec.rej_lst{1}) => RO.m{1}.[x] = RO.m{2}.[x])),
@@ -178,5 +219,6 @@ call (_: ReprogRejO0_rec.bad,
 (* after call *)
 - skip => />; smt().
 qed.
+*)
 
 end section.
