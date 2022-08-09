@@ -1,4 +1,5 @@
-require import AllCore Distr List.
+require import AllCore Distr List StdOrder.
+import RealOrder.
 
 type in_t, out_t.
 
@@ -23,7 +24,6 @@ module type Adversary (O:SGOracle) = {
 module type SGOracle_i = {
   include SGOracle
   proc init () : unit
-  proc get_win () : bool
 }.
 
 module SGO = { 
@@ -44,8 +44,6 @@ module SGO = {
   proc guess (x : out_t) = { 
     if (x \in out) { win <- true; }
   }
-  
-  proc get_win () = { return win; }
 }.
 
 (* Counting Wrapper *)
@@ -63,7 +61,7 @@ module Count (O : SGOracle) : SGOracle = {
   }
 
   proc sample (z) = { 
-    cg <- cg + 1;
+    cs <- cs + 1;
     O.sample(z);
   }
 }.
@@ -77,11 +75,119 @@ module SG_Game (A : Adversary) = {
   }
 }.
 
+(* Variant where the Adversary needs to output its guesses at the end *)
+
+module type SOracle = {
+  proc sample (z : in_t) : unit
+}.
+
+module type SAdversary (O : SOracle) = { 
+  proc guess () : out_t list
+}.
+
+module type SOracle_i = {
+  include SOracle
+  proc init () : unit
+  proc get_samples () : out_t list
+}.
+
+module SO = { 
+  var out : out_t list
+
+  proc init () = { 
+    out <- []; 
+  }
+
+  proc sample (z : in_t) = { 
+    var x;
+    x <$ d z; 
+    out <- x :: out;    
+  }
+}.
+
+module SCount (O : SOracle) : SOracle = { 
+  var cs : int
+
+  proc init () = { 
+    cs <- 0;
+  }
+
+  proc sample (z) = { 
+    cs <- cs + 1;
+    O.sample(z);
+  }
+}.
+
+module S_Game (A : SAdversary) = { 
+  proc main () = {
+    var xs;
+    SO.init();
+    SCount(SO).init(); (* Add counting wrapper or not? *)
+    xs <@ A(SCount(SO)).guess();
+    return has (mem SO.out) xs /\ SCount.cs <= qs /\ size xs <= qg ;
+  }
+}.
+
 section PROOF.
 
-declare module A <: Adversary {-Count,-SGO}.
+declare module A <: Adversary {-Count,-SGO,-SO,-SCount}.
+
+local module (B : SAdversary) (O : SOracle) = { 
+  var log : out_t list
+  module O' = {
+    proc sample = O.sample
+    proc guess (x) = { log <- x :: log; }
+  }
+  proc guess () = { 
+    log <- [];
+    A(O').run();
+    return log;
+  } 
+}.
+
+local lemma SG_S &m : Pr [ SG_Game(A).main() @ &m : res ] <= Pr [ S_Game(B).main() @ &m : res ].
+proof.
+byequiv => //; proc; inline*; wp. 
+call(: ={out}(SGO,SO) /\ 
+       ={cs}(Count,SCount) /\ 
+       (Count.cg{1} = size B.log{2}) /\ 
+       (SGO.win{1} => has (mem SO.out{2}) B.log{2})).
+- proc; inline*; auto => />; smt(has_sym).
+- proc; inline*; auto => />; smt(has_sym).
+by auto => /> /#.
+qed.
 
 lemma SG_bound &m : Pr [ SG_Game(A).main() @ &m : res ] <= qs%r * qg%r * alpha.
 admitted.
 
 end section PROOF.
+
+(** Variant with static query bound for A *)
+
+module SG_GameS (A : Adversary) = { 
+  proc main () = { 
+    SGO.init();
+    A(SGO).run();
+    return SGO.win;
+  }
+}.
+
+section STATIC.
+
+declare module A <: Adversary{-Count,-SGO,-SO,-SCount}.
+
+declare axiom A_bound : forall (O <: SGOracle{-A}), 
+  hoare [ A(Count(O)).run : Count.cs = 0 /\ Count.cg = 0 ==> 
+                            Count.cs <= qs /\ Count.cg = qg ].
+
+lemma SG_boundS &m : Pr [ SG_GameS(A).main() @ &m : res ] <= qs%r * qg%r * alpha.
+proof.
+apply: ler_trans (SG_bound A &m).
+byequiv => //; proc. 
+conseq (: ={glob A} ==> ={SGO.win}) _ 
+       (: _ ==> Count.cs <= qs /\ Count.cg <= qg) => //.
+- by call (A_bound SGO); inline*; auto.
+by inline*; call(: ={glob SGO}); 1,2 : proc; inline*; auto.
+qed.
+
+end section STATIC.
