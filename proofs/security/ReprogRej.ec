@@ -1,23 +1,45 @@
 require import AllCore Distr DBool PROM List.
-import Biased.
-
 require import Dexcepted.
 require import Dfilter.
 require import Real RealSeries.
 import SmtMap.
+import Biased.
+
+require import DistrExtras.
+require Guessing.
 
 type X, Y, Z, M.
 
 op [lossless] dXYZ_acc (m : M) : (X * Y * Z) distr.
 op [lossless] dXY_rej (m : M) : (X * Y) distr.
 op [lossless uniform] dY : Y distr.
+op alpha : real.
 
-(* TODO min-entropy axioms... *)
+op dXr m = dfst (dXY_rej m).
+axiom dX_pmax m :
+  p_max (dXr m) <= alpha.
 
 clone import FullRO with
   type in_t <- X,
   type out_t <- Y,
-  op dout <- (fun _ => dY).
+  op dout <- (fun _ => dY)
+proof *.
+
+op qh, qr : int.
+axiom qh_gt0 : 0 < qh.
+axiom qr_gt0 : 0 < qr.
+
+clone import Guessing as RejGuessing with
+  type in_t <- M,
+  type out_t <- X,
+  op d <- fun m => dXr m,
+  op qs <- qr,
+  op qg <- qh,
+  op alpha <- alpha
+proof *.
+realize d_pmax by apply dX_pmax.
+realize qs_gt0 by apply qr_gt0.
+realize qg_gt0 by apply qh_gt0.
 
 module type ReprogRejO = {
   proc h(x: X) : Y
@@ -82,6 +104,34 @@ module GReprogRej (O: ReprogRejOI) (Adv: AdvReprogRej) = {
   }
 }.
 
+module Count (O: ReprogRejO) : ReprogRejO = {
+  var countR, countH : int
+  (*
+  proc init() = {
+    countR <- 0;
+    countH <- 0;
+    O.init();
+  }
+  *)
+  proc reprog_acc(x) = {
+    var y;
+    y <@ O.reprog_acc(x);
+    return y;
+  }
+  proc h(x) = {
+    var y;
+    countH <- countH + 1;
+    y <@ O.h(x);
+    return y;
+  }
+  proc reprog_rej(x) = {
+    var y;
+    countR <- countR + 1;
+    y <@ O.reprog_rej(x);
+    return y;
+  }
+}.
+
 section.
 
 module ReprogRejO0_rec : ReprogRejOI = {
@@ -122,12 +172,15 @@ module ReprogRejO1_rec : ReprogRejOI = {
   }
 }.
 
-declare module A <: AdvReprogRej {-ReprogRejO0_rec, -RO}.
+declare module A <: AdvReprogRej {-ReprogRejO0_rec, -RO, -Count}.
 declare axiom A_ll : (forall (O <: ReprogRejO{-A}),
   islossless O.h =>
   islossless O.reprog_acc =>
   islossless O.reprog_rej =>
   islossless A(O).distinguish).
+declare axiom A_bound : forall (O <: ReprogRejO{-A}), 
+  hoare [ A(Count(O)).distinguish : Count.countR = 0 /\ Count.countH = 0 ==> 
+                                    Count.countR <= qr /\ Count.countH = qh ].
 
 lemma ReprogRejBound &m :
   `| Pr[GReprogRej(ReprogRejO0_rec, A).main() @ &m : res]

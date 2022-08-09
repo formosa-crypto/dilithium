@@ -306,3 +306,10 @@ rewrite logM in H; first smt(dcond_supp gt0_pmax).
 - smt(dcond_supp gt0_pmax).
 suff: log 2%r (inv (mu d P)) = -log 2%r (mu d P); smt(lnV ge0_mu).
 qed.
+
+lemma pmax_upper_bound (d: 'a distr) (x: 'a) :
+  mu1 d x <= p_max d.
+proof.
+apply (flub_upper_bound (mu1 d) x); exists 1%r => /=.
+by move => ?; apply le1_mu.
+qed.

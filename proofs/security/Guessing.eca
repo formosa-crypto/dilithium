@@ -1,13 +1,23 @@
 require import AllCore Distr List StdOrder.
 import RealOrder.
 
+require import DistrExtras RealFLub.
+
 type in_t, out_t.
 
 op d : in_t -> out_t distr.
 
 op alpha : real.
 
-axiom d_max : forall z x, mu1 (d z) x <= alpha.
+axiom d_pmax z : p_max (d z) <= alpha.
+
+(* Hmm...? *)
+lemma d_max : forall z x, mu1 (d z) x <= alpha.
+proof.
+move => z x.
+suff: mu1 (d z) x <= p_max (d z) by smt(d_pmax).
+by apply pmax_upper_bound.
+qed.
 
 op qs : { int | 0 < qs } as qs_gt0.
 op qg : { int | 0 < qg } as qg_gt0.
