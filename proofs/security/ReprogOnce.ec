@@ -14,6 +14,11 @@ op [lossless] commit : SK -> (W * ST) distr.
 op [lossless uniform] dC : C distr.
 op respond : ST -> C -> Z option.
 
+op alpha : real. (* pmax *)
+op qs : int. (* max. number of signing queries *)
+op qh : int. (* max. number of hash queries *)
+op kappa : int. (* max. number of iterations *)
+
 require ReprogRej.
 
 clone import ReprogRej as Li2_ReprogRej with
@@ -24,7 +29,42 @@ clone import ReprogRej as Li2_ReprogRej with
 
 import FullRO.
 
-module ReprogOnce0 = {
+module type ReprogOnceO = {
+  proc h(w: W, m: M) : Y
+  proc sign(m: M) : W * C * Z
+}.
+
+module CountReprogOnce (O: ReprogOnceO) : ReprogOnceO = {
+  var countS : int
+  var countH : int
+  (*
+  proc init() = {
+    countR <- 0;
+    countH <- 0;
+    O.init();
+  }
+  *)
+  proc h(w: W, m : M) : Y = {
+    var y;
+    countH <- countH + 1;
+    y <@ O.h((w, m));
+    return y;
+  }
+
+  proc sign(x) = {
+    var y;
+    countS <- countS + 1;
+    y <@ O.sign(x);
+    return y;
+  }
+}.
+
+module type ReprogOnceOI = {
+  include ReprogOnceO
+  proc init() : unit
+}.
+
+module ReprogOnce0 : ReprogOnceOI = {
   var sk : SK
 
   proc init() = {
@@ -32,43 +72,73 @@ module ReprogOnce0 = {
     (pk, sk) <$ keygen;
   }
 
+  proc h = RO.get
+
   proc sign(m: M) = {
-    var w, st, c, oz;
+    var w, st, c, oz, i;
 
     (* Silences unused variables warning *)
     w <- witness;
     c <- witness;
 
+    i <- 0;
     oz <- None;
-    while(oz = None) {
+    while(oz = None && i < kappa) {
       (w, st) <$ commit sk;
       c <$ dC;
       oz <- respond st c;
       RO.set((w, m), c);
+      i <- i + 1;
     }
     return (w, c, oget oz);
   }
 }.
 
 (* Moving RO.set outside while-loop *)
-module ReprogOnce1 = {
-  include var ReprogOnce0[init]
+module ReprogOnce1 : ReprogOnceOI = {
+  include var ReprogOnce0[init, h]
 
   proc sign(m: M) = {
-    var w, st, c, oz;
+    var w, st, c, oz, i;
 
     (* Silences unused variables warning *)
     w <- witness;
     c <- witness;
 
     oz <- None;
-    while(oz = None) {
+    i <- 0;
+    while(oz = None /\ i < kappa) {
       (w, st) <$ commit sk;
       c <$ dC;
       oz <- respond st c;
+      i <- i + 1;
     }
     RO.set((w, m), c);
     return (w, c, oget oz);
+  }
+}.
+
+module type AdvReprogOnce(O: ReprogOnceO) = {
+  proc distinguish(): bool
+}.
+
+module GReprogOnce0(Adv: AdvReprogOnce) = {
+  proc main() = {
+    var b;
+    RO.init();
+    ReprogOnce0.init();
+    b <@ Adv(ReprogOnce0).distinguish();
+    return b;
+  }
+}.
+
+module GReprogOnce1(Adv: AdvReprogOnce) = {
+  proc main() = {
+    var b;
+    RO.init();
+    ReprogOnce1.init();
+    b <@ Adv(ReprogOnce1).distinguish();
+    return b;
   }
 }.
 
@@ -313,22 +383,23 @@ module G0A = {
   include var ReprogOnce0[init]
 
   proc sign(m: M) = {
-    var w, c, z, f;
+    var w, c, z, f, i;
 
     (* Silences unused variables warning *)
     w <- witness;
     c <- witness;
     z <- witness;
 
-    (* Maybe there's an argument to do another game with `oz` first? *)
+    i <- 0;
     f <- false;
-    while(!f) {
+    while(!f && i < kappa) {
       f <$ dbiased (p_acc sk);
       if(f)
         (w, c, z) <$ dWCZ_acc sk;
       else
         (w, c) <$ dWC_rej sk;
       RO.set((w, m), c);
+      i <- i + 1;
     }
     return (w, c, z);
   }
@@ -337,6 +408,10 @@ module G0A = {
 equiv G0A_hop : ReprogOnce0.sign ~ G0A.sign :
   ={m, ReprogOnce0.sk} ==> ={res}.
 proof.
+
+(* Here lies a proof was tragically killed by adding a loop counter.
+   RIP. July ?? 2022 - August 10 2022
+
 proc.
 while (#pre /\ (oz{1} <> None => (={m, w, c} /\ oget oz{1} = z{2}))); 2: by auto => />.
 call (_ : true ==> true); first proc; auto => //=.
@@ -353,6 +428,8 @@ print hop_bodies.
 
 admit.
 qed.
+*)
+admitted.
 
 (* Same idea with G0A *)
 module G1A = {
@@ -537,6 +614,18 @@ module G1R = {
   }
 }.
 
-
-
 **)
+
+section.
+
+declare module Adv <: AdvReprogOnce {-ReprogOnce0}.
+
+declare axiom A_bound : forall (O <: ReprogOnceO{-Adv}), 
+  hoare [ Adv(CountReprogOnce(O)).distinguish : CountReprogOnce.countS = 0 /\ CountReprogOnce.countH = 0 ==> 
+                                              CountReprogOnce.countS <= qs /\ CountReprogOnce.countH = qh ].
+
+lemma main_bound &m :
+`| Pr[GReprogOnce0(Adv).main() @ &m : res] - Pr[GReprogOnce1(Adv).main() @ &m : res] | < kappa%r * qs%r * qh%r * alpha.
+admitted.
+
+end section.
