@@ -4,27 +4,44 @@ require import Dexcepted.
 require import Dfilter.
 require import Real RealSeries.
 import SmtMap.
+import Biased.
+
+require import DistrExtras.
+require Guessing.
 
 type X, Y, Z, M.
 
 op [lossless] dXYZ_acc (m : M) : (X * Y * Z) distr.
 op [lossless] dXY_rej (m : M) : (X * Y) distr.
 op [lossless uniform] dY : Y distr.
-
-require Guessing.
-
-clone import Guessing as ReprogRejGuessing with
-  type in_t <- M,
-  type out_t <- X,
-  op d <- fun (m : M) => dmap (dXYZ_acc m) (fun (xyz : X * Y * Z) => let (x, y, z) = xyz in x).
-(* TODO min-entropy axioms... *)
-
+op alpha : real.
 op qH, qR : int.
+
+op dXr m = dfst (dXY_rej m).
+axiom dX_pmax m :
+  p_max (dXr m) <= alpha.
 
 clone import FullRO with
   type in_t <- X,
   type out_t <- Y,
-  op dout <- (fun _ => dY).
+  op dout <- (fun _ => dY)
+proof *.
+
+op qh, qr : int.
+axiom qh_gt0 : 0 < qh.
+axiom qr_gt0 : 0 < qr.
+
+clone import Guessing as RejGuessing with
+  type in_t <- M,
+  type out_t <- X,
+  op d <- fun m => dXr m,
+  op qs <- qr,
+  op qg <- qh,
+  op alpha <- alpha
+proof *.
+realize d_pmax by apply dX_pmax.
+realize qs_gt0 by apply qr_gt0.
+realize qg_gt0 by apply qh_gt0.
 
 module type ReprogRejO = {
   proc h(x: X) : Y
@@ -76,31 +93,6 @@ module ReprogRejO1 : ReprogRejOI = {
   }
 }.
 
-module ReprogRejCount(O: ReprogRejOI) : ReprogRejOI = {
-  include var ReprogRejO0 [reprog_acc]
-
-  var countH : int
-  var countR : int
-
-  proc init() = {
-    O.init();
-    countH <- 0;
-    countR <- 0;
-  }
-
-  proc h(x) = {
-    var y;
-    countH <- countH + 1;
-    y <@ O.h(x);
-    return y;
-  }
-
-  proc reprog_rej(m) = {
-    countR <- countR + 1;
-    O.reprog_rej(m);
-  }
-}.
-
 module type AdvReprogRej(O: ReprogRejO) = {
   proc distinguish() : bool
 }.
@@ -111,6 +103,34 @@ module GReprogRej (O: ReprogRejOI) (Adv: AdvReprogRej) = {
     O.init();
     b <@ Adv(O).distinguish();
     return b;
+  }
+}.
+
+module Count (O: ReprogRejO) : ReprogRejO = {
+  var countR, countH : int
+  (*
+  proc init() = {
+    countR <- 0;
+    countH <- 0;
+    O.init();
+  }
+  *)
+  proc reprog_acc(x) = {
+    var y;
+    y <@ O.reprog_acc(x);
+    return y;
+  }
+  proc h(x) = {
+    var y;
+    countH <- countH + 1;
+    y <@ O.h(x);
+    return y;
+  }
+  proc reprog_rej(x) = {
+    var y;
+    countR <- countR + 1;
+    y <@ O.reprog_rej(x);
+    return y;
   }
 }.
 
@@ -154,38 +174,27 @@ module ReprogRejO1_rec : ReprogRejOI = {
   }
 }.
 
-declare module A <: AdvReprogRej {-ReprogRejO0_rec, -RO, -ReprogRejCount}.
+declare module A <: AdvReprogRej {-ReprogRejO0_rec, -RO, -Count}.
 declare axiom A_ll : (forall (O <: ReprogRejO{-A}),
   islossless O.h =>
   islossless O.reprog_acc =>
   islossless O.reprog_rej =>
   islossless A(O).distinguish).
+declare axiom A_bound : forall (O <: ReprogRejO{-A}), 
+  hoare [ A(Count(O)).distinguish : Count.countR = 0 /\ Count.countH = 0 ==> 
+                                    Count.countR <= qr /\ Count.countH = qh ].
 
 lemma ReprogRejBound &m :
-  `| Pr[GReprogRej(ReprogRejCount(ReprogRejO0_rec), A).main() @ &m :
-       res /\ ReprogRejCount.countH < qH /\ ReprogRejCount.countR < qR]
-   - Pr[GReprogRej(ReprogRejCount(ReprogRejO1_rec), A).main() @ &m :
-       res /\ ReprogRejCount.countH < qH /\ ReprogRejCount.countR < qR] |
-  <= Pr[GReprogRej(ReprogRejCount(ReprogRejO1_rec), A).main() @ &m :
-       ReprogRejO0_rec.bad /\ ReprogRejCount.countH < qH /\ ReprogRejCount.countR < qR].
+  `| Pr[GReprogRej(ReprogRejO0_rec, A).main() @ &m : res]
+   - Pr[GReprogRej(ReprogRejO1_rec, A).main() @ &m : res] |
+  <= Pr[GReprogRej(ReprogRejO1_rec, A).main() @ &m : ReprogRejO0_rec.bad].
 proof.
 byequiv (_: ={glob A, RO.m, ReprogRejO0_rec.bad, ReprogRejO0_rec.rej_lst} ==>
-  ={ReprogRejO0_rec.bad} /\ (!ReprogRejO0_rec.bad{1} =>
-    ={ReprogRejCount.countR, ReprogRejCount.countH, res})) :
-  (ReprogRejO0_rec.bad /\ ReprogRejCount.countH < qH /\ ReprogRejCount.countR < qR).
-admit. (* hopefully doable *)
-smt().
-admit. (* nonsense. *)
-admitted.
-
-(*
+  ={ReprogRejO0_rec.bad} /\ (!ReprogRejO0_rec.bad{1} => ={res})) :
+  ReprogRejO0_rec.bad; 2, 3: smt().
 proc.
-seq 1 1: (#pre /\ !ReprogRejO0_rec.bad{1} /\ !ReprogRejO0_rec.bad{2}
-               /\ ReprogRejCount.countR{1} = 0 /\ ReprogRejCount.countR{2} = 0
-               /\ ReprogRejCount.countH{1} = 0 /\ ReprogRejCount.countH{2} = 0).
-- inline ReprogRejCount(ReprogRejO0_rec).init.
-  inline ReprogRejCount(ReprogRejO1_rec).init.
-  by inline ReprogRejO0_rec.init; auto.
+seq 1 1: (#pre /\ !ReprogRejO0_rec.bad{1} /\ !ReprogRejO0_rec.bad{2}).
+- inline ReprogRejO0_rec.init; by auto.
 call (_: ReprogRejO0_rec.bad,
      ={ReprogRejO0_rec.bad, ReprogRejO0_rec.rej_lst} /\
      (forall x, (!(x \in ReprogRejO0_rec.rej_lst{1}) => RO.m{1}.[x] = RO.m{2}.[x])),
@@ -219,6 +228,5 @@ call (_: ReprogRejO0_rec.bad,
 (* after call *)
 - skip => />; smt().
 qed.
-*)
 
 end section.
