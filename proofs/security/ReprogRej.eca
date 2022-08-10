@@ -43,14 +43,14 @@ realize d_pmax by apply dX_pmax.
 realize qs_gt0 by apply qr_gt0.
 realize qg_gt0 by apply qh_gt0.
 
-module type ReprogRejO = {
+module type Oracle = {
   proc h(x: X) : Y
   proc reprog_acc(m: M) : X * Y * Z
   proc reprog_rej(m: M) : unit
 }.
 
-module type ReprogRejOI = {
-  include ReprogRejO
+module type Oracle_i = {
+  include Oracle
   proc init() : unit
 }.
 
@@ -62,7 +62,7 @@ module type ReprogRejOI = {
  * The games are indistinguishable in ROM.
  * I hope same is true in QROM.
  *)
-module ReprogRejO0 : ReprogRejOI = {
+module Oracle0 : Oracle_i = {
   proc init() = {}
 
   proc h(x) = {
@@ -81,8 +81,8 @@ module ReprogRejO0 : ReprogRejOI = {
   proc reprog_rej(m: M) = { }
 }.
 
-module ReprogRejO1 : ReprogRejOI = {
-  include var ReprogRejO0 [init, h, reprog_acc]
+module Oracle1 : Oracle_i = {
+  include var Oracle0 [init, h, reprog_acc]
 
   proc reprog_rej(m) = {
     var x, y;
@@ -93,11 +93,11 @@ module ReprogRejO1 : ReprogRejOI = {
   }
 }.
 
-module type AdvReprogRej(O: ReprogRejO) = {
+module type Adversary(O: Oracle) = {
   proc distinguish() : bool
 }.
 
-module GReprogRej (O: ReprogRejOI) (Adv: AdvReprogRej) = {
+module Game (O: Oracle_i) (Adv: Adversary) = {
   proc main() = {
     var b;
     O.init();
@@ -106,7 +106,7 @@ module GReprogRej (O: ReprogRejOI) (Adv: AdvReprogRej) = {
   }
 }.
 
-module Count (O: ReprogRejO) : ReprogRejO = {
+module Count (O: Oracle) : Oracle = {
   var countR, countH : int
   (*
   proc init() = {
@@ -136,8 +136,8 @@ module Count (O: ReprogRejO) : ReprogRejO = {
 
 section.
 
-module ReprogRejO0_rec : ReprogRejOI = {
-  include var ReprogRejO0 [reprog_acc]
+module Oracle0_rec : Oracle_i = {
+  include var Oracle0 [reprog_acc]
 
   var bad : bool
   var rej_lst : X list
@@ -161,8 +161,8 @@ module ReprogRejO0_rec : ReprogRejOI = {
   }
 }.
 
-module ReprogRejO1_rec : ReprogRejOI = {
-  include var ReprogRejO0_rec[init, h, reprog_acc]
+module Oracle1_rec : Oracle_i = {
+  include var Oracle0_rec[init, h, reprog_acc]
 
   proc reprog_rej(m) = {
     var x, y;
@@ -174,31 +174,31 @@ module ReprogRejO1_rec : ReprogRejOI = {
   }
 }.
 
-declare module A <: AdvReprogRej {-ReprogRejO0_rec, -RO, -Count}.
-declare axiom A_ll : (forall (O <: ReprogRejO{-A}),
+declare module A <: Adversary {-Oracle0_rec, -RO, -Count}.
+declare axiom A_ll : (forall (O <: Oracle{-A}),
   islossless O.h =>
   islossless O.reprog_acc =>
   islossless O.reprog_rej =>
   islossless A(O).distinguish).
-declare axiom A_bound : forall (O <: ReprogRejO{-A}), 
+declare axiom A_bound : forall (O <: Oracle{-A}), 
   hoare [ A(Count(O)).distinguish : Count.countR = 0 /\ Count.countH = 0 ==> 
                                     Count.countR <= qr /\ Count.countH = qh ].
 
 lemma ReprogRejBound &m :
-  `| Pr[GReprogRej(ReprogRejO0_rec, A).main() @ &m : res]
-   - Pr[GReprogRej(ReprogRejO1_rec, A).main() @ &m : res] |
-  <= Pr[GReprogRej(ReprogRejO1_rec, A).main() @ &m : ReprogRejO0_rec.bad].
+  `| Pr[Game(Oracle0_rec, A).main() @ &m : res]
+   - Pr[Game(Oracle1_rec, A).main() @ &m : res] |
+  <= Pr[Game(Oracle1_rec, A).main() @ &m : Oracle0_rec.bad].
 proof.
-byequiv (_: ={glob A, RO.m, ReprogRejO0_rec.bad, ReprogRejO0_rec.rej_lst} ==>
-  ={ReprogRejO0_rec.bad} /\ (!ReprogRejO0_rec.bad{1} => ={res})) :
-  ReprogRejO0_rec.bad; 2, 3: smt().
+byequiv (_: ={glob A, RO.m, Oracle0_rec.bad, Oracle0_rec.rej_lst} ==>
+  ={Oracle0_rec.bad} /\ (!Oracle0_rec.bad{1} => ={res})) :
+  Oracle0_rec.bad; 2, 3: smt().
 proc.
-seq 1 1: (#pre /\ !ReprogRejO0_rec.bad{1} /\ !ReprogRejO0_rec.bad{2}).
-- inline ReprogRejO0_rec.init; by auto.
-call (_: ReprogRejO0_rec.bad,
-     ={ReprogRejO0_rec.bad, ReprogRejO0_rec.rej_lst} /\
-     (forall x, (!(x \in ReprogRejO0_rec.rej_lst{1}) => RO.m{1}.[x] = RO.m{2}.[x])),
-     ={ReprogRejO0_rec.bad}); 1: by apply A_ll.
+seq 1 1: (#pre /\ !Oracle0_rec.bad{1} /\ !Oracle0_rec.bad{2}).
+- inline Oracle0_rec.init; by auto.
+call (_: Oracle0_rec.bad,
+     ={Oracle0_rec.bad, Oracle0_rec.rej_lst} /\
+     (forall x, (!(x \in Oracle0_rec.rej_lst{1}) => RO.m{1}.[x] = RO.m{2}.[x])),
+     ={Oracle0_rec.bad}); 1: by apply A_ll.
 (* H *)
 - proc; inline RO.get; auto => />.
   smt(get_setE get_set_sameE).

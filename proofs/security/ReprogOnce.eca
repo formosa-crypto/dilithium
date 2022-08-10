@@ -21,7 +21,7 @@ op kappa : int. (* max. number of iterations *)
 
 require ReprogRej.
 
-clone import ReprogRej as Li2_ReprogRej with
+clone import ReprogRej as RRej with
   type M = M,
   type X = W * M,
   type Y = C,
@@ -29,12 +29,12 @@ clone import ReprogRej as Li2_ReprogRej with
 
 import FullRO.
 
-module type ReprogOnceO = {
+module type Oracle = {
   proc h(w: W, m: M) : Y
   proc sign(m: M) : W * C * Z
 }.
 
-module CountReprogOnce (O: ReprogOnceO) : ReprogOnceO = {
+module Count (O: Oracle) : Oracle = {
   var countS : int
   var countH : int
   (*
@@ -59,12 +59,12 @@ module CountReprogOnce (O: ReprogOnceO) : ReprogOnceO = {
   }
 }.
 
-module type ReprogOnceOI = {
-  include ReprogOnceO
+module type Oracle_i = {
+  include Oracle
   proc init() : unit
 }.
 
-module ReprogOnce0 : ReprogOnceOI = {
+module OLeft : Oracle_i = {
   var sk : SK
 
   proc init() = {
@@ -95,8 +95,8 @@ module ReprogOnce0 : ReprogOnceOI = {
 }.
 
 (* Moving RO.set outside while-loop *)
-module ReprogOnce1 : ReprogOnceOI = {
-  include var ReprogOnce0[init, h]
+module ORight : Oracle_i = {
+  include var OLeft[init, h]
 
   proc sign(m: M) = {
     var w, st, c, oz, i;
@@ -118,26 +118,26 @@ module ReprogOnce1 : ReprogOnceOI = {
   }
 }.
 
-module type AdvReprogOnce(O: ReprogOnceO) = {
+module type Adversary(O: Oracle) = {
   proc distinguish(): bool
 }.
 
-module GReprogOnce0(Adv: AdvReprogOnce) = {
+module GameL(Adv: Adversary) = {
   proc main() = {
     var b;
     RO.init();
-    ReprogOnce0.init();
-    b <@ Adv(ReprogOnce0).distinguish();
+    OLeft.init();
+    b <@ Adv(OLeft).distinguish();
     return b;
   }
 }.
 
-module GReprogOnce1(Adv: AdvReprogOnce) = {
+module GameR(Adv: Adversary) = {
   proc main() = {
     var b;
     RO.init();
-    ReprogOnce1.init();
-    b <@ Adv(ReprogOnce1).distinguish();
+    ORight.init();
+    b <@ Adv(ORight).distinguish();
     return b;
   }
 }.
@@ -190,8 +190,6 @@ op p_rej sk = mu (dWCoZ sk) (fun wcz => let (w, c, oz) = wcz in oz = None).
 lemma p_rej_E sk :
   p_rej sk = 1%r - p_acc sk.
 proof.
-print mu_not.
-print p_rej.
 rewrite /p_rej.
 have ->: (fun wcz : (W * C * Z option)=> let (w, c, oz) = wcz in oz = None) =
       predC (fun wcz => let (w, c, oz) = wcz in oz <> None) by apply fun_ext => ? /#.
@@ -221,7 +219,7 @@ admitted.
 
 (* Helper module to call bypr... *)
 module LoopBodies = {
-  include var ReprogOnce0[init]
+  include var OLeft[init]
   proc body1() = {
     var w, c, oz;
     (w, c, oz) <$ dWCoZ sk;
@@ -264,11 +262,11 @@ lemma linearize sk :
 = dWCoZ sk.*)
 
 lemma pr_body1 x &m sk :
-  ReprogOnce0.sk{m} = sk =>
+  OLeft.sk{m} = sk =>
   Pr[LoopBodies.body1() @ &m : res = x] = mu1 (dWCoZ sk) x.
 proof.
 move => *.
-byphoare (_ : (ReprogOnce0.sk = sk) ==> (res = x)) => //=.
+byphoare (_ : (OLeft.sk = sk) ==> (res = x)) => //=.
 proc.
 rnd (fun r => r = x).
 auto => /#.
@@ -291,7 +289,7 @@ qed.
 
 equiv hop_body2 :
   LoopBodies.body1 ~ LoopBodies.body2 :
-  ={ReprogOnce0.sk} ==> ={res}.
+  ={OLeft.sk} ==> ={res}.
 proof.
 proc.
 rnd: *0 *0.
@@ -302,13 +300,13 @@ split.
 qed.
 
 lemma pr_body2 x &m sk :
-  ReprogOnce0.sk{m} = sk =>
+  OLeft.sk{m} = sk =>
   Pr[LoopBodies.body2() @ &m : res = x] = mu1 (dWCoZ sk) x.
 proof.
 move => *.
 have <- : Pr[LoopBodies.body1() @ &m : res = x] = Pr[LoopBodies.body2() @ &m : res = x].
   byequiv.
-  conseq (_ : ={ReprogOnce0.sk} ==> ={res}). trivial. trivial.
+  conseq (_ : ={OLeft.sk} ==> ={res}). trivial. trivial.
   apply hop_body2. trivial. trivial.
 rewrite (pr_body1 x &m sk) => /#.
 qed.
@@ -321,14 +319,14 @@ qed.
 
 equiv hop_body3 :
   LoopBodies.body2 ~ LoopBodies.body3 :
-  ={ReprogOnce0.sk} ==> ={res}.
+  ={OLeft.sk} ==> ={res}.
 proof.
 bypr res{1} res{2}; 1: auto => /#.
 move => &1 &2 x eq_sk.
-rewrite (pr_body2 x &1 ReprogOnce0.sk{1}) => //.
-byphoare (_: (ReprogOnce0.sk = ReprogOnce0.sk{1}) ==> (res = x)) => //=; 2: subst => //=.
+rewrite (pr_body2 x &1 OLeft.sk{1}) => //.
+byphoare (_: (OLeft.sk = OLeft.sk{1}) ==> (res = x)) => //=; 2: subst => //=.
 proc.
-seq 1: f (p_acc ReprogOnce0.sk{1}) (mu1 (dWCoZ_acc ReprogOnce0.sk{1}) x) (p_rej ReprogOnce0.sk{1}) (mu1 (dWCoZ_rej ReprogOnce0.sk{1}) x) #pre => //=.
+seq 1: f (p_acc OLeft.sk{1}) (mu1 (dWCoZ_acc OLeft.sk{1}) x) (p_rej OLeft.sk{1}) (mu1 (dWCoZ_rej OLeft.sk{1}) x) #pre => //=.
 - by auto.
 - rnd; auto => /> /=.
   rewrite dbiasedE => /=.
@@ -352,7 +350,7 @@ qed.
 
 equiv hop_body4 :
   LoopBodies.body3 ~ LoopBodies.body4 :
-  ={ReprogOnce0.sk} ==> (res{1}.`1 = res{2}.`1 /\
+  ={OLeft.sk} ==> (res{1}.`1 = res{2}.`1 /\
                          res{1}.`2 = res{2}.`2 /\
                          res{1}.`3 <> None <=> res{2}.`3 /\
                          res{1}.`3 <> None => oget res{1}.`3 = res{2}.`4).
@@ -380,7 +378,7 @@ admitted.
 
 (* Replaces the transcript generation with the above *)
 module G0A = {
-  include var ReprogOnce0[init]
+  include var OLeft[init]
 
   proc sign(m: M) = {
     var w, c, z, f, i;
@@ -405,8 +403,8 @@ module G0A = {
   }
 }.
 
-equiv G0A_hop : ReprogOnce0.sign ~ G0A.sign :
-  ={m, ReprogOnce0.sk} ==> ={res}.
+equiv G0A_hop : OLeft.sign ~ G0A.sign :
+  ={m, OLeft.sk} ==> ={res}.
 proof.
 
 (* Here lies a proof was tragically killed by adding a loop counter.
@@ -416,9 +414,9 @@ proc.
 while (#pre /\ (oz{1} <> None => (={m, w, c} /\ oget oz{1} = z{2}))); 2: by auto => />.
 call (_ : true ==> true); first proc; auto => //=.
 transitivity{1}
-  {(w, c, oz) <$ dWCoZ ReprogOnce0.sk;}
-  (={ReprogOnce0.sk, m} ==> ={m, ReprogOnce0.sk, w, c, oz})
-  (={ReprogOnce0.sk, m} ==> (={m, ReprogOnce0.sk} /\ (oz{1} <> None => ={w, c} /\ oget oz{1} = z{2})) /\ (oz{1} = None <=> !f{2})); 1: smt(); 1: smt().
+  {(w, c, oz) <$ dWCoZ OLeft.sk;}
+  (={OLeft.sk, m} ==> ={m, OLeft.sk, w, c, oz})
+  (={OLeft.sk, m} ==> (={m, OLeft.sk} /\ (oz{1} <> None => ={w, c} /\ oget oz{1} = z{2})) /\ (oz{1} = None <=> !f{2})); 1: smt(); 1: smt().
 - rnd: *0 *0; auto => />.
   move => *; split.
   - move => ? _; congr.
@@ -433,7 +431,7 @@ admitted.
 
 (* Same idea with G0A *)
 module G1A = {
-  include var ReprogOnce0[init]
+  include var OLeft[init]
   proc sign(m: M) = {
     var w, c, z, f;
 
@@ -455,8 +453,8 @@ module G1A = {
   }
 }.
 
-equiv G1A_hop : ReprogOnce1.sign ~ G1A.sign :
-  ={m, ReprogOnce0.sk} ==> ={res}.
+equiv G1A_hop : ORight.sign ~ G1A.sign :
+  ={m, OLeft.sk} ==> ={res}.
 proof.
 (* Same idea as above *)
 admitted.
@@ -496,7 +494,7 @@ module G0B = {
 }.
 
 equiv G0B_hop : G0A.sign ~ G0B.sign :
-  ={m, ReprogOnce0.sk} ==> ={res}.
+  ={m, OLeft.sk} ==> ={res}.
 proof.
 (* Should be trivial up to proving termination. *)
 admitted.
@@ -534,7 +532,7 @@ module G1B = {
 }.
 
 equiv G1B_hop : G1A.sign ~ G1B.sign :
-  ={m, ReprogOnce0.sk} ==> ={res}.
+  ={m, OLeft.sk} ==> ={res}.
 proof.
 (* Should be trivial up to proving termination. *)
 admitted.
@@ -618,14 +616,14 @@ module G1R = {
 
 section.
 
-declare module Adv <: AdvReprogOnce {-ReprogOnce0}.
+declare module Adv <: Adversary {-OLeft}.
 
-declare axiom A_bound : forall (O <: ReprogOnceO{-Adv}), 
-  hoare [ Adv(CountReprogOnce(O)).distinguish : CountReprogOnce.countS = 0 /\ CountReprogOnce.countH = 0 ==> 
-                                              CountReprogOnce.countS <= qs /\ CountReprogOnce.countH = qh ].
+declare axiom A_bound : forall (O <: Oracle{-Adv}), 
+  hoare [ Adv(Count(O)).distinguish : Count.countS = 0 /\ Count.countH = 0 ==> 
+                                              Count.countS <= qs /\ Count.countH = qh ].
 
 lemma main_bound &m :
-`| Pr[GReprogOnce0(Adv).main() @ &m : res] - Pr[GReprogOnce1(Adv).main() @ &m : res] | < kappa%r * qs%r * qh%r * alpha.
+`| Pr[GameL(Adv).main() @ &m : res] - Pr[GameR(Adv).main() @ &m : res] | < kappa%r * qs%r * qh%r * alpha.
 admitted.
 
 end section.
