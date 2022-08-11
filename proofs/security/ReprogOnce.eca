@@ -32,7 +32,7 @@ import RRej.OnlyRej.FullRO.
 
 module type Oracle = {
   proc h(w: W, m: M) : Y
-  proc sign(m: M) : W * C * Z
+  proc sign(m: M) : (W * C * Z) option
 }.
 
 module Count (O: Oracle) : Oracle = {
@@ -71,7 +71,6 @@ module OLeft : Oracle_i = {
 
   proc sign(m: M) = {
     var w, st, c, oz, i;
-
     (* Silences unused variables warning *)
     w <- witness;
     c <- witness;
@@ -85,7 +84,7 @@ module OLeft : Oracle_i = {
       RO.set((w, m), c);
       i <- i + 1;
     }
-    return (w, c, oget oz);
+    return if i < kappa then Some (w, c, oget oz) else None;
   }
 }.
 
@@ -109,7 +108,7 @@ module ORight : Oracle_i = {
       i <- i + 1;
     }
     RO.set((w, m), c);
-    return (w, c, oget oz);
+    return if i < kappa then Some (w, c, oget oz) else None;
   }
 }.
 
@@ -372,7 +371,7 @@ module G0A = {
       RO.set((w, m), c);
       i <- i + 1;
     }
-    return (w, c, z);
+    return if i < kappa then Some (w, c, z) else None;
   }
 }.
 
@@ -406,7 +405,7 @@ admitted.
 module G1A = {
   include var OLeft[init]
   proc sign(m: M) = {
-    var w, c, z, f;
+    var w, c, z, f, i;
 
     (* Silences unused variables warning *)
     w <- witness;
@@ -414,15 +413,17 @@ module G1A = {
     z <- witness;
 
     f <- false;
-    while(!f) {
+    i <- 0;
+    while(!f /\ i < kappa) {
       f <$ dbiased (p_acc sk);
       if(f)
         (w, c, z) <$ dWCZ_acc sk;
       else
         (w, c) <$ dWC_rej sk;
+      i <- i + i;
     }
     RO.set((w, m), c);
-    return (w, c, z);
+    return if i < kappa then Some (w, c, z) else None;
   }
 }.
 
@@ -443,15 +444,16 @@ module G0B = {
   }
 
   proc sign(m: M) = {
-    var w, c, z, f;
+    var w, c, z, f, i;
 
     (* Silences unused variables warning *)
     w <- witness;
     c <- witness;
     z <- witness;
 
+    i <- 0;
     f <- false;
-    while(!f) {
+    while(!f /\ i < kappa) {
       f <$ dbiased (p_acc sk);
       if(f) {
         (w, c, z) <$ dWCZ_acc sk;
@@ -461,8 +463,9 @@ module G0B = {
         (w, c) <$ dWC_rej sk;
         RO.set((w, m), c);
       }
+      i <- i + 1;
     }
-    return (w, c, z);
+    return if i < kappa then Some (w, c, z) else None;
   }
 }.
 
@@ -483,13 +486,14 @@ module G1B = {
   }
 
   proc sign(m: M) = {
-    var w, c, z, f;
+    var w, c, z, f, i;
 
     (* Silences unused variables warning *)
     w <- witness;
     c <- witness;
     z <- witness;
 
+    i <- 0;
     f <- false;
     while(!f) {
       f <$ dbiased (p_acc sk);
@@ -500,8 +504,9 @@ module G1B = {
       else {
         (w, c) <$ dWC_rej sk;
       }
+      i <- i + 1;
     }
-    return (w, c, z);
+    return if i < kappa then Some (w, c, z) else None;
   }
 }.
 
