@@ -5,9 +5,9 @@ require import Dfilter.
 require import Real RealSeries.
 import SmtMap.
 import Biased.
+require ReprogOnlyRej.
 
 require import DistrExtras.
-require Guessing.
 
 type X, Y, Z, M.
 
@@ -21,27 +21,28 @@ op dXr m = dfst (dXY_rej m).
 axiom dX_pmax m :
   p_max (dXr m) <= alpha.
 
-clone import FullRO with
-  type in_t <- X,
-  type out_t <- Y,
-  op dout <- (fun _ => dY)
-proof *.
-
 op qh, qr : int.
 axiom qh_gt0 : 0 < qh.
 axiom qr_gt0 : 0 < qr.
 
-clone import Guessing as RejGuessing with
-  type in_t <- M,
-  type out_t <- X,
-  op d <- fun m => dXr m,
-  op qs <- qr,
-  op qg <- qh,
+clone import ReprogOnlyRej as OnlyRej with
+  type X <- X,
+  type Y <- Y,
+  type M <- M,
+  op dY <- dY,
+  op dXY_rej <- dXY_rej,
+  op qh <- qh,
+  op qr <- qr,
   op alpha <- alpha
 proof *.
-realize d_pmax by apply dX_pmax.
-realize qs_gt0 by apply qr_gt0.
-realize qg_gt0 by apply qh_gt0.
+realize dXY_rej_ll by apply dXY_rej_ll.
+realize dY_ll by apply dY_ll.
+realize dY_uni by apply dY_uni.
+realize qh_gt0 by apply qh_gt0.
+realize qr_gt0 by apply qr_gt0.
+realize dX_pmax by apply dX_pmax.
+
+import FullRO.
 
 module type Oracle = {
   proc h(x: X) : Y
