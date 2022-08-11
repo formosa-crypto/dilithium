@@ -1,11 +1,12 @@
 require import AllCore RealLub RealFLub RealExp Distr.
 require import AllCore Bool StdRing StdOrder RealLub.
-require import Finite FinType List Binomial.
+require import Finite FinType List Binomial DBool.
 require import Ring StdRing StdOrder StdBigop Discrete.
 require import RealFun RealSeq RealSeries.
 (*---*) import RField RealOrder.
 (*---*) import IterOp Bigint Bigreal Bigreal.BRA.
 (*---*) import IntOrder RealOrder RField.
+(*---*) import Biased.
 
 lemma nosmt predIpp (p: 'a -> bool) :
   predI p p = p.
@@ -355,4 +356,13 @@ apply (ler_trans (mu1 d x + mu (djoin ds) (fun (xs : 'a list) => x \in xs))).
   apply ler_add; apply ler_pimulr; smt(mu_bounded).
 rewrite fromintD RField.mulrDl /=; apply ler_add; first by apply bound_ds.
 by apply IHds => /#.
+qed.
+
+lemma dmap_dbiased (d: 'a distr) (p: 'a -> bool) :
+  is_lossless d =>
+  dmap d p = dbiased (mu d p).
+proof.
+move => d_ll; apply eq_distr => x.
+rewrite dbiased1E clamp_id; first by smt(ge0_mu le1_mu).
+rewrite dmap1E /(\o) /pred1; smt(mu_not).
 qed.

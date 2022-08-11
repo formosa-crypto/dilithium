@@ -4,6 +4,7 @@ import Biased.
 require import Dexcepted.
 require import Dfilter.
 require import Real RealSeries.
+require import DistrExtras.
 
 (* Define some necessary abstract stuff *)
 
@@ -27,7 +28,7 @@ clone import ReprogRej as RRej with
   type Y = C,
   type Z = Z.
 
-import FullRO.
+import RRej.OnlyRej.FullRO.
 
 module type Oracle = {
   proc h(w: W, m: M) : Y
@@ -37,13 +38,7 @@ module type Oracle = {
 module Count (O: Oracle) : Oracle = {
   var countS : int
   var countH : int
-  (*
-  proc init() = {
-    countR <- 0;
-    countH <- 0;
-    O.init();
-  }
-  *)
+
   proc h(w: W, m : M) : Y = {
     var y;
     countH <- countH + 1;
@@ -158,29 +153,15 @@ op dWCoZ sk : (W * C * Z option) distr =
 lemma dWCoZ_ll sk :
   is_lossless (dWCoZ sk).
 proof.
-(* TODO don't use smt once Easycrypt is fixed *)
-apply dlet_ll; first smt(commit_ll).
+apply dlet_ll; first by apply commit_ll.
 move => x; case x; move => * /=; apply dlet_ll; first apply dC_ll.
 move => * /=; apply dunit_ll.
 qed.
 
-
-(* Transcript distribution, conditioned on accept.
- * Main idea here is the use of `drestrict`.
- *)
-
-op dWCoZ_acc sk = dscale (drestrict (dWCoZ sk) (fun wcz => let (w, c, z) = wcz in z <> None)).
+(* Transcript distribution, conditioned on accept or reject. *)
+op dWCoZ_acc sk = dcond (dWCoZ sk) (fun wcz => let (w, c, z) = wcz in z <> None).
 op dWCZ_acc sk = dmap (dWCoZ_acc sk) (fun wcoz => let (w, c, oz) = wcoz in (w, c, oget oz)).
-
-(* Alternative definition:
- *
- * require import Dexcepted.
- * op dWCoZ_acc' sk = dscale ((dWCZ sk) \ (fun wcz => let (w, c, z) = wcz in z = None)). *)
-
-(* Transcript, conditioned on reject.
- * Constructed similarly as above.
- *)
-op dWCoZ_rej sk = dscale (drestrict (dWCoZ sk) (fun wcz => let (w, c, z) = wcz in z = None)).
+op dWCoZ_rej sk = dcond (dWCoZ sk) (fun wcz => let (w, c, z) = wcz in z = None).
 op dWC_rej sk = dmap (dWCoZ_rej sk) (fun wcz => let (w, c, _) = wcz in (w, c)).
 
 (* Accept and reject probabilities *)
@@ -197,13 +178,6 @@ have <-: weight (dWCoZ sk) = 1%r by apply dWCoZ_ll.
 rewrite mu_not; rewrite /p_acc => //.
 qed.
 
-(* Helper lemma, hopefully in the standard library *)
-lemma conditional_probability_fact ['a 'b] (dAB : ('a * 'b) distr) :
-  is_lossless dAB =>
-  dAB = dlet (dfst dAB) (fun a => dAB \ (fun (ab :'a * 'b) => fst ab <> a)).
-proof.
-admitted.
-
 (* Now state the alternative way of sampling transcript is correct *)
 lemma conditional_sampling_transcript sk :
   dWCoZ sk = dlet (dbiased (p_acc sk)) (fun f =>
@@ -212,10 +186,14 @@ lemma conditional_sampling_transcript sk :
     else
       dWCoZ_rej sk).
 proof.
-(* Some nasty conditional probability manipulation...
- * Maybe helper lemma above helps.
- *)
-admitted.
+rewrite -dmap_dbiased; first by apply dWCoZ_ll.
+rewrite {1} (marginal_sampling (dWCoZ sk) (fun wcoz => let (w, c, oz) = wcoz in oz <> None)) /=.
+congr; apply fun_ext => b /=; case b => _.
+- rewrite /dWCoZ_acc.
+  congr; apply fun_ext => ? /#.
+- rewrite /dWCoZ_rej.
+  congr; apply fun_ext => ? /#.
+qed.
 
 (* Helper module to call bypr... *)
 module LoopBodies = {
@@ -255,11 +233,6 @@ module LoopBodies = {
     return (w, c, f, z);
   }
 }.
-
-(*
-lemma linearize sk :
-  dlet (commit sk) (fun (w_st: W * ST) => dmap dC (fun c => (w_st.`1, c, respond w_st.`2 c)))
-= dWCoZ sk.*)
 
 lemma pr_body1 x &m sk :
   OLeft.sk{m} = sk =>
@@ -358,7 +331,7 @@ proof.
 proc; auto.
 seq 1 1: (#pre /\ ={f}); 1: auto.
 seq 0 1: (#pre); 1: auto.
-if; 1: auto.
+if; 1: by auto.
 rnd (fun wcoz => let (w, c, oz) = wcoz in (w, c, oget oz))
     (fun wcz => let (w, c, z) = wcz in (w, c, Some z)).
 auto => &2 /> f.
@@ -496,6 +469,7 @@ module G0B = {
 equiv G0B_hop : G0A.sign ~ G0B.sign :
   ={m, OLeft.sk} ==> ={res}.
 proof.
+proc. 
 (* Should be trivial up to proving termination. *)
 admitted.
 
