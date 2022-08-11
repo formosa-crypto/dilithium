@@ -1,0 +1,146 @@
+require import AllCore List Distr.
+require import PROM.
+require import DistrExtras.
+require Guessing.
+
+(* "Glue code" between ReprogRej and Guessing games. *)
+
+type X, Y, M.
+
+op [lossless] dXY_rej (m : M) : (X * Y) distr.
+op [lossless uniform] dY : Y distr.
+op alpha : real.
+op qh, qr : int.
+axiom qh_gt0 : 0 < qh.
+axiom qr_gt0 : 0 < qr.
+
+op dXr m = dfst (dXY_rej m).
+axiom dX_pmax m :
+  p_max (dXr m) <= alpha.
+
+clone import FullRO with
+  type in_t <- X,
+  type out_t <- Y,
+  op dout <- (fun _ => dY)
+proof *.
+
+clone import Guessing as RejGuessing with
+  type in_t <- M,
+  type out_t <- X,
+  op d <- fun m => dXr m,
+  op qs <- qr,
+  op qg <- qh,
+  op alpha <- alpha
+proof *.
+realize d_pmax by apply dX_pmax.
+realize qs_gt0 by apply qr_gt0.
+realize qg_gt0 by apply qh_gt0.
+
+module type Oracle = {
+  proc h(x: X) : Y
+  proc reprog_rej(m: M) : unit
+}.
+
+module Count (O: Oracle) : Oracle = {
+  var cr, ch : int
+  proc h(x) = {
+    var y;
+    ch <- ch + 1;
+    y <@ O.h(x);
+    return y;
+  }
+  proc reprog_rej(m) = {
+    cr <- cr + 1;
+    O.reprog_rej(m);
+  }
+}.
+
+module type Oracle_i = {
+  include Oracle
+  proc init() : unit
+}.
+
+module type Adversary(OA: Oracle) = {
+  proc main() : unit
+}.
+
+module O : Oracle_i = {
+  var rej_lst : X list
+  var win : bool
+
+  proc init() = {
+    rej_lst <- [];
+    win <- false;
+  }
+
+  proc h(x : X) = {
+    var y;
+    if(x \in rej_lst)
+      win <- true;
+    y <@ RO.get(x);
+    return y;
+  }
+
+  proc reprog_rej(m: M) = {
+    var x, y;
+    (x, y) <$ dXY_rej m;
+    rej_lst <- x :: rej_lst;
+  }
+}.
+
+module Game(Adv: Adversary) = {
+  proc main() = {
+    O.init();
+    Adv(O).main();
+    return O.win;
+  }
+}.
+
+module ReductionO(O: SGOracle) : Oracle = {
+  proc h(x : X) = {
+    var y;
+    O.guess(x);
+    y <@ RO.get(x);
+    return y;
+  }
+
+  proc reprog_rej(m: M) = {
+    O.sample(m);
+  }
+}.
+
+(* TODO check name *)
+module (ReductionA(Adv: Adversary) : RejGuessing.Adversary) (O: SGOracle) = {
+  proc run() = {
+    Adv(ReductionO(O)).main();
+  }
+}.
+
+section.
+
+declare module Adv <: Adversary {-O, -SGO, -RejGuessing.Count}.
+declare axiom A_bound : forall (O <: Oracle{-Adv}), 
+  hoare [ Adv(Count(O)).main : Count.cr = 0 /\ Count.ch = 0 ==> 
+                               Count.cr <= qr /\ Count.ch = qh ].
+
+lemma RA_Bound :
+  forall (O <: SGOracle{-Adv}), 
+  hoare [ ReductionA(Adv, RejGuessing.Count(O)).run :
+            RejGuessing.Count.cs = 0 /\ RejGuessing.Count.cg = 0 ==> 
+            RejGuessing.Count.cs <= qr /\ RejGuessing.Count.cg = qh ].
+proof.
+admitted.
+
+equiv reduction :
+  SG_GameS(ReductionA(Adv)).main ~ Game(Adv).main :
+  true ==> ={res}.
+proof.
+proc.
+inline SGO.init O.init ReductionA(Adv, SGO).run; sp.
+(* call (_: TODO). *)
+admitted.
+
+lemma bound &m : Pr[Game(Adv).main() @ &m : res] <= qh%r * qr%r * alpha.
+admitted.
+
+end section.
