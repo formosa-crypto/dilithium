@@ -182,7 +182,10 @@ proof. smt(dcond_supp). qed.
 lemma dWCoZ_rej_supp sk w c :
   (w, c, None) \in dWCoZ_rej sk <=>
   (w, c) \in dWC_rej sk.
-admitted.
+proof.
+split; first by smt(supp_dmap).
+rewrite supp_dmap; smt(dWCoZ_rej_None).
+qed.
 
 lemma p_rej_E sk :
   p_rej sk = 1%r - p_acc sk.
@@ -449,7 +452,7 @@ call hop_body2_4; auto => /#.
 qed.
 
 (* Replaces the transcript generation with the above *)
-module GLeft_cond : Oracle_i = {
+module OLeft_cond : Oracle_i = {
   include var OLeft[init, h]
 
   proc sign(m: M) = {
@@ -476,47 +479,15 @@ module GLeft_cond : Oracle_i = {
   }
 }.
 
-equiv GLeft_cond_hop : OLeft_body4.sign ~ GLeft_cond.sign :
+equiv OLeft_cond_hop : OLeft_body4.sign ~ OLeft_cond.sign :
   ={m, OLeft.sk} ==> ={res}.
 proof.
 by proc; inline LoopBodies.body4; sim.
 qed.
 
-(* Same idea with G0A *)
-module GRight_cond : Oracle_i = {
-  include var OLeft[init, h]
-  proc sign(m: M) = {
-    var w, c, z, f, i;
-
-    (* Silences unused variables warning *)
-    w <- witness;
-    c <- witness;
-    z <- witness;
-
-    f <- false;
-    i <- 0;
-    while(!f /\ i < kappa) {
-      f <$ dbiased (p_acc sk);
-      if(f)
-        (w, c, z) <$ dWCZ_acc sk;
-      else
-        (w, c) <$ dWC_rej sk;
-      i <- i + i;
-    }
-    RO.set((w, m), c);
-    return if i < kappa then (w, c, z) else witness;
-  }
-}.
-
-equiv GRight_cond_hop : ORight.sign ~ GRight_cond.sign :
-  ={m, OLeft.sk} ==> ={res}.
-proof.
-(* Same idea as above *)
-admitted.
-
 (* Clean up and line up interface.
  * Equivalent to G0A up to reordering instructions. *)
-module G0B : Oracle_i = {
+module OLeft_torej : Oracle_i = {
   include var OLeft[init, h]
 
   proc sign(m: M) = {
@@ -531,6 +502,7 @@ module G0B : Oracle_i = {
     f <- false;
     while(!f /\ i < kappa) {
       f <$ dbiased (p_acc sk);
+      z <- witness;
       if(f) {
         (w, c, z) <$ dWCZ_acc sk;
         RO.set((w, m), c);
@@ -545,47 +517,16 @@ module G0B : Oracle_i = {
   }
 }.
 
-equiv G0B_hop : G0A.sign ~ G0B.sign :
+equiv OLeft_torej_hop :
+  OLeft_cond.sign ~ OLeft_torej.sign :
   ={m, OLeft.sk} ==> ={res}.
 proof.
-proc. 
-(* Should be trivial up to proving termination. *)
-admitted.
-
-(* Clean up. Equivalent to G1A up to reordering instructions. *)
-module G1B : Oracle_i = {
-  include var OLeft[init, h]
-
-  proc sign(m: M) = {
-    var w, c, z, f, i;
-
-    (* Silences unused variables warning *)
-    w <- witness;
-    c <- witness;
-    z <- witness;
-
-    i <- 0;
-    f <- false;
-    while(!f) {
-      f <$ dbiased (p_acc sk);
-      if(f) {
-        (w, c, z) <$ dWCZ_acc sk;
-        RO.set((w, m), c);
-      }
-      else {
-        (w, c) <$ dWC_rej sk;
-      }
-      i <- i + 1;
-    }
-    return if i < kappa then (w, c, z) else witness;
-  }
-}.
-
-equiv G1B_hop : G1A.sign ~ G1B.sign :
-  ={m, OLeft.sk} ==> ={res}.
-proof.
-(* Should be trivial up to proving termination. *)
-admitted.
+proc.
+seq 5 5: (#pre /\ ={w, c, z} /\ i{1} = 0 /\ i{2} = 0 /\ !f{1} /\ !f{2}); first by auto.
+while (={m, OLeft.sk, w, c, z, i, f}); last by auto => /#.
+seq 2 2: (={m, OLeft.sk, w, c, z, i, f}); first by sim.
+if; 1: smt(); 1,2: by sim.
+qed.
 
 (**
 
