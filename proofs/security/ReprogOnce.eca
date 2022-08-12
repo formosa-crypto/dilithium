@@ -32,7 +32,7 @@ import RRej.OnlyRej.FullRO.
 
 module type Oracle = {
   proc h(w: W, m: M) : Y
-  proc sign(m: M) : (W * C * Z) option
+  proc sign(m: M) : W * C * Z
 }.
 
 module Count (O: Oracle) : Oracle = {
@@ -84,7 +84,7 @@ module OLeft : Oracle_i = {
       RO.set((w, m), c);
       i <- i + 1;
     }
-    return if i < kappa then Some (w, c, oget oz) else None;
+    return if i < kappa then (w, c, oget oz) else witness;
   }
 }.
 
@@ -108,7 +108,7 @@ module ORight : Oracle_i = {
       i <- i + 1;
     }
     RO.set((w, m), c);
-    return if i < kappa then Some (w, c, oget oz) else None;
+    return if i < kappa then (w, c, oget oz) else witness;
   }
 }.
 
@@ -349,8 +349,8 @@ admit.
 admitted.
 
 (* Replaces the transcript generation with the above *)
-module G0A = {
-  include var OLeft[init]
+module G0A : Oracle_i = {
+  include var OLeft[init, h]
 
   proc sign(m: M) = {
     var w, c, z, f, i;
@@ -371,7 +371,7 @@ module G0A = {
       RO.set((w, m), c);
       i <- i + 1;
     }
-    return if i < kappa then Some (w, c, z) else None;
+    return if i < kappa then (w, c, z) else witness;
   }
 }.
 
@@ -402,8 +402,8 @@ qed.
 admitted.
 
 (* Same idea with G0A *)
-module G1A = {
-  include var OLeft[init]
+module G1A : Oracle_i = {
+  include var OLeft[init, h]
   proc sign(m: M) = {
     var w, c, z, f, i;
 
@@ -423,7 +423,7 @@ module G1A = {
       i <- i + i;
     }
     RO.set((w, m), c);
-    return if i < kappa then Some (w, c, z) else None;
+    return if i < kappa then (w, c, z) else witness;
   }
 }.
 
@@ -435,13 +435,8 @@ admitted.
 
 (* Clean up and line up interface.
  * Equivalent to G0A up to reordering instructions. *)
-module G0B = {
-  var sk : SK
-
-  proc init() = {
-    var pk;
-    (pk, sk) <$ keygen;
-  }
+module G0B : Oracle_i = {
+  include var OLeft[init, h]
 
   proc sign(m: M) = {
     var w, c, z, f, i;
@@ -465,7 +460,7 @@ module G0B = {
       }
       i <- i + 1;
     }
-    return if i < kappa then Some (w, c, z) else None;
+    return if i < kappa then (w, c, z) else witness;
   }
 }.
 
@@ -477,13 +472,8 @@ proc.
 admitted.
 
 (* Clean up. Equivalent to G1A up to reordering instructions. *)
-module G1B = {
-  var sk : SK
-
-  proc init() = {
-    var pk;
-    (pk, sk) <$ keygen;
-  }
+module G1B : Oracle_i = {
+  include var OLeft[init, h]
 
   proc sign(m: M) = {
     var w, c, z, f, i;
@@ -506,7 +496,7 @@ module G1B = {
       }
       i <- i + 1;
     }
-    return if i < kappa then Some (w, c, z) else None;
+    return if i < kappa then (w, c, z) else witness;
   }
 }.
 
