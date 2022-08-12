@@ -1,10 +1,10 @@
 require import AllCore Distr DBool PROM List.
-import Biased.
-
 require import Dexcepted.
 require import Dfilter.
 require import Real RealSeries.
 require import DistrExtras.
+require ReprogRej.
+import Biased.
 
 (* Define some necessary abstract stuff *)
 
@@ -19,8 +19,6 @@ op alpha : real. (* pmax *)
 op qs : int. (* max. number of signing queries *)
 op qh : int. (* max. number of hash queries *)
 op kappa : int. (* max. number of iterations *)
-
-require ReprogRej.
 
 clone import ReprogRej as RRej with
   type M = M,
@@ -99,8 +97,8 @@ module ORight : Oracle_i = {
     w <- witness;
     c <- witness;
 
-    oz <- None;
     i <- 0;
+    oz <- None;
     while(oz = None /\ i < kappa) {
       (w, st) <$ commit sk;
       c <$ dC;
@@ -527,6 +525,154 @@ while (={m, OLeft.sk, w, c, z, i, f}); last by auto => /#.
 seq 2 2: (={m, OLeft.sk, w, c, z, i, f}); first by sim.
 if; 1: smt(); 1,2: by sim.
 qed.
+
+
+(** Right game
+ * Now repeat the same as in the left game
+ *)
+
+module ORight_body2 : Oracle_i = {
+  include var OLeft[init, h]
+
+  proc sign(m: M) = {
+    var w, c, oz, i;
+    (* Silences unused variables warning *)
+    w <- witness;
+    c <- witness;
+
+    i <- 0;
+    oz <- None;
+    while(oz = None /\ i < kappa) {
+      (w, c, oz) <@ LoopBodies.body2();
+      i <- i + 1;
+    }
+    RO.set((w, m), c);
+    return if i < kappa then (w, c, oget oz) else witness;
+  }
+}.
+
+equiv ORight_body2_call :
+  ORight.sign ~ ORight_body2.sign :
+  ={OLeft.sk, m} ==> ={res}.
+proof.
+by proc; inline LoopBodies.body2; sim.
+qed.
+
+module ORight_body4 : Oracle_i = {
+  include var OLeft[init, h]
+ 
+  proc sign(m: M) = {
+    var w, c, f, z, i;
+    (* Silences unused variables warning *)
+    w <- witness;
+    c <- witness;
+    z <- witness;
+
+    i <- 0;
+    f <- false;
+    while(!f /\ i < kappa) {
+      (w, c, f, z) <@ LoopBodies.body4();
+      i <- i + 1;
+    }
+    RO.set((w, m), c);
+    return if i < kappa then (w, c, z) else witness;
+  }
+}.
+
+equiv ORight_loop_bodies_hop :
+  ORight_body2.sign ~ ORight_body4.sign :
+  ={OLeft.sk, m} ==> ={res}.
+proof.
+proc.
+seq 4 5: (#pre /\ ={w, c} /\ i{1} = 0 /\ i{2} = 0 /\ oz{1} = None /\ !f{2}).
+- by auto.
+call (: true); first by auto.
+while (={w, m, c, OLeft.sk, i} /\ (oz{1} = None <=> !f{2})
+         /\ (f{2} => (oget oz{1} = z{2}))); last by auto => /#.
+by wp; call hop_body2_4; auto => /#.
+qed.
+
+(* Replaces the transcript generation with the above *)
+module ORight_cond : Oracle_i = {
+  include var OLeft[init, h]
+
+  proc sign(m: M) = {
+    var w, c, z, f, i;
+
+    (* Silences unused variables warning *)
+    w <- witness;
+    c <- witness;
+    z <- witness;
+
+    i <- 0;
+    f <- false;
+    while(!f /\ i < kappa) {
+      f <$ dbiased (p_acc sk);
+      z <- witness;
+      if(f)
+        (w, c, z) <$ dWCZ_acc sk;
+      else
+        (w, c) <$ dWC_rej sk;
+      i <- i + 1;
+    }
+    RO.set((w, m), c);
+    return if i < kappa then (w, c, z) else witness;
+  }
+}.
+
+equiv ORight_cond_hop : ORight_body4.sign ~ ORight_cond.sign :
+  ={m, OLeft.sk} ==> ={res}.
+proof.
+by proc; inline LoopBodies.body4; sim.
+qed.
+
+(* Clean up and line up interface.
+ * Equivalent to G0A up to reordering instructions. *)
+module ORight_torej : Oracle_i = {
+  include var OLeft[init, h]
+
+  proc sign(m: M) = {
+    var w, c, z, f, i;
+
+    (* Silences unused variables warning *)
+    w <- witness;
+    c <- witness;
+    z <- witness;
+
+    i <- 0;
+    f <- false;
+    while(!f /\ i < kappa) {
+      f <$ dbiased (p_acc sk);
+      z <- witness;
+      if(f) {
+        (w, c, z) <$ dWCZ_acc sk;
+        RO.set((w, m), c);
+      }
+      else {
+        (w, c) <$ dWC_rej sk;
+      }
+      i <- i + 1;
+    }
+    return if i < kappa then (w, c, z) else witness;
+  }
+}.
+
+(* Non-theorem... *)
+equiv ORight_torej_hop :
+  ORight_cond.sign ~ ORight_torej.sign :
+  ={m, OLeft.sk} ==> ={res}.
+proof.
+admitted.
+
+(*
+proc.
+seq 5 5: (#pre /\ ={w, c, z} /\ i{1} = 0 /\ i{2} = 0 /\ !f{1} /\ !f{2}); first by auto.
+while (={m, OLeft.sk, w, c, z, i, f}); last by auto => /#.
+seq 2 2: (={m, OLeft.sk, w, c, z, i, f}); first by sim.
+if; 1: smt(); 1,2: by sim.
+qed.
+*)
+
 
 (**
 
