@@ -77,7 +77,7 @@ module OLeft : Oracle_i = {
 
     i <- 0;
     oz <- None;
-    while(oz = None && i < kappa) {
+    while(oz = None /\ i < kappa) {
       (w, st) <$ commit sk;
       c <$ dC;
       oz <- respond st c;
@@ -166,6 +166,23 @@ op dWC_rej sk = dmap (dWCoZ_rej sk) (fun wcz => let (w, c, _) = wcz in (w, c)).
 (* Accept and reject probabilities *)
 op p_acc sk = mu (dWCoZ sk) (fun wcz => let (w, c, oz) = wcz in oz <> None).
 op p_rej sk = mu (dWCoZ sk) (fun wcz => let (w, c, oz) = wcz in oz = None).
+
+(* Auxiliary lemma *)
+
+lemma dWCoZ_acc_supp sk w c oz :
+  (w, c, oz) \in dWCoZ_acc sk =>
+  oz <> None.
+proof. smt(dcond_supp). qed.
+
+lemma dWCoZ_rej_None sk w c oz :
+  (w, c, oz) \in dWCoZ_rej sk =>
+  oz = None.
+proof. smt(dcond_supp). qed.
+
+lemma dWCoZ_rej_supp sk w c :
+  (w, c, None) \in dWCoZ_rej sk <=>
+  (w, c) \in dWC_rej sk.
+admitted.
 
 lemma p_rej_E sk :
   p_rej sk = 1%r - p_acc sk.
@@ -324,32 +341,115 @@ equiv hop_body4 :
   LoopBodies.body3 ~ LoopBodies.body4 :
   ={OLeft.sk} ==> (res{1}.`1 = res{2}.`1 /\
                          res{1}.`2 = res{2}.`2 /\
-                         res{1}.`3 <> None <=> res{2}.`3 /\
-                         res{1}.`3 <> None => oget res{1}.`3 = res{2}.`4).
+                         (res{1}.`3 <> None <=> res{2}.`3) /\
+                         (res{1}.`3 <> None => oget res{1}.`3 = res{2}.`4)).
 proof.
 proc; auto.
 seq 1 1: (#pre /\ ={f}); 1: auto.
 seq 0 1: (#pre); 1: auto.
 if; 1: by auto.
-rnd (fun wcoz => let (w, c, oz) = wcoz in (w, c, oget oz))
-    (fun wcz => let (w, c, z) = wcz in (w, c, Some z)).
-auto => &2 /> f.
-split; first smt().
-move => *.
-split.
-- move => *.
-  (* TODO state and proof fact relating dWCZ_acc and dWCoZ_acc *)
-  admit.
-move => *.
-split.
-admit.
-move => *.
-split; last smt().
-admit.
-admitted.
+- rnd (fun wcoz => let (w, c, oz) = wcoz in (w, c, oget oz))
+      (fun wcz => let (w, c, z) = wcz in (w, c, Some z)).
+  auto => /> *.
+  split => *; first smt().
+  split => />.
+  - move => wcz; case wcz => w c z ?.
+    rewrite dmap1E.
+    apply mu_eq_support => x; case x => w' c' z' H /=.
+    rewrite /(\o) /pred1 => /=.
+    by apply dWCoZ_acc_supp in H => /#.
+  - move => _ wcoz; case wcoz => ????.
+    move => />; smt(dmap_supp dWCoZ_acc_supp).
+- rnd (fun wcoz => let (w, c, oz) = wcoz in (w, c))
+      (fun wc => let (w, c) = wc in (w, c, None)).
+  auto => /> *. (* terrifying *)
+  split => [|_]; first by smt().
+  split => [[??] _ |_ [???]] /=; 2: smt(dWCoZ_rej_supp dWCoZ_rej_None).
+  rewrite dmap1E /(\o) /pred1.
+  by apply mu_eq_support; smt(dWCoZ_rej_None).
+qed.
+
+equiv hop_body2_4 :
+  LoopBodies.body2 ~ LoopBodies.body4 :
+  ={OLeft.sk} ==> (res{1}.`1 = res{2}.`1 /\
+                         res{1}.`2 = res{2}.`2 /\
+                         (res{1}.`3 <> None <=> res{2}.`3) /\
+                         (res{1}.`3 <> None => oget res{1}.`3 = res{2}.`4)).
+proof.
+transitivity LoopBodies.body3
+  (={OLeft.sk} ==> ={res})
+  (={OLeft.sk} ==> res{1}.`1 = res{2}.`1 /\
+  res{1}.`2 = res{2}.`2 /\
+  (res{1}.`3 <> None <=> res{2}.`3) /\
+  (res{1}.`3 <> None => oget res{1}.`3 = res{2}.`4)); 1, 2: smt().
+- by apply hop_body3.
+apply hop_body4.
+qed.
+
+(* Loop-bodies brute-forcing spaghetti...
+ * RIP signal-to-noise ratio *)
+
+module OLeft_body2 : Oracle_i = {
+  include var OLeft[init, h]
+
+  proc sign(m: M) = {
+    var w, c, oz, i;
+    (* Silences unused variables warning *)
+    w <- witness;
+    c <- witness;
+
+    i <- 0;
+    oz <- None;
+    while(oz = None /\ i < kappa) {
+      (w, c, oz) <@ LoopBodies.body2();
+      RO.set((w, m), c);
+      i <- i + 1;
+    }
+    return if i < kappa then (w, c, oget oz) else witness;
+  }
+}.
+
+equiv OLeft_body2_call :
+  OLeft.sign ~ OLeft_body2.sign :
+  ={OLeft.sk, m} ==> ={res}.
+proof.
+by proc; inline LoopBodies.body2; sim.
+qed.
+
+module OLeft_body4 : Oracle_i = {
+  include var OLeft[init, h]
+ 
+  proc sign(m: M) = {
+    var w, c, f, z, i;
+    (* Silences unused variables warning *)
+    w <- witness;
+    c <- witness;
+    z <- witness;
+
+    i <- 0;
+    f <- false;
+    while(!f /\ i < kappa) {
+      (w, c, f, z) <@ LoopBodies.body4();
+      RO.set((w, m), c);
+      i <- i + 1;
+    }
+    return if i < kappa then (w, c, z) else witness;
+  }
+}.
+
+equiv OLeft_loop_bodies_hop :
+  OLeft_body2.sign ~ OLeft_body4.sign :
+  ={OLeft.sk, m} ==> ={res}.
+proof.
+proc. seq 4 5: (#pre /\ i{1} = 0 /\ i{2} = 0 /\ oz{1} = None /\ !f{2}); first by auto.
+while (={m, OLeft.sk, i} /\ (oz{1} = None <=> !f{2})
+         /\ (f{2} => (={w, c} /\ oget oz{1} = z{2}))); 2: by auto => /#.
+wp; call(_: true ==> true); first by (proc; auto => //=).
+call hop_body2_4; auto => /#.
+qed.
 
 (* Replaces the transcript generation with the above *)
-module G0A : Oracle_i = {
+module GLeft_cond : Oracle_i = {
   include var OLeft[init, h]
 
   proc sign(m: M) = {
@@ -362,8 +462,9 @@ module G0A : Oracle_i = {
 
     i <- 0;
     f <- false;
-    while(!f && i < kappa) {
+    while(!f /\ i < kappa) {
       f <$ dbiased (p_acc sk);
+      z <- witness;
       if(f)
         (w, c, z) <$ dWCZ_acc sk;
       else
@@ -375,34 +476,14 @@ module G0A : Oracle_i = {
   }
 }.
 
-equiv G0A_hop : OLeft.sign ~ G0A.sign :
+equiv GLeft_cond_hop : OLeft_body4.sign ~ GLeft_cond.sign :
   ={m, OLeft.sk} ==> ={res}.
 proof.
-
-(* Here lies a proof was tragically killed by adding a loop counter.
-   RIP. July ?? 2022 - August 10 2022
-
-proc.
-while (#pre /\ (oz{1} <> None => (={m, w, c} /\ oget oz{1} = z{2}))); 2: by auto => />.
-call (_ : true ==> true); first proc; auto => //=.
-transitivity{1}
-  {(w, c, oz) <$ dWCoZ OLeft.sk;}
-  (={OLeft.sk, m} ==> ={m, OLeft.sk, w, c, oz})
-  (={OLeft.sk, m} ==> (={m, OLeft.sk} /\ (oz{1} <> None => ={w, c} /\ oget oz{1} = z{2})) /\ (oz{1} = None <=> !f{2})); 1: smt(); 1: smt().
-- rnd: *0 *0; auto => />.
-  move => *; split.
-  - move => ? _; congr.
-    rewrite dWCoZ_linearize => //.
-  - move => _ ? ? /=; rewrite -dWCoZ_linearize => //.
-print hop_bodies.
-
-admit.
+by proc; inline LoopBodies.body4; sim.
 qed.
-*)
-admitted.
 
 (* Same idea with G0A *)
-module G1A : Oracle_i = {
+module GRight_cond : Oracle_i = {
   include var OLeft[init, h]
   proc sign(m: M) = {
     var w, c, z, f, i;
@@ -427,7 +508,7 @@ module G1A : Oracle_i = {
   }
 }.
 
-equiv G1A_hop : ORight.sign ~ G1A.sign :
+equiv GRight_cond_hop : ORight.sign ~ GRight_cond.sign :
   ={m, OLeft.sk} ==> ={res}.
 proof.
 (* Same idea as above *)
