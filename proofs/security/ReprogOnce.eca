@@ -45,8 +45,11 @@ axiom invalid_sk_always_reject sk w st c:
 
 op alpha : real. (* pmax *)
 op qs : int. (* max. number of signing queries *)
+axiom qs_gt0 : 0 < qs.
 op qh : int. (* max. number of hash queries *)
+axiom qh_gt0 : 0 < qh.
 op kappa : int. (* max. number of iterations *)
+axiom kappa_gt0 : 0 < kappa.
 
 (* -- Ingredients required for cloning ReprogRej -- *)
 
@@ -79,6 +82,9 @@ op dXY_rej (k: SK * M) : ((W * M) * C) distr =
   let (sk, m) = k in
   dmap (dWC_rej sk) (fun wc =>
     let (w, c) = wc in ((w, m), c)).
+
+axiom dX_pmax k :
+  p_max (dfst (dXY_rej k)) <= alpha.
 
 lemma dWCoZ_can_acc sk :
   valid_sk sk =>
@@ -119,6 +125,19 @@ case (valid_sk sk) => H.
   exact dunit_ll.
 qed.
 
+lemma dXY_rej_ll k :
+  is_lossless (dXY_rej k).
+proof.
+case k => sk m.
+case (valid_sk sk) => H.
+- rewrite /dXY_rej /= dmap_ll dmap_ll.
+  rewrite /dWCoZ_rej H /= dcond_ll.
+  exact dWCoZ_can_rej.
+- rewrite /dXY_rej /= dmap_ll dmap_ll.
+  rewrite /dWCoZ_rej H /=.
+  exact dunit_ll.
+qed.
+
 clone import ReprogRej as RRej with
   type K <- SK * M,
   type X <- W * M,
@@ -126,9 +145,18 @@ clone import ReprogRej as RRej with
   type Z <- Z,
   op dXYZ_acc <- dXYZ_acc,
   op dXY_rej <- dXY_rej,
+  op dY <- dC,
   op qh <- qh,
-  op qr <- kappa * qs.
-(* TODO proof *. *)
+  op qr <- kappa * qs,
+  op alpha <- alpha
+proof *.
+realize dXYZ_acc_ll by apply dXYZ_acc_ll.
+realize dXY_rej_ll by apply dXY_rej_ll.
+realize dY_ll by apply dC_ll.
+realize dY_uni by apply dC_uni.
+realize dX_pmax by apply dX_pmax.
+realize qh_gt0 by apply qh_gt0.
+realize qr_gt0 by smt(kappa_gt0 qs_gt0).
 
 import RRej.OnlyRej.FullRO.
 
