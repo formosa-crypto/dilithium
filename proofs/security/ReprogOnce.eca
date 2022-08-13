@@ -19,7 +19,15 @@ op respond : ST -> C -> Z option.
 op valid_sk sk =
   exists pk, (pk, sk) \in keygen.
 
-(* Need this to ensure various conditional probabilities are well-formed *)
+(* Needed to ensure various conditional distrs are well-formed. *)
+
+axiom all_sk_can_accept sk :
+  valid_sk sk =>
+  exists w st c,
+  (w, st) \in commit sk /\
+  c \in dC /\
+  respond st c <> None.
+
 axiom all_sk_can_reject sk :
   valid_sk sk =>
   exists w st c,
@@ -27,10 +35,20 @@ axiom all_sk_can_reject sk :
   c \in dC /\
   respond st c = None.
 
+(* Required for transcript distrs to be always lossless *)
+
+axiom invalid_sk_always_reject sk w st c:
+  !valid_sk sk =>
+  (w, st) \in commit sk =>
+  c \in dC =>
+  respond st c = None.
+
 op alpha : real. (* pmax *)
 op qs : int. (* max. number of signing queries *)
 op qh : int. (* max. number of hash queries *)
 op kappa : int. (* max. number of iterations *)
+
+(* -- Ingredients required for cloning ReprogRej -- *)
 
 (* Transcript distribution *)
 op dWCoZ sk : (W * C * Z option) distr =
@@ -41,9 +59,15 @@ op dWCoZ sk : (W * C * Z option) distr =
   dunit (w, c, z))).
 
 (* Transcript distribution, conditioned on accept or reject. *)
-op dWCoZ_acc sk = dcond (dWCoZ sk) (fun wcz => let (w, c, z) = wcz in z <> None).
+op dWCoZ_acc sk = if valid_sk sk then
+  dcond (dWCoZ sk) (fun wcz => let (w, c, z) = wcz in z <> None)
+else
+  dunit witness.
 op dWCZ_acc sk = dmap (dWCoZ_acc sk) (fun wcoz => let (w, c, oz) = wcoz in (w, c, oget oz)).
-op dWCoZ_rej sk = dcond (dWCoZ sk) (fun wcz => let (w, c, z) = wcz in z = None).
+op dWCoZ_rej sk = if valid_sk sk then
+  dcond (dWCoZ sk) (fun wcz => let (w, c, z) = wcz in z = None)
+else
+  dunit witness.
 op dWC_rej sk = dmap (dWCoZ_rej sk) (fun wcz => let (w, c, _) = wcz in (w, c)).
 
 op dXYZ_acc (k: SK * M) : ((W * M) * C * Z) distr =
@@ -56,13 +80,55 @@ op dXY_rej (k: SK * M) : ((W * M) * C) distr =
   dmap (dWC_rej sk) (fun wc =>
     let (w, c) = wc in ((w, m), c)).
 
+lemma dWCoZ_can_acc sk :
+  valid_sk sk =>
+  0%r <
+  mu (dWCoZ sk)
+  (fun (wcz : W * C * Top.Z option) => let (w, c, z) = wcz in z <> None).
+proof.
+move => H; apply all_sk_can_accept in H; case H => w st c [?[??]].
+apply witness_support; exists (w, c, respond st c) => /> /=.
+apply supp_dlet; exists (w, st) => />.
+apply supp_dlet; exists c => />.
+apply supp_dunit => /#.
+qed.
+
+lemma dWCoZ_can_rej sk :
+  valid_sk sk =>
+  0%r <
+  mu (dWCoZ sk)
+  (fun (wcz : W * C * Top.Z option) => let (w, c, z) = wcz in z = None).
+proof.
+move => H; apply all_sk_can_reject in H; case H => w st c [?[??]].
+apply witness_support; exists (w, c, None) => /=.
+apply supp_dlet; exists (w, st) => />.
+apply supp_dlet; exists c => />.
+apply supp_dunit => /#.
+qed.
+
+lemma dXYZ_acc_ll k :
+  is_lossless (dXYZ_acc k).
+proof.
+case k => sk m.
+case (valid_sk sk) => H.
+- rewrite /dXYZ_acc /= dmap_ll dmap_ll.
+  rewrite /dWCoZ_acc H /= dcond_ll.
+  exact dWCoZ_can_acc.
+- rewrite /dXYZ_acc /= dmap_ll dmap_ll.
+  rewrite /dWCoZ_acc H /=.
+  exact dunit_ll.
+qed.
+
 clone import ReprogRej as RRej with
   type K <- SK * M,
   type X <- W * M,
   type Y <- C,
   type Z <- Z,
   op dXYZ_acc <- dXYZ_acc,
-  op dXY_rej <- dXY_rej.
+  op dXY_rej <- dXY_rej,
+  op qh <- qh,
+  op qr <- kappa * qs.
+(* TODO proof *. *)
 
 import RRej.OnlyRej.FullRO.
 
@@ -181,24 +247,6 @@ proof.
 rewrite (sumE_fin _ [true; false]) /#.
 qed.
 
-(* We first reorganize transcript computation.
- * We want to first sample f=acc/rej,
- * then sample the rest of transcript conditioned on f.
- *)
-
-lemma dWCoZ_can_rej sk :
-  valid_sk sk =>
-  0%r <
-  mu (dWCoZ sk)
-  (fun (wcz : W * C * Top.Z option) => let (w, c, z) = wcz in z = None).
-proof.
-move => H; apply all_sk_can_reject in H; case H => w st c [?[??]].
-apply witness_support; exists (w, c, None) => /=.
-apply supp_dlet; exists (w, st) => />.
-apply supp_dlet; exists c => />.
-apply supp_dunit => /#.
-qed.
-
 lemma dWCoZ_ll sk :
   is_lossless (dWCoZ sk).
 proof.
@@ -217,25 +265,29 @@ lemma dWC_rej_ll sk :
   valid_sk sk =>
   is_lossless (dWC_rej sk).
 proof.
-move => ?; apply dmap_ll; apply dcond_ll.
+move => H; apply dmap_ll.
+rewrite /dWCoZ_rej H /=; apply dcond_ll.
 by apply dWCoZ_can_rej => //.
 qed.
 
 lemma dWCoZ_acc_supp sk w c oz :
+  valid_sk sk =>
   (w, c, oz) \in dWCoZ_acc sk =>
   oz <> None.
 proof. smt(dcond_supp). qed.
 
 lemma dWCoZ_rej_None sk w c oz :
+  valid_sk sk =>
   (w, c, oz) \in dWCoZ_rej sk =>
   oz = None.
 proof. smt(dcond_supp). qed.
 
 lemma dWCoZ_rej_supp sk w c :
+  valid_sk sk =>
   (w, c, None) \in dWCoZ_rej sk <=>
   (w, c) \in dWC_rej sk.
 proof.
-split; first by smt(supp_dmap).
+move => ?; split; first by smt(supp_dmap).
 rewrite supp_dmap; smt(dWCoZ_rej_None).
 qed.
 
@@ -290,18 +342,19 @@ qed.
 
 (* Now state the alternative way of sampling transcript is correct *)
 lemma conditional_sampling_transcript sk :
+  valid_sk sk =>
   dWCoZ sk = dlet (dbiased (p_acc sk)) (fun f =>
     if f then
       dWCoZ_acc sk
     else
       dWCoZ_rej sk).
 proof.
-rewrite -dmap_dbiased; first by apply dWCoZ_ll.
+move => H; rewrite -dmap_dbiased; first by apply dWCoZ_ll.
 rewrite {1} (marginal_sampling (dWCoZ sk) (fun wcoz => let (w, c, oz) = wcoz in oz <> None)) /=.
 congr; apply fun_ext => b /=; case b => _.
-- rewrite /dWCoZ_acc.
+- rewrite /dWCoZ_acc H /=.
   congr; apply fun_ext => ? /#.
-- rewrite /dWCoZ_rej.
+- rewrite /dWCoZ_rej H /=.
   congr; apply fun_ext => ? /#.
 qed.
 
@@ -398,19 +451,19 @@ qed.
 
 equiv hop_body3 :
   LoopBodies.body2 ~ LoopBodies.body3 :
-  ={OLeft.sk} ==> ={res}.
+  ={OLeft.sk} /\ valid_sk OLeft.sk{1} ==> ={res}.
 proof.
 bypr res{1} res{2}; 1: auto => /#.
 move => &1 &2 x eq_sk.
 rewrite (pr_body2 x &1 OLeft.sk{1}) => //.
-byphoare (_: (OLeft.sk = OLeft.sk{1}) ==> (res = x)) => //=; 2: subst => //=.
+byphoare (_: (OLeft.sk = OLeft.sk{1}) ==> (res = x)) => //=; 2: by smt().
 proc.
 seq 1: f (p_acc OLeft.sk{1}) (mu1 (dWCoZ_acc OLeft.sk{1}) x) (p_rej OLeft.sk{1}) (mu1 (dWCoZ_rej OLeft.sk{1}) x) #pre => //=.
 - by auto.
 - rnd; auto => /> /=.
   rewrite dbiasedE => /=.
   rewrite !clamp_id => //.
-  rcondt 1 => //=.
+- rcondt 1 => //=.
   by rnd (pred1 x); skip => /> /#.
 - rnd; auto => /> /=.
   rewrite dbiasedE => /=.
@@ -419,7 +472,7 @@ seq 1: f (p_acc OLeft.sk{1}) (mu1 (dWCoZ_acc OLeft.sk{1}) x) (p_rej OLeft.sk{1})
 - rcondf 1 => //=.
   by rnd (pred1 x); skip => /#.
 - move => *; subst.
-  rewrite conditional_sampling_transcript.
+  rewrite conditional_sampling_transcript; 1: smt().
   rewrite dlet1E /=.
   rewrite sum_over_bool => /=.
   rewrite !dbiased1E => /=.
@@ -429,7 +482,7 @@ qed.
 
 equiv hop_body4 :
   LoopBodies.body3 ~ LoopBodies.body4 :
-  ={OLeft.sk} ==> (res{1}.`1 = res{2}.`1 /\
+  ={OLeft.sk} /\ valid_sk OLeft.sk{1} ==> (res{1}.`1 = res{2}.`1 /\
                          res{1}.`2 = res{2}.`2 /\
                          (res{1}.`3 <> None <=> res{2}.`3) /\
                          (res{1}.`3 <> None => oget res{1}.`3 = res{2}.`4)).
@@ -447,7 +500,7 @@ if; 1: by auto.
     rewrite dmap1E.
     apply mu_eq_support => x; case x => w' c' z' H /=.
     rewrite /(\o) /pred1 => /=.
-    by apply dWCoZ_acc_supp in H => /#.
+    smt(dWCoZ_acc_supp).
   - move => _ wcoz; case wcoz => ????.
     move => />; smt(dmap_supp dWCoZ_acc_supp).
 - rnd (fun wcoz => let (w, c, oz) = wcoz in (w, c))
@@ -461,14 +514,14 @@ qed.
 
 equiv hop_body2_4 :
   LoopBodies.body2 ~ LoopBodies.body4 :
-  ={OLeft.sk} ==> (res{1}.`1 = res{2}.`1 /\
+  ={OLeft.sk} /\ valid_sk OLeft.sk{1} ==> (res{1}.`1 = res{2}.`1 /\
                          res{1}.`2 = res{2}.`2 /\
                          (res{1}.`3 <> None <=> res{2}.`3) /\
                          (res{1}.`3 <> None => oget res{1}.`3 = res{2}.`4)).
 proof.
 transitivity LoopBodies.body3
-  (={OLeft.sk} ==> ={res})
-  (={OLeft.sk} ==> res{1}.`1 = res{2}.`1 /\
+  (={OLeft.sk} /\ valid_sk OLeft.sk{1} ==> ={res})
+  (={OLeft.sk} /\ valid_sk OLeft.sk{1} ==> res{1}.`1 = res{2}.`1 /\
   res{1}.`2 = res{2}.`2 /\
   (res{1}.`3 <> None <=> res{2}.`3) /\
   (res{1}.`3 <> None => oget res{1}.`3 = res{2}.`4)); 1, 2: smt().
@@ -531,11 +584,11 @@ module OLeft_body4 : Oracle_i = {
 
 equiv OLeft_loop_bodies_hop :
   OLeft_body2.sign ~ OLeft_body4.sign :
-  ={OLeft.sk, m, RO.m} ==> ={res, RO.m}.
+  ={OLeft.sk, m, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}.
 proof.
 proc. seq 4 5: (#pre /\ i{1} = 0 /\ i{2} = 0 /\ oz{1} = None /\ !f{2}); first by auto.
 while (={m, OLeft.sk, i, RO.m} /\ (oz{1} = None <=> !f{2})
-         /\ (f{2} => (={w, c} /\ oget oz{1} = z{2}))); 2: by auto => /#.
+         /\ (f{2} => (={w, c} /\ oget oz{1} = z{2})) /\ valid_sk OLeft.sk{1}); 2: by auto => /#.
 wp.
 call(_: ={RO.m, arg} ==> ={RO.m}).
 - by proc; auto => />.
@@ -662,15 +715,15 @@ qed.
 
 equiv OLeft_restructure_all :
   OLeft.sign ~ OLeft_drop_rej_info.sign :
-  ={m, OLeft.sk, RO.m} ==> ={res, RO.m}.
+  ={m, OLeft.sk, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}.
 proof.
 transitivity OLeft_body2.sign
-  (={OLeft.sk, arg, RO.m} ==> ={res, RO.m})
-  (={OLeft.sk, arg, RO.m} ==> ={res, RO.m}); 1, 2: smt().
-- by apply OLeft_body2_call.
+  (={OLeft.sk, arg, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m})
+  (={OLeft.sk, arg, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}); 1, 2: smt().
+- by conseq OLeft_body2_call => //.
 transitivity OLeft_body4.sign
-  (={OLeft.sk, arg, RO.m} ==> ={res, RO.m})
-  (={OLeft.sk, arg, RO.m} ==> ={res, RO.m}); 1, 2: smt().
+  (={OLeft.sk, arg, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m})
+  (={OLeft.sk, arg, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}); 1, 2: smt().
 - by apply OLeft_loop_bodies_hop.
 transitivity OLeft_cond.sign
   (={arg, OLeft.sk, RO.m} ==> ={res, RO.m})
@@ -740,9 +793,9 @@ equiv ORight_loop_bodies_hop :
   ={OLeft.sk, m, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}.
 proof.
 proc.
-seq 4 5: (#pre /\ ={w, c} /\ i{1} = 0 /\ i{2} = 0 /\ oz{1} = None /\ !f{2}); first by auto.
+seq 4 5: (#pre /\ ={w, c} /\ i{1} = 0 /\ i{2} = 0 /\ oz{1} = None /\ !f{2} /\ valid_sk OLeft.sk{1}); first by auto.
 seq 1 1: (={RO.m, OLeft.sk, m, w, c, i} /\ (oz{1} <> None <=> f{2}) /\
-           (oz{1} <> None => oget oz{1} = z{2})); last first.
+           (oz{1} <> None => oget oz{1} = z{2}) /\ valid_sk OLeft.sk{1}); last first.
 - if => /> //.
   call(_: ={arg, RO.m} ==> ={RO.m}); last by auto => /#.
   by proc; auto => /#.
@@ -934,9 +987,6 @@ declare axiom A_bound : forall (O <: Oracle{-Adv}),
   hoare [ Adv(Count(O)).distinguish : Count.countS = 0 /\ Count.countH = 0 ==> 
                                               Count.countS <= qs /\ Count.countH = qh ].
 
-(* TODO adv bound? *)
-(* counter acrobatics again... *)
-
 module (AdvReduction(OO: Oracle_i) : RRej.Adversary) (RejO: RRej.Oracle) = {
   proc distinguish() = {
     var b;
@@ -945,6 +995,8 @@ module (AdvReduction(OO: Oracle_i) : RRej.Adversary) (RejO: RRej.Oracle) = {
     return b;
   }
 }.
+
+
 
 equiv reduction_correct_left :
   GameL(Adv).main ~ RRej.Game(RRej.OLeft, AdvReduction(OLeft)).main :
