@@ -249,6 +249,45 @@ have <-: weight (dWCoZ sk) = 1%r by apply dWCoZ_ll.
 rewrite mu_not; rewrite /p_acc => //.
 qed.
 
+lemma dXYZ_acc_supp_m sk m x y z :
+  (x, y, z) \in dXYZ_acc (sk, m) => x.`2 = m.
+proof. by rewrite /dXYZ_acc /= supp_dmap /#. qed.
+
+lemma dXYZ_acc1E sk m w c z :
+  mu1 (dXYZ_acc (sk, m)) ((w, m), c, z) = mu1 (dWCZ_acc sk) (w, c, z).
+proof.
+by rewrite /dXYZ_acc /= dmap1E /(\o) /=; congr => /#.
+qed.
+
+lemma dXYZ_acc_supp sk m w c z :
+  (w, c, z) \in dWCZ_acc sk <=>
+  ((w, m), c, z) \in dXYZ_acc (sk, m).
+proof.
+rewrite /dXYZ_acc /=.
+split => H; first by rewrite supp_dmap => /#.
+by rewrite supp_dmap in H => /#.
+qed.
+
+lemma dXY_rej_supp_m sk m x y :
+  (x, y) \in dXY_rej (sk, m) => x.`2 = m.
+proof. by rewrite /dXY_rej /= supp_dmap /#. qed.
+
+lemma dXY_rej1E sk m w c :
+  mu1 (dXY_rej (sk, m)) ((w, m), c) = mu1 (dWC_rej sk) (w, c).
+proof.
+by rewrite /dXY_rej /= dmap1E /(\o) /=; congr => /#.
+qed.
+
+(* Implication is double-sided, but the other side is unused I think? *)
+lemma dXY_rej_supp sk m w c :
+  (w, c) \in dWC_rej sk <=>
+  ((w, m), c) \in dXY_rej (sk, m).
+proof.
+rewrite /dXY_rej /=.
+split => H; first by rewrite supp_dmap => /#.
+by rewrite supp_dmap in H => /#.
+qed.
+
 (* Now state the alternative way of sampling transcript is correct *)
 lemma conditional_sampling_transcript sk :
   dWCoZ sk = dlet (dbiased (p_acc sk)) (fun f =>
@@ -935,12 +974,25 @@ call (_ : ={RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1}); last by skip => />.
   if; first by auto.
   + inline RRej.OLeft.reprog_acc RO.set.
     sp; wp; conseq />.
-    (* TODO rnd with support... *)
-    (* sigh... some shenanigans inc *)
-    admit.
+    rnd (fun wcz => let (w, c, z) = wcz in ((w, m{2}), c, z))
+        (fun xyz => let (wm, c, z) = xyz in let (w, m) = wm in (w, c, z)).
+    (* rnd makes me very sad *)
+    skip => /> *.
+    (* Don't ask about these intro patterns *)
+    split => /= [[[??]??]|_]; first smt(dXYZ_acc_supp_m).
+    split => /= [[??]??| _ [???]] /=; first smt(dXYZ_acc1E dXYZ_acc_supp_m).
+    smt(dXYZ_acc_supp_m dXYZ_acc_supp).
   + inline RRej.OLeft.reprog_rej.
-    (* sigh... some more `rnd` shenanigans inc *)
-    admit.
+    sp; wp; conseq />.
+    seq 1 1: (={RO.m} /\ (wr{1}, m{1}) = x{2} /\ cr{1} = y{2}); last by inline RO.set; auto.
+    conseq />.
+    rnd (fun wc => let (w, c) = wc in ((w, m{2}), c))
+        (fun xy => let (x, y) = xy in let (w, m) = x in (w, y)).
+    skip => /> *.
+    (* rnd makes me incredibly sad *)
+    split => [[[??]?]?|_] /=; first smt(dXY_rej_supp_m).
+    split => [[[??]?]|_ [??]?] /=; first smt(dXY_rej1E dXY_rej_supp_m).
+    smt(dXY_rej_supp_m dXY_rej_supp).
 qed.
 
 lemma main_bound &m :
