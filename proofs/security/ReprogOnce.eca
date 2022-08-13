@@ -16,6 +16,17 @@ op [lossless] commit : SK -> (W * ST) distr.
 op [lossless uniform] dC : C distr.
 op respond : ST -> C -> Z option.
 
+op valid_sk sk =
+  exists pk, (pk, sk) \in keygen.
+
+(* Need this to ensure various conditional probabilities are well-formed *)
+axiom all_sk_can_reject sk :
+  valid_sk sk =>
+  exists w st c,
+  (w, st) \in commit sk /\
+  c \in dC /\
+  respond st c = None.
+
 op alpha : real. (* pmax *)
 op qs : int. (* max. number of signing queries *)
 op qh : int. (* max. number of hash queries *)
@@ -136,7 +147,15 @@ module GameR(Adv: Adversary) = {
   }
 }.
 
-(* Next we reorganize transcript computation.
+(* Auxiliary lemma *)
+
+lemma sum_over_bool (f : bool -> real):
+  sum (fun b => f b) = f true + f false.
+proof.
+rewrite (sumE_fin _ [true; false]) /#.
+qed.
+
+(* We first reorganize transcript computation.
  * We want to first sample f=acc/rej,
  * then sample the rest of transcript conditioned on f.
  *)
@@ -148,6 +167,20 @@ op dWCoZ sk : (W * C * Z option) distr =
   dlet dC (fun c =>
   let z = respond st c in
   dunit (w, c, z))).
+
+lemma dWCoZ_can_rej sk :
+  valid_sk sk =>
+  0%r <
+  mu (dWCoZ sk)
+  (fun (wcz : W * C * Top.Z option) => let (w, c, z) = wcz in z = None).
+proof.
+print all_sk_can_reject.
+move => H; apply all_sk_can_reject in H; case H => w st c [?[??]].
+apply witness_support; exists (w, c, None) => /=.
+apply supp_dlet; exists (w, st) => />.
+apply supp_dlet; exists c => />.
+apply supp_dunit => /#.
+qed.
 
 lemma dWCoZ_ll sk :
   is_lossless (dWCoZ sk).
@@ -167,7 +200,15 @@ op dWC_rej sk = dmap (dWCoZ_rej sk) (fun wcz => let (w, c, _) = wcz in (w, c)).
 op p_acc sk = mu (dWCoZ sk) (fun wcz => let (w, c, oz) = wcz in oz <> None).
 op p_rej sk = mu (dWCoZ sk) (fun wcz => let (w, c, oz) = wcz in oz = None).
 
-(* Auxiliary lemma *)
+(* Properties of distributions above *)
+
+lemma dWC_rej_ll sk :
+  valid_sk sk =>
+  is_lossless (dWC_rej sk).
+proof.
+move => ?; apply dmap_ll; apply dcond_ll.
+by apply dWCoZ_can_rej => //.
+qed.
 
 lemma dWCoZ_acc_supp sk w c oz :
   (w, c, oz) \in dWCoZ_acc sk =>
@@ -213,6 +254,8 @@ congr; apply fun_ext => b /=; case b => _.
 - rewrite /dWCoZ_rej.
   congr; apply fun_ext => ? /#.
 qed.
+
+(* -- Lining up interface to ReprogRej -- *)
 
 (* Helper module to call bypr... *)
 module LoopBodies = {
@@ -303,12 +346,6 @@ have <- : Pr[LoopBodies.body1() @ &m : res = x] = Pr[LoopBodies.body2() @ &m : r
 rewrite (pr_body1 x &m sk) => /#.
 qed.
 
-lemma sum_over_bool (f : bool -> real):
-  sum (fun b => f b) = f true + f false.
-proof.
-rewrite (sumE_fin _ [true; false]) /#.
-qed.
-
 equiv hop_body3 :
   LoopBodies.body2 ~ LoopBodies.body3 :
   ={OLeft.sk} ==> ={res}.
@@ -388,6 +425,8 @@ transitivity LoopBodies.body3
 - by apply hop_body3.
 apply hop_body4.
 qed.
+
+(* -- Left game transforms -- *)
 
 (* Loop-bodies brute-forcing spaghetti...
  * RIP signal-to-noise ratio *)
@@ -482,14 +521,12 @@ module OLeft_cond : Oracle_i = {
 }.
 
 equiv OLeft_cond_hop : OLeft_body4.sign ~ OLeft_cond.sign :
-  ={m, OLeft.sk} ==> ={res}.
+  ={m, OLeft.sk, RO.m} ==> ={res, RO.m}.
 proof.
 by proc; inline LoopBodies.body4; sim.
 qed.
 
-(* Clean up and line up interface.
- * Equivalent to G0A up to reordering instructions. *)
-module OLeft_torej : Oracle_i = {
+module OLeft_move_reprog : Oracle_i = {
   include var OLeft[init, h]
 
   proc sign(m: M) = {
@@ -519,8 +556,8 @@ module OLeft_torej : Oracle_i = {
   }
 }.
 
-equiv OLeft_torej_hop :
-  OLeft_cond.sign ~ OLeft_torej.sign :
+equiv OLeft_move_reprog_hop :
+  OLeft_cond.sign ~ OLeft_move_reprog.sign :
   ={m, OLeft.sk, RO.m} ==> ={res, RO.m}.
 proof.
 proc.
@@ -530,9 +567,73 @@ seq 2 2: (={m, OLeft.sk, w, c, z, i, f, RO.m}); first by sim.
 if; 1: smt(); 1,2: by sim.
 qed.
 
-(** Right game
- * Now repeat the same as in the left game
- *)
+module OLeft_drop_rej_info : Oracle_i = {
+  include var OLeft[init, h]
+
+  proc sign(m: M) = {
+    var w, wr, c, cr, z, f, i;
+
+    (* Silences unused variables warning *)
+    w <- witness;
+    c <- witness;
+    z <- witness;
+
+    i <- 0;
+    f <- false;
+    while(!f /\ i < kappa) {
+      f <$ dbiased (p_acc sk);
+      z <- witness;
+      if(f) {
+        (w, c, z) <$ dWCZ_acc sk;
+        RO.set((w, m), c);
+      }
+      else {
+        (wr, cr) <$ dWC_rej sk;
+        RO.set((wr, m), cr);
+      }
+      i <- i + 1;
+    }
+    return if f then (w, c, z) else witness;
+  }
+}.
+
+equiv OLeft_drop_rej_info_hop :
+  OLeft_move_reprog.sign ~ OLeft_drop_rej_info.sign :
+  ={m, OLeft.sk, RO.m} ==> ={res, RO.m}.
+proof.
+proc.
+seq 5 5: (#pre /\ ={w, c, z} /\ i{1} = 0 /\ i{2} = 0 /\ !f{1} /\ !f{2}); first by auto.
+while (={m, OLeft.sk, RO.m, z, i, f} /\ (f{1} => ={w, c})); last by auto => /#.
+seq 2 2: (={m, OLeft.sk, RO.m, z, i, f}); first by sim.
+if; 1: smt().
+- inline RO.set; auto => /#.
+- inline RO.set; auto => /#.
+qed.
+
+equiv OLeft_restructure_all :
+  OLeft.sign ~ OLeft_drop_rej_info.sign :
+  ={m, OLeft.sk, RO.m} ==> ={res, RO.m}.
+proof.
+transitivity OLeft_body2.sign
+  (={OLeft.sk, arg, RO.m} ==> ={res, RO.m})
+  (={OLeft.sk, arg, RO.m} ==> ={res, RO.m}); 1, 2: smt().
+- by apply OLeft_body2_call.
+transitivity OLeft_body4.sign
+  (={OLeft.sk, arg, RO.m} ==> ={res, RO.m})
+  (={OLeft.sk, arg, RO.m} ==> ={res, RO.m}); 1, 2: smt().
+- by apply OLeft_loop_bodies_hop.
+transitivity OLeft_cond.sign
+  (={arg, OLeft.sk, RO.m} ==> ={res, RO.m})
+  (={OLeft.sk, arg, RO.m} ==> ={res, RO.m}); 1, 2: smt().
+- by apply OLeft_cond_hop.
+transitivity OLeft_move_reprog.sign
+  (={arg, OLeft.sk, RO.m} ==> ={res, RO.m})
+  (={arg, OLeft.sk, RO.m} ==> ={res, RO.m}); 1, 2: smt().
+- by apply OLeft_move_reprog_hop.
+exact OLeft_drop_rej_info_hop.
+qed.
+
+(** -- Right game transforms -- **)
 
 module ORight_body2 : Oracle_i = {
   include var OLeft[init, h]
@@ -557,7 +658,7 @@ module ORight_body2 : Oracle_i = {
 
 equiv ORight_body2_call :
   ORight.sign ~ ORight_body2.sign :
-  ={OLeft.sk, m, RO.m} ==> ={res, RO.m}.
+  ={OLeft.sk, m, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}.
 proof.
 by proc; inline LoopBodies.body2; sim.
 qed.
@@ -586,7 +687,7 @@ module ORight_body4 : Oracle_i = {
 
 equiv ORight_loop_bodies_hop :
   ORight_body2.sign ~ ORight_body4.sign :
-  ={OLeft.sk, m, RO.m} ==> ={res, RO.m}.
+  ={OLeft.sk, m, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}.
 proof.
 proc.
 seq 4 5: (#pre /\ ={w, c} /\ i{1} = 0 /\ i{2} = 0 /\ oz{1} = None /\ !f{2}); first by auto.
@@ -629,14 +730,12 @@ module ORight_cond : Oracle_i = {
 }.
 
 equiv ORight_cond_hop : ORight_body4.sign ~ ORight_cond.sign :
-  ={m, OLeft.sk, RO.m} ==> ={res, RO.m}.
+  ={m, OLeft.sk, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}.
 proof.
 by proc; inline LoopBodies.body4; sim.
 qed.
 
-(* Clean up and line up interface.
- * Equivalent to G0A up to reordering instructions. *)
-module ORight_torej : Oracle_i = {
+module ORight_move_reprog : Oracle_i = {
   include var OLeft[init, h]
 
   proc sign(m: M) = {
@@ -665,9 +764,9 @@ module ORight_torej : Oracle_i = {
   }
 }.
 
-equiv ORight_torej_hop :
-  ORight_cond.sign ~ ORight_torej.sign :
-  ={m, OLeft.sk, RO.m} ==> ={res, RO.m}.
+equiv ORight_move_reprog_hop :
+  ORight_cond.sign ~ ORight_move_reprog.sign :
+  ={m, OLeft.sk, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}.
 proof.
 proc; seq 5 5: (#pre /\ ={w, c, z, i, f} /\ !f{1}); first by auto.
 seq 1 1: (={m, OLeft.sk, w, c, z, i, f} /\
@@ -682,6 +781,100 @@ seq 1 1: (={m, OLeft.sk, w, c, z, i, f} /\
 - if{1}; last by auto => />.
   by inline RO.set; auto => />.
 qed.
+
+module ORight_drop_rej_info : Oracle_i = {
+  include var OLeft[init, h]
+
+  proc sign(m: M) = {
+    var w, c, z, f, i;
+
+    (* Silences unused variables warning *)
+    w <- witness;
+    c <- witness;
+    z <- witness;
+
+    i <- 0;
+    f <- false;
+    while(!f /\ i < kappa) {
+      f <$ dbiased (p_acc sk);
+      z <- witness;
+      if(f) {
+        (w, c, z) <$ dWCZ_acc sk;
+        RO.set((w, m), c);
+      }
+      i <- i + 1;
+    }
+    return if f then (w, c, z) else witness;
+  }
+}.
+
+equiv ORight_drop_rej_info_hop :
+  ORight_move_reprog.sign ~ ORight_drop_rej_info.sign :
+  ={m, OLeft.sk, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}.
+proof.
+proc.
+seq 5 5: (#pre /\ ={w, c, z} /\ i{1} = 0 /\ i{2} = 0 /\ !f{1} /\ !f{2}); first by auto.
+while (={m, OLeft.sk, RO.m, z, i, f} /\ valid_sk OLeft.sk{1} /\ (f{1} => ={w, c}));
+  last by auto => /#.
+seq 2 2: (={m, OLeft.sk, RO.m, z, i, f} /\ valid_sk OLeft.sk{1}); first by auto => />.
+if; 1: smt().
+- by conseq/>; sim.
+- auto => />; smt(dWC_rej_ll).
+qed.
+
+equiv ORight_restructure_all :
+  ORight.sign ~ ORight_drop_rej_info.sign :
+  ={m, OLeft.sk, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}.
+proof.
+transitivity ORight_body2.sign
+  (={OLeft.sk, arg, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m})
+  (={OLeft.sk, arg, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}); 1, 2: smt().
+- by apply ORight_body2_call.
+transitivity ORight_body4.sign
+  (={OLeft.sk, arg, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m})
+  (={OLeft.sk, arg, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}); 1, 2: smt().
+- by apply ORight_loop_bodies_hop.
+transitivity ORight_cond.sign
+  (={arg, OLeft.sk, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m})
+  (={OLeft.sk, arg, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}); 1, 2: smt().
+- by apply ORight_cond_hop.
+transitivity ORight_move_reprog.sign
+  (={arg, OLeft.sk, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m})
+  (={arg, OLeft.sk, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}); 1, 2: smt().
+- by apply ORight_move_reprog_hop.
+exact ORight_drop_rej_info_hop.
+qed.
+
+(** -- Reduction to ReprogRej -- **)
+
+module OReduction(O: RRej.Oracle) : Oracle_i = {
+  include var OLeft[init, h]
+
+  proc sign(m: M) = {
+    var w, c, z, f, i, wm, m';
+
+    (* Silences unused variables warning *)
+    w <- witness;
+    c <- witness;
+    z <- witness;
+
+    i <- 0;
+    f <- false;
+    while(!f /\ i < kappa) {
+      f <$ dbiased (p_acc sk);
+      z <- witness;
+      if(f) {
+        (wm, c, z) <@ O.reprog_acc(m);
+        (w, m') <- wm;
+      }
+      else {
+        O.reprog_rej(m);
+      }
+      i <- i + 1;
+    }
+    return if f then (w, c, z) else witness;
+  }
+}.
 
 (**
 
