@@ -32,16 +32,42 @@ op qs : int. (* max. number of signing queries *)
 op qh : int. (* max. number of hash queries *)
 op kappa : int. (* max. number of iterations *)
 
+(* Transcript distribution *)
+op dWCoZ sk : (W * C * Z option) distr =
+  dlet (commit sk) (fun wst =>
+  let (w, st) = wst in
+  dlet dC (fun c =>
+  let z = respond st c in
+  dunit (w, c, z))).
+
+(* Transcript distribution, conditioned on accept or reject. *)
+op dWCoZ_acc sk = dcond (dWCoZ sk) (fun wcz => let (w, c, z) = wcz in z <> None).
+op dWCZ_acc sk = dmap (dWCoZ_acc sk) (fun wcoz => let (w, c, oz) = wcoz in (w, c, oget oz)).
+op dWCoZ_rej sk = dcond (dWCoZ sk) (fun wcz => let (w, c, z) = wcz in z = None).
+op dWC_rej sk = dmap (dWCoZ_rej sk) (fun wcz => let (w, c, _) = wcz in (w, c)).
+
+op dXYZ_acc (k: SK * M) : ((W * M) * C * Z) distr =
+  let (sk, m) = k in
+  dmap (dWCZ_acc sk) (fun wcz =>
+    let (w, c, z) = wcz in ((w, m), c, z)).
+
+op dXY_rej (k: SK * M) : ((W * M) * C) distr =
+  let (sk, m) = k in
+  dmap (dWC_rej sk) (fun wc =>
+    let (w, c) = wc in ((w, m), c)).
+
 clone import ReprogRej as RRej with
-  type M = M,
-  type X = W * M,
-  type Y = C,
-  type Z = Z.
+  type K <- SK * M,
+  type X <- W * M,
+  type Y <- C,
+  type Z <- Z,
+  op dXYZ_acc <- dXYZ_acc,
+  op dXY_rej <- dXY_rej.
 
 import RRej.OnlyRej.FullRO.
 
 module type Oracle = {
-  proc h(w: W, m: M) : Y
+  proc h(w: W, m: M) : C
   proc sign(m: M) : W * C * Z
 }.
 
@@ -49,7 +75,7 @@ module Count (O: Oracle) : Oracle = {
   var countS : int
   var countH : int
 
-  proc h(w: W, m : M) : Y = {
+  proc h(w: W, m : M) : C = {
     var y;
     countH <- countH + 1;
     y <@ O.h((w, m));
@@ -160,21 +186,12 @@ qed.
  * then sample the rest of transcript conditioned on f.
  *)
 
-(* Transcript distribution *)
-op dWCoZ sk : (W * C * Z option) distr =
-  dlet (commit sk) (fun wst =>
-  let (w, st) = wst in
-  dlet dC (fun c =>
-  let z = respond st c in
-  dunit (w, c, z))).
-
 lemma dWCoZ_can_rej sk :
   valid_sk sk =>
   0%r <
   mu (dWCoZ sk)
   (fun (wcz : W * C * Top.Z option) => let (w, c, z) = wcz in z = None).
 proof.
-print all_sk_can_reject.
 move => H; apply all_sk_can_reject in H; case H => w st c [?[??]].
 apply witness_support; exists (w, c, None) => /=.
 apply supp_dlet; exists (w, st) => />.
@@ -189,12 +206,6 @@ apply dlet_ll; first by apply commit_ll.
 move => x; case x; move => * /=; apply dlet_ll; first apply dC_ll.
 move => * /=; apply dunit_ll.
 qed.
-
-(* Transcript distribution, conditioned on accept or reject. *)
-op dWCoZ_acc sk = dcond (dWCoZ sk) (fun wcz => let (w, c, z) = wcz in z <> None).
-op dWCZ_acc sk = dmap (dWCoZ_acc sk) (fun wcoz => let (w, c, oz) = wcoz in (w, c, oget oz)).
-op dWCoZ_rej sk = dcond (dWCoZ sk) (fun wcz => let (w, c, z) = wcz in z = None).
-op dWC_rej sk = dmap (dWCoZ_rej sk) (fun wcz => let (w, c, _) = wcz in (w, c)).
 
 (* Accept and reject probabilities *)
 op p_acc sk = mu (dWCoZ sk) (fun wcz => let (w, c, oz) = wcz in oz <> None).
@@ -864,94 +875,17 @@ module OReduction(O: RRej.Oracle) : Oracle_i = {
       f <$ dbiased (p_acc sk);
       z <- witness;
       if(f) {
-        (wm, c, z) <@ O.reprog_acc(m);
+        (wm, c, z) <@ O.reprog_acc((OLeft.sk, m));
         (w, m') <- wm;
       }
       else {
-        O.reprog_rej(m);
+        O.reprog_rej((OLeft.sk, m));
       }
       i <- i + 1;
     }
     return if f then (w, c, z) else witness;
   }
 }.
-
-(**
-
-(* Reduction - G0 corresponds to GA *)
-module G0R = {
-  var sk : SK
-
-  proc init() = {
-    var pk;
-    (pk, sk) <$ keygen;
-  }
-
-  proc sign(m: M) = {
-    var w, c, z, f;
-
-    (* Silences unused variables warning *)
-    w <- witness;
-    c <- witness;
-    z <- witness;
-
-    f <- false;
-    while(!f) {
-      f <$ dbiased (p_acc sk);
-      if(f) {
-        (w, c, z) <@ GameA.reprog_acc(dWCZ_acc sk, m);
-      }
-      else {
-        GameA.reprog_rej(dWC_rej sk, m);
-      }
-    }
-    return (w, c, z);
-  }
-}.
-
-(* TODO equiv G0R.sign ~ G0B.sign?
- * Need to argue min-entropy of dW.
- * Everything else seems trivial.
- *)
-
-(* Reduction - G1 corresponds to GB.
- *
- * TODO Code organization is suspect.
- * Maybe instantiate stuff with module types and parametrized modules?
- * Currently there's (unnecessary-looking) duplicate code.
- * For example, maybe G0R and G1R should be the same too?
- *)
-module G1R = {
-  var sk : SK
-
-  proc init() = {
-    var pk;
-    (pk, sk) <$ keygen;
-  }
-
-  proc sign(m: M) = {
-    var w, c, z, f;
-
-    (* Silences unused variables warning *)
-    w <- witness;
-    c <- witness;
-    z <- witness;
-
-    f <- false;
-    while(!f) {
-      f <$ dbiased (p_acc sk);
-      if(f) {
-        (w, c, z) <@ GameB.reprog_acc(dWCZ_acc sk, m);
-      }
-      else {
-        GameB.reprog_rej(dWC_rej sk, m);
-      }
-    }
-    return (w, c, z);
-  }
-}.
-
-**)
 
 section.
 
@@ -960,6 +894,54 @@ declare module Adv <: Adversary {-OLeft}.
 declare axiom A_bound : forall (O <: Oracle{-Adv}), 
   hoare [ Adv(Count(O)).distinguish : Count.countS = 0 /\ Count.countH = 0 ==> 
                                               Count.countS <= qs /\ Count.countH = qh ].
+
+(* TODO adv bound? *)
+(* counter acrobatics again... *)
+
+module (AdvReduction(OO: Oracle_i) : RRej.Adversary) (RejO: RRej.Oracle) = {
+  proc distinguish() = {
+    var b;
+    OO.init();
+    b <@ Adv(OReduction(RejO)).distinguish();
+    return b;
+  }
+}.
+
+equiv reduction_correct_left :
+  GameL(Adv).main ~ RRej.Game(RRej.OLeft, AdvReduction(OLeft)).main :
+  ={glob Adv} ==> ={res}.
+proof.
+proc.
+inline RO.init OLeft.init RRej.OLeft.init AdvReduction(OLeft, RRej.OLeft).distinguish.
+sp.
+seq 1 1: (#pre /\ ={OLeft.sk} /\ valid_sk OLeft.sk{1}); first by rnd; auto => /> /#.
+wp.
+call (_ : ={RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1}); last by skip => />.
+- proc; conseq/>.
+  seq 1 1: (#pre /\ ={r}); first by rnd; auto => />.
+  if; first by smt().
+  + by auto; auto.
+  + by skip => />.
+- transitivity OLeft_drop_rej_info.sign
+  (={OLeft.sk, arg, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1})
+  (={OLeft.sk, arg, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1});
+    1, 2: smt().
+  conseq OLeft_restructure_all; 1, 2: smt().
+  proc; conseq/>.
+  seq 5 5: (#pre /\ ={w, c, z, i, f}); 1: by auto.
+  while(#pre); last by skip => />.
+  seq 2 2: (={OLeft.sk, m, RO.m, w, c, z, i, f} /\ valid_sk OLeft.sk{1}); first by auto.
+  wp.
+  if; first by auto.
+  + inline RRej.OLeft.reprog_acc RO.set.
+    sp; wp; conseq />.
+    (* TODO rnd with support... *)
+    (* sigh... some shenanigans inc *)
+    admit.
+  + inline RRej.OLeft.reprog_rej.
+    (* sigh... some more `rnd` shenanigans inc *)
+    admit.
+qed.
 
 lemma main_bound &m :
 `| Pr[GameL(Adv).main() @ &m : res] - Pr[GameR(Adv).main() @ &m : res] | < kappa%r * qs%r * qh%r * alpha.

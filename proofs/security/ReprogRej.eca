@@ -9,17 +9,17 @@ require ReprogOnlyRej.
 
 require import DistrExtras.
 
-type X, Y, Z, M.
+type X, Y, Z, K.
 
-op [lossless] dXYZ_acc (m : M) : (X * Y * Z) distr.
-op [lossless] dXY_rej (m : M) : (X * Y) distr.
+op [lossless] dXYZ_acc (k : K) : (X * Y * Z) distr.
+op [lossless] dXY_rej (k : K) : (X * Y) distr.
 op [lossless uniform] dY : Y distr.
 op alpha : real.
 op qH, qR : int.
 
-op dXr m = dfst (dXY_rej m).
-axiom dX_pmax m :
-  p_max (dXr m) <= alpha.
+op dXr k = dfst (dXY_rej k).
+axiom dX_pmax k :
+  p_max (dXr k) <= alpha.
 
 op qh, qr : int.
 axiom qh_gt0 : 0 < qh.
@@ -28,7 +28,7 @@ axiom qr_gt0 : 0 < qr.
 clone import ReprogOnlyRej as OnlyRej with
   type X <- X,
   type Y <- Y,
-  type M <- M,
+  type M <- K,
   op dY <- dY,
   op dXY_rej <- dXY_rej,
   op qh <- qh,
@@ -46,8 +46,8 @@ import FullRO.
 
 module type Oracle = {
   proc h(x: X) : Y
-  proc reprog_acc(m: M) : X * Y * Z
-  proc reprog_rej(m: M) : unit
+  proc reprog_acc(k: K) : X * Y * Z
+  proc reprog_rej(k: K) : unit
 }.
 
 module type Oracle_i = {
@@ -63,8 +63,10 @@ module type Oracle_i = {
  * The games are indistinguishable in ROM.
  * I hope same is true in QROM.
  *)
-module Oracle0 : Oracle_i = {
-  proc init() = {}
+module ORight : Oracle_i = {
+  proc init() = {
+    RO.init();
+  }
 
   proc h(x) = {
     var y;
@@ -79,11 +81,11 @@ module Oracle0 : Oracle_i = {
     return (x, y, z);
   }
 
-  proc reprog_rej(m: M) = { }
+  proc reprog_rej(k:K) = { }
 }.
 
-module Oracle1 : Oracle_i = {
-  include var Oracle0 [init, h, reprog_acc]
+module OLeft : Oracle_i = {
+  include var ORight [init, h, reprog_acc]
 
   proc reprog_rej(m) = {
     var x, y;
@@ -137,8 +139,8 @@ module Count (O: Oracle) : Oracle = {
 
 section.
 
-module Oracle0_rec : Oracle_i = {
-  include var Oracle0 [reprog_acc]
+module ORight_rec : Oracle_i = {
+  include var ORight [reprog_acc]
 
   var bad : bool
   var rej_lst : X list
@@ -155,15 +157,15 @@ module Oracle0_rec : Oracle_i = {
     return y;
   }
 
-  proc reprog_rej(m: M) = {
+  proc reprog_rej(m: K) = {
     var x, y;
     (x, y) <$ dXY_rej m;
     rej_lst <- x :: rej_lst;
   }
 }.
 
-module Oracle1_rec : Oracle_i = {
-  include var Oracle0_rec[init, h, reprog_acc]
+module OLeft_rec : Oracle_i = {
+  include var ORight_rec[init, h, reprog_acc]
 
   proc reprog_rej(m) = {
     var x, y;
@@ -175,7 +177,7 @@ module Oracle1_rec : Oracle_i = {
   }
 }.
 
-declare module A <: Adversary {-Oracle0_rec, -RO, -Count}.
+declare module A <: Adversary {-ORight_rec, -RO, -Count}.
 declare axiom A_ll : (forall (O <: Oracle{-A}),
   islossless O.h =>
   islossless O.reprog_acc =>
@@ -186,20 +188,20 @@ declare axiom A_bound : forall (O <: Oracle{-A}),
                                     Count.countR <= qr /\ Count.countH = qh ].
 
 lemma ReprogRejBound &m :
-  `| Pr[Game(Oracle0_rec, A).main() @ &m : res]
-   - Pr[Game(Oracle1_rec, A).main() @ &m : res] |
-  <= Pr[Game(Oracle1_rec, A).main() @ &m : Oracle0_rec.bad].
+  `| Pr[Game(ORight_rec, A).main() @ &m : res]
+   - Pr[Game(OLeft_rec, A).main() @ &m : res] |
+  <= Pr[Game(OLeft_rec, A).main() @ &m : ORight_rec.bad].
 proof.
-byequiv (_: ={glob A, RO.m, Oracle0_rec.bad, Oracle0_rec.rej_lst} ==>
-  ={Oracle0_rec.bad} /\ (!Oracle0_rec.bad{1} => ={res})) :
-  Oracle0_rec.bad; 2, 3: smt().
+byequiv (_: ={glob A, RO.m, ORight_rec.bad, ORight_rec.rej_lst} ==>
+  ={ORight_rec.bad} /\ (!ORight_rec.bad{1} => ={res})) :
+  ORight_rec.bad; 2, 3: smt().
 proc.
-seq 1 1: (#pre /\ !Oracle0_rec.bad{1} /\ !Oracle0_rec.bad{2}).
-- inline Oracle0_rec.init; by auto.
-call (_: Oracle0_rec.bad,
-     ={Oracle0_rec.bad, Oracle0_rec.rej_lst} /\
-     (forall x, (!(x \in Oracle0_rec.rej_lst{1}) => RO.m{1}.[x] = RO.m{2}.[x])),
-     ={Oracle0_rec.bad}); 1: by apply A_ll.
+seq 1 1: (#pre /\ !ORight_rec.bad{1} /\ !ORight_rec.bad{2}).
+- inline ORight_rec.init; by auto.
+call (_: ORight_rec.bad,
+     ={ORight_rec.bad, ORight_rec.rej_lst} /\
+     (forall x, (!(x \in ORight_rec.rej_lst{1}) => RO.m{1}.[x] = RO.m{2}.[x])),
+     ={ORight_rec.bad}); 1: by apply A_ll.
 (* H *)
 - proc; inline RO.get; auto => />.
   smt(get_setE get_set_sameE).
