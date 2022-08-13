@@ -165,9 +165,16 @@ module type Oracle = {
   proc sign(m: M) : W * C * Z
 }.
 
-module Count (O: Oracle) : Oracle = {
+module type Oracle_i = {
+  include Oracle
+  proc init() : unit
+}.
+
+module Count (O: Oracle_i) : Oracle = {
   var countS : int
   var countH : int
+
+  proc init = O.init
 
   proc h(w: W, m : M) : C = {
     var y;
@@ -182,11 +189,6 @@ module Count (O: Oracle) : Oracle = {
     y <@ O.sign(x);
     return y;
   }
-}.
-
-module type Oracle_i = {
-  include Oracle
-  proc init() : unit
 }.
 
 module OLeft : Oracle_i = {
@@ -247,22 +249,12 @@ module type Adversary(O: Oracle) = {
   proc distinguish(): bool
 }.
 
-module GameL(Adv: Adversary) = {
+module Game (Adv: Adversary) (O: Oracle_i) = {
   proc main() = {
     var b;
     RO.init();
-    OLeft.init();
-    b <@ Adv(OLeft).distinguish();
-    return b;
-  }
-}.
-
-module GameR(Adv: Adversary) = {
-  proc main() = {
-    var b;
-    RO.init();
-    ORight.init();
-    b <@ Adv(ORight).distinguish();
+    O.init();
+    b <@ Adv(O).distinguish();
     return b;
   }
 }.
@@ -358,7 +350,6 @@ proof.
 by rewrite /dXY_rej /= dmap1E /(\o) /=; congr => /#.
 qed.
 
-(* Implication is double-sided, but the other side is unused I think? *)
 lemma dXY_rej_supp sk m w c :
   (w, c) \in dWC_rej sk <=>
   ((w, m), c) \in dXY_rej (sk, m).
@@ -1009,13 +1000,13 @@ module OReduction(O: RRej.Oracle) : Oracle_i = {
 
 section.
 
-declare module Adv <: Adversary {-OLeft}.
+declare module Adv <: Adversary {-OLeft, -Count, -RRej.Count}.
 
-declare axiom A_bound : forall (O <: Oracle{-Adv}), 
+declare axiom A_bound : forall (O <: Oracle_i{-Adv}), 
   hoare [ Adv(Count(O)).distinguish : Count.countS = 0 /\ Count.countH = 0 ==> 
                                               Count.countS <= qs /\ Count.countH = qh ].
 
-module (AdvReduction(OO: Oracle_i) : RRej.Adversary) (RejO: RRej.Oracle) = {
+module (Reduction(OO: Oracle_i) : RRej.Adversary) (RejO: RRej.Oracle) = {
   proc distinguish() = {
     var b;
     OO.init();
@@ -1024,14 +1015,12 @@ module (AdvReduction(OO: Oracle_i) : RRej.Adversary) (RejO: RRej.Oracle) = {
   }
 }.
 
-
-
 equiv reduction_correct_left :
-  GameL(Adv).main ~ RRej.Game(RRej.OLeft, AdvReduction(OLeft)).main :
+  Game(Adv, OLeft).main ~ RRej.Game(RRej.OLeft, Reduction(OLeft)).main :
   ={glob Adv} ==> ={res}.
 proof.
 proc.
-inline RO.init OLeft.init RRej.OLeft.init AdvReduction(OLeft, RRej.OLeft).distinguish.
+inline RO.init OLeft.init RRej.OLeft.init Reduction(OLeft, RRej.OLeft).distinguish.
 sp.
 seq 1 1: (#pre /\ ={OLeft.sk} /\ valid_sk OLeft.sk{1}); first by rnd; auto => /> /#.
 wp.
@@ -1076,7 +1065,7 @@ call (_ : ={RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1}); last by skip => />.
 qed.
 
 lemma main_bound &m :
-`| Pr[GameL(Adv).main() @ &m : res] - Pr[GameR(Adv).main() @ &m : res] | < kappa%r * qs%r * qh%r * alpha.
+`| Pr[Game(Adv, OLeft).main() @ &m : res] - Pr[Game(Adv, ORight).main() @ &m : res] | < kappa%r * qs%r * qh%r * alpha.
 admitted.
 
 end section.
