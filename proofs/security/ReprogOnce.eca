@@ -557,7 +557,7 @@ module ORight_body2 : Oracle_i = {
 
 equiv ORight_body2_call :
   ORight.sign ~ ORight_body2.sign :
-  ={OLeft.sk, m} ==> ={res}.
+  ={OLeft.sk, m, RO.m} ==> ={res, RO.m}.
 proof.
 by proc; inline LoopBodies.body2; sim.
 qed.
@@ -586,19 +586,17 @@ module ORight_body4 : Oracle_i = {
 
 equiv ORight_loop_bodies_hop :
   ORight_body2.sign ~ ORight_body4.sign :
-  ={OLeft.sk, m} ==> ={res}.
+  ={OLeft.sk, m, RO.m} ==> ={res, RO.m}.
 proof.
 proc.
-seq 4 5: (#pre /\ ={w, c} /\ i{1} = 0 /\ i{2} = 0 /\ oz{1} = None /\ !f{2}).
-- by auto.
-(* Stuck... *)
-
-admitted.
-(**
-call (: true); first by auto.
-while (={w, m, c, OLeft.sk, i} /\ (oz{1} = None <=> !f{2})
-         /\ (f{2} => (oget oz{1} = z{2}))); last by auto => /#.
-by wp; call hop_body2_4; auto => /#.
+seq 4 5: (#pre /\ ={w, c} /\ i{1} = 0 /\ i{2} = 0 /\ oz{1} = None /\ !f{2}); first by auto.
+seq 1 1: (={RO.m, OLeft.sk, m, w, c, i} /\ (oz{1} <> None <=> f{2}) /\
+           (oz{1} <> None => oget oz{1} = z{2})); last first.
+- if => /> //.
+  call(_: ={arg, RO.m} ==> ={RO.m}); last by auto => /#.
+  by proc; auto => /#.
+while(#post); last by skip => /#.
+wp; call hop_body2_4; auto => /#.
 qed.
 
 (* Replaces the transcript generation with the above *)
@@ -624,13 +622,14 @@ module ORight_cond : Oracle_i = {
         (w, c) <$ dWC_rej sk;
       i <- i + 1;
     }
-    RO.set((w, m), c);
-    return if i < kappa then (w, c, z) else witness;
+    if(f)
+      RO.set((w, m), c);
+    return if f then (w, c, z) else witness;
   }
 }.
 
 equiv ORight_cond_hop : ORight_body4.sign ~ ORight_cond.sign :
-  ={m, OLeft.sk} ==> ={res}.
+  ={m, OLeft.sk, RO.m} ==> ={res, RO.m}.
 proof.
 by proc; inline LoopBodies.body4; sim.
 qed.
@@ -662,26 +661,27 @@ module ORight_torej : Oracle_i = {
       }
       i <- i + 1;
     }
-    return if i < kappa then (w, c, z) else witness;
+    return if f then (w, c, z) else witness;
   }
 }.
 
-(* Non-theorem... *)
 equiv ORight_torej_hop :
   ORight_cond.sign ~ ORight_torej.sign :
-  ={m, OLeft.sk} ==> ={res}.
+  ={m, OLeft.sk, RO.m} ==> ={res, RO.m}.
 proof.
-admitted.
-
-(*
-proc.
-seq 5 5: (#pre /\ ={w, c, z} /\ i{1} = 0 /\ i{2} = 0 /\ !f{1} /\ !f{2}); first by auto.
-while (={m, OLeft.sk, w, c, z, i, f}); last by auto => /#.
-seq 2 2: (={m, OLeft.sk, w, c, z, i, f}); first by sim.
-if; 1: smt(); 1,2: by sim.
+proc; seq 5 5: (#pre /\ ={w, c, z, i, f} /\ !f{1}); first by auto.
+seq 1 1: (={m, OLeft.sk, w, c, z, i, f} /\
+           (f{1} => RO.m{1}.[(w{1}, m{1}) <- c{1}] = RO.m{2}) /\
+           (!f{1} => ={RO.m})).
+- while (#post); last by auto => />.
+  seq 2 2: (={m, OLeft.sk, w, c, z, i, f, z, RO.m}); first by sim => /#.
+  if; first by smt().
+  (* Not sure why these `auto` takes a few seconds... *)
+  + by inline RO.set; auto.
+  + by auto.
+- if{1}; last by auto => />.
+  by inline RO.set; auto => />.
 qed.
-*)
-**)
 
 (**
 
