@@ -5,6 +5,7 @@ require import Real RealSeries.
 require import DistrExtras.
 require ReprogRej.
 import Biased.
+import SmtMap.
 
 (* Define some necessary abstract stuff *)
 
@@ -82,7 +83,7 @@ module OLeft : Oracle_i = {
       RO.set((w, m), c);
       i <- i + 1;
     }
-    return if i < kappa then (w, c, oget oz) else witness;
+    return if oz <> None then (w, c, oget oz) else witness;
   }
 }.
 
@@ -105,8 +106,9 @@ module ORight : Oracle_i = {
       oz <- respond st c;
       i <- i + 1;
     }
-    RO.set((w, m), c);
-    return if i < kappa then (w, c, oget oz) else witness;
+    if(oz <> None)
+      RO.set((w, m), c);
+    return if oz <> None then (w, c, oget oz) else witness;
   }
 }.
 
@@ -406,13 +408,13 @@ module OLeft_body2 : Oracle_i = {
       RO.set((w, m), c);
       i <- i + 1;
     }
-    return if i < kappa then (w, c, oget oz) else witness;
+    return if oz <> None then (w, c, oget oz) else witness;
   }
 }.
 
 equiv OLeft_body2_call :
   OLeft.sign ~ OLeft_body2.sign :
-  ={OLeft.sk, m} ==> ={res}.
+  ={OLeft.sk, m, RO.m} ==> ={res, RO.m}.
 proof.
 by proc; inline LoopBodies.body2; sim.
 qed.
@@ -434,18 +436,20 @@ module OLeft_body4 : Oracle_i = {
       RO.set((w, m), c);
       i <- i + 1;
     }
-    return if i < kappa then (w, c, z) else witness;
+    return if f then (w, c, z) else witness;
   }
 }.
 
 equiv OLeft_loop_bodies_hop :
   OLeft_body2.sign ~ OLeft_body4.sign :
-  ={OLeft.sk, m} ==> ={res}.
+  ={OLeft.sk, m, RO.m} ==> ={res, RO.m}.
 proof.
 proc. seq 4 5: (#pre /\ i{1} = 0 /\ i{2} = 0 /\ oz{1} = None /\ !f{2}); first by auto.
-while (={m, OLeft.sk, i} /\ (oz{1} = None <=> !f{2})
+while (={m, OLeft.sk, i, RO.m} /\ (oz{1} = None <=> !f{2})
          /\ (f{2} => (={w, c} /\ oget oz{1} = z{2}))); 2: by auto => /#.
-wp; call(_: true ==> true); first by (proc; auto => //=).
+wp.
+call(_: ={RO.m, arg} ==> ={RO.m}).
+- by proc; auto => />.
 call hop_body2_4; auto => /#.
 qed.
 
@@ -473,7 +477,7 @@ module OLeft_cond : Oracle_i = {
       RO.set((w, m), c);
       i <- i + 1;
     }
-    return if i < kappa then (w, c, z) else witness;
+    return if f then (w, c, z) else witness;
   }
 }.
 
@@ -511,21 +515,20 @@ module OLeft_torej : Oracle_i = {
       }
       i <- i + 1;
     }
-    return if i < kappa then (w, c, z) else witness;
+    return if f then (w, c, z) else witness;
   }
 }.
 
 equiv OLeft_torej_hop :
   OLeft_cond.sign ~ OLeft_torej.sign :
-  ={m, OLeft.sk} ==> ={res}.
+  ={m, OLeft.sk, RO.m} ==> ={res, RO.m}.
 proof.
 proc.
 seq 5 5: (#pre /\ ={w, c, z} /\ i{1} = 0 /\ i{2} = 0 /\ !f{1} /\ !f{2}); first by auto.
-while (={m, OLeft.sk, w, c, z, i, f}); last by auto => /#.
-seq 2 2: (={m, OLeft.sk, w, c, z, i, f}); first by sim.
+while (={m, OLeft.sk, w, c, z, i, f, RO.m}); last by auto => />.
+seq 2 2: (={m, OLeft.sk, w, c, z, i, f, RO.m}); first by sim.
 if; 1: smt(); 1,2: by sim.
 qed.
-
 
 (** Right game
  * Now repeat the same as in the left game
@@ -546,8 +549,9 @@ module ORight_body2 : Oracle_i = {
       (w, c, oz) <@ LoopBodies.body2();
       i <- i + 1;
     }
-    RO.set((w, m), c);
-    return if i < kappa then (w, c, oget oz) else witness;
+    if(oz <> None)
+      RO.set((w, m), c);
+    return if oz <> None then (w, c, oget oz) else witness;
   }
 }.
 
@@ -574,8 +578,9 @@ module ORight_body4 : Oracle_i = {
       (w, c, f, z) <@ LoopBodies.body4();
       i <- i + 1;
     }
-    RO.set((w, m), c);
-    return if i < kappa then (w, c, z) else witness;
+    if(f)
+      RO.set((w, m), c);
+    return if f then (w, c, z) else witness;
   }
 }.
 
@@ -586,6 +591,10 @@ proof.
 proc.
 seq 4 5: (#pre /\ ={w, c} /\ i{1} = 0 /\ i{2} = 0 /\ oz{1} = None /\ !f{2}).
 - by auto.
+(* Stuck... *)
+
+admitted.
+(**
 call (: true); first by auto.
 while (={w, m, c, OLeft.sk, i} /\ (oz{1} = None <=> !f{2})
          /\ (f{2} => (oget oz{1} = z{2}))); last by auto => /#.
@@ -672,7 +681,7 @@ seq 2 2: (={m, OLeft.sk, w, c, z, i, f}); first by sim.
 if; 1: smt(); 1,2: by sim.
 qed.
 *)
-
+**)
 
 (**
 
