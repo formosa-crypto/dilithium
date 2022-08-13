@@ -15,7 +15,6 @@ op [lossless] dXYZ_acc (k : K) : (X * Y * Z) distr.
 op [lossless] dXY_rej (k : K) : (X * Y) distr.
 op [lossless uniform] dY : Y distr.
 op alpha : real.
-op qH, qR : int.
 
 op dXr k = dfst (dXY_rej k).
 axiom dX_pmax k :
