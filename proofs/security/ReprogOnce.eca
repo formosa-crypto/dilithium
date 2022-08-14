@@ -1104,7 +1104,7 @@ call (_ : ={RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1}); last by skip => />.
   (={OLeft.sk, arg, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1})
   (={OLeft.sk, arg, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1});
     1, 2: smt().
-  conseq OLeft_restructure_all; 1, 2: smt().
+  + conseq OLeft_restructure_all; 1, 2: smt().
   proc; conseq/>.
   seq 5 5: (#pre /\ ={w, c, z, i, f}); 1: by auto.
   while(#pre); last by skip => />.
@@ -1132,6 +1132,38 @@ call (_ : ={RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1}); last by skip => />.
     split => [[[??]?]?|_] /=; first smt(dXY_rej_supp_m).
     split => [[[??]?]|_ [??]?] /=; first smt(dXY_rej1E dXY_rej_supp_m).
     smt(dXY_rej_supp_m dXY_rej_supp).
+qed.
+
+equiv reduction_correct_right :
+  Game(Adv, ORight).main ~ RRej.Game(RRej.ORight, Reduction).main :
+  ={glob Adv} ==> ={res}.
+proof.
+proc.
+inline RO.init ORight.init RRej.ORight.init Reduction(RRej.ORight).distinguish.
+wp; seq 2 2: (#pre /\ ={RO.m} /\ ={OLeft.sk} /\ valid_sk OLeft.sk{1}); first by rnd; auto => /> /#.
+call (_ : ={RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1}); last by skip => />.
+- by proc; inline RO.get; auto.
+
+- transitivity ORight_drop_rej_info.sign
+  (={OLeft.sk, arg, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1})
+  (={OLeft.sk, arg, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1});
+    1, 2: smt().
+  + conseq ORight_restructure_all; 1, 2: smt().
+  proc; conseq/>.
+  seq 5 5: (#pre /\ ={w, c, z, i, f}); 1: by auto.
+  while(#pre); last by skip => />.
+  wp; seq 2 2: (={OLeft.sk, m, RO.m, w, c, z, i, f} /\ valid_sk OLeft.sk{1}); first by auto.
+  if; 3: by (inline RRej.ORight.reprog_rej; auto).
+  + by auto.
+  inline RRej.OLeft.reprog_acc RO.set.
+  sp; wp; conseq />.
+  rnd (fun wcz => let (w, c, z) = wcz in ((w, m{2}), c, z))
+      (fun xyz => let (wm, c, z) = xyz in let (w, m) = wm in (w, c, z)).
+  (* copied from proof above for left game *)
+  skip => /> *.
+  split => /= [[[??]??]|_]; first smt(dXYZ_acc_supp_m).
+  split => /= [[??]??| _ [???]] /=; first smt(dXYZ_acc1E dXYZ_acc_supp_m).
+  smt(dXYZ_acc_supp_m dXYZ_acc_supp).
 qed.
 
 lemma main_bound &m :
