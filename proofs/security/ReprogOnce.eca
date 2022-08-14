@@ -970,7 +970,9 @@ qed.
 (** -- Reduction to ReprogRej -- **)
 
 module OReduction(O: RRej.Oracle) : Oracle_i = {
-  include var OLeft[init, h]
+  include var OLeft[init]
+
+  proc h = O.h
 
   proc sign(m: M) = {
     var w, c, z, f, i, wm, m';
@@ -1004,32 +1006,100 @@ declare module Adv <: Adversary {-OLeft, -Count, -RRej.Count}.
 
 declare axiom A_bound : forall (O <: Oracle_i{-Adv}), 
   hoare [ Adv(Count(O)).distinguish : Count.countS = 0 /\ Count.countH = 0 ==> 
-                                              Count.countS <= qs /\ Count.countH = qh ].
+                                      Count.countS <= qs /\ Count.countH <= qh ].
 
-module (Reduction(OO: Oracle_i) : RRej.Adversary) (RejO: RRej.Oracle) = {
+module (Reduction : RRej.Adversary) (ORej: RRej.Oracle) = {
   proc distinguish() = {
-    var b;
-    OO.init();
-    b <@ Adv(OReduction(RejO)).distinguish();
+    var b; 
+    OReduction(ORej).init();
+    b <@ Adv(OReduction(ORej)).distinguish();
     return b;
   }
 }.
 
+module (ReductionCount : RRej.Adversary) (ORej: RRej.Oracle) = {
+  proc distinguish() = {
+    var b; 
+    Count(OReduction(ORej)).init();
+    b <@ Adv(Count(OReduction(ORej))).distinguish();
+    return b;
+  }
+}.
+
+lemma ReductionCount_bound : forall (ORej <: RRej.Oracle{-Adv}),
+  hoare[ ReductionCount(ORej).distinguish :
+    Count.countS = 0 /\ Count.countH = 0 ==> 
+    Count.countS <= qs /\ Count.countH <= qh ].
+proof.
+move => ORej; proc.
+inline Count(OReduction(ORej)).init.
+seq 1: #pre; 1: by auto.
+by call (A_bound (OReduction(ORej))) => //.
+qed.
+
+lemma ReductionCount_hop : forall (ORej <: RRej.Oracle{-Adv, -RRej.Count, -Count, -OLeft}),
+  equiv[Reduction(RRej.Count(ORej)).distinguish ~
+        ReductionCount(ORej).distinguish :
+    ={glob Adv, glob ORej, glob OLeft, glob RO} /\
+    RRej.Count.countH{1} = 0 /\
+    RRej.Count.countR{1} = 0 /\
+    Count.countH{2} = 0 /\
+    Count.countS{2} = 0 ==>
+    RRej.Count.countH{1} = Count.countH{2} /\
+    RRej.Count.countR{1} <= kappa * Count.countS{2}].
+proof.
+move => ORej; proc.
+inline OReduction(RRej.Count(ORej)).init.
+seq 1 1: #pre; 1: by auto.
+call (_: ={glob ORej, glob OLeft, glob RO} /\ RRej.Count.countH{1} = Count.countH{2} /\
+         RRej.Count.countR{1} <= kappa * Count.countS{2}); last by auto.
+- proc.
+  seq 1 1: #pre; 1: by auto.
+  call(_: ={arg, glob ORej, glob RO} ==> ={res, glob ORej, glob RO}); first by sim.
+  by auto => //.
+- proc; inline OReduction(ORej).sign.
+  (* don't sp or you'll see something terrifying *)
+  wp; seq 5 7: (={glob ORej, glob OLeft, glob RO, w, c, z, i, f, m} /\
+    i{1} = 0 /\
+    RRej.Count.countH{1} = Count.countH{2} /\
+    RRej.Count.countR{1} + kappa <= kappa * Count.countS{2}); first by auto => /#.
+  while(={glob ORej, glob OLeft, glob RO, w, c, z, i, f, m} /\
+    0 <= i{1} <= kappa /\
+    RRej.Count.countH{1} = Count.countH{2} /\
+    RRej.Count.countR{1} + kappa - i{1} <= kappa * Count.countS{2});
+    last by skip => />; smt(kappa_gt0).
+  seq 2 2: (={glob ORej, glob RO, OLeft.sk, w, c, z, i, f, m} /\
+            (0 <= i{1} /\ i{1} < kappa) /\
+             RRej.Count.countH{1} = Count.countH{2} /\
+             RRej.Count.countR{1} + kappa - i{1} <= kappa * Count.countS{2}).
+  + by auto => />.
+  if; first by smt().
+  + inline RRej.Count(ORej).reprog_acc.
+    sp; wp; call(_: ={arg, glob ORej, glob RO} ==> ={res, glob ORej, glob RO}); first by sim.
+    by skip => />; smt(kappa_gt0).
+  + inline RRej.Count(ORej).reprog_rej.
+    sp; wp; call(_: ={arg, glob ORej, glob RO} ==> ={res, glob ORej, glob RO}); first by sim.
+    by skip => />; smt(kappa_gt0).
+qed.
+
+lemma RedA_bound : forall (RejO <: RRej.Oracle{-Adv, -RRej.Count, -Count, -OLeft}), 
+  hoare [ Reduction(RRej.Count(RejO)).distinguish :
+    RRej.Count.countR = 0 /\ RRej.Count.countH = 0 ==> 
+    RRej.Count.countR <= kappa * qs /\ RRej.Count.countH <= qh ].
+proof.
+move => RejO.
+conseq (ReductionCount_hop RejO) (ReductionCount_bound RejO); smt(kappa_gt0).
+qed.
+
 equiv reduction_correct_left :
-  Game(Adv, OLeft).main ~ RRej.Game(RRej.OLeft, Reduction(OLeft)).main :
+  Game(Adv, OLeft).main ~ RRej.Game(RRej.OLeft, Reduction).main :
   ={glob Adv} ==> ={res}.
 proof.
 proc.
-inline RO.init OLeft.init RRej.OLeft.init Reduction(OLeft, RRej.OLeft).distinguish.
-sp.
-seq 1 1: (#pre /\ ={OLeft.sk} /\ valid_sk OLeft.sk{1}); first by rnd; auto => /> /#.
-wp.
+inline RO.init OLeft.init RRej.OLeft.init Reduction(RRej.OLeft).distinguish.
+wp; seq 2 2: (#pre /\ ={RO.m} /\ ={OLeft.sk} /\ valid_sk OLeft.sk{1}); first by rnd; auto => /> /#.
 call (_ : ={RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1}); last by skip => />.
-- proc; conseq/>.
-  seq 1 1: (#pre /\ ={r}); first by rnd; auto => />.
-  if; first by smt().
-  + by auto; auto.
-  + by skip => />.
+- by proc; inline RO.get; auto.
 - transitivity OLeft_drop_rej_info.sign
   (={OLeft.sk, arg, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1})
   (={OLeft.sk, arg, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1});
