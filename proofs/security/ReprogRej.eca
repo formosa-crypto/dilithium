@@ -177,16 +177,17 @@ module OLeft_rec : Oracle_i = {
 }.
 
 declare module A <: Adversary {-ORight_rec, -RO, -Count}.
-declare axiom A_ll : (forall (O <: Oracle{-A}),
+declare axiom A_ll : (forall (O <: Oracle{-A, -Count}),
   islossless O.h =>
   islossless O.reprog_acc =>
   islossless O.reprog_rej =>
   islossless A(O).distinguish).
-declare axiom A_bound : forall (O <: Oracle{-A}), 
-  hoare [ A(Count(O)).distinguish : Count.countR = 0 /\ Count.countH = 0 ==> 
-                                    Count.countR <= qr /\ Count.countH = qh ].
 
-lemma ReprogRejBound &m :
+declare axiom A_bound : forall (O <: Oracle{-A, -Count}), 
+  hoare [ A(Count(O)).distinguish : Count.countR = 0 /\ Count.countH = 0 ==> 
+                                    Count.countR <= qr /\ Count.countH <= qh ].
+
+lemma ReprogRejRecBound &m :
   `| Pr[Game(ORight_rec, A).main() @ &m : res]
    - Pr[Game(OLeft_rec, A).main() @ &m : res] |
   <= Pr[Game(OLeft_rec, A).main() @ &m : ORight_rec.bad].
@@ -231,4 +232,13 @@ call (_: ORight_rec.bad,
 - skip => />; smt().
 qed.
 
+lemma ReprogRejBound &m :
+  `| Pr[Game(OLeft, A).main() @ &m : res]
+   - Pr[Game(ORight, A).main() @ &m : res] |
+  <= qh%r * qr%r * alpha.
+proof.
+admitted.
+
 end section.
+
+print ReprogRejBound.

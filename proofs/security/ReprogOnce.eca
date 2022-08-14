@@ -1002,11 +1002,24 @@ module OReduction(O: RRej.Oracle) : Oracle_i = {
 
 section.
 
-declare module Adv <: Adversary {-OLeft, -Count, -RRej.Count}.
+declare module Adv <: Adversary {-OLeft, -Count, -RRej.Count, -RO, -ORight_rec}.
 
 declare axiom A_bound : forall (O <: Oracle_i{-Adv}), 
   hoare [ Adv(Count(O)).distinguish : Count.countS = 0 /\ Count.countH = 0 ==> 
                                       Count.countS <= qs /\ Count.countH <= qh ].
+
+declare axiom A_ll : forall (O <: Oracle),
+  islossless O.h =>
+  islossless O.sign =>
+  islossless Adv(O).distinguish.
+
+lemma ReductionO_ll : forall (O <: RRej.Oracle),
+  islossless O.h =>
+  islossless O.reprog_acc =>
+  islossless O.reprog_rej =>
+  islossless OReduction(O).h /\ islossless OReduction(O).sign.
+proof.
+admitted.
 
 module (Reduction : RRej.Adversary) (ORej: RRej.Oracle) = {
   proc distinguish() = {
@@ -1016,6 +1029,14 @@ module (Reduction : RRej.Adversary) (ORej: RRej.Oracle) = {
     return b;
   }
 }.
+
+lemma Reduction_ll : forall (O <: RRej.Oracle),
+  islossless O.h =>
+  islossless O.reprog_acc =>
+  islossless O.reprog_rej =>
+  islossless Reduction(O).distinguish.
+proof.
+admitted.
 
 module (ReductionCount : RRej.Adversary) (ORej: RRej.Oracle) = {
   proc distinguish() = {
@@ -1082,7 +1103,7 @@ call (_: ={glob ORej, glob OLeft, glob RO} /\ RRej.Count.countH{1} = Count.count
     by skip => />; smt(kappa_gt0).
 qed.
 
-lemma RedA_bound : forall (RejO <: RRej.Oracle{-Adv, -RRej.Count, -Count, -OLeft}), 
+lemma Reduction_bound : forall (RejO <: RRej.Oracle{-Adv, -RRej.Count, -Count, -OLeft}), 
   hoare [ Reduction(RRej.Count(RejO)).distinguish :
     RRej.Count.countR = 0 /\ RRej.Count.countH = 0 ==> 
     RRej.Count.countR <= kappa * qs /\ RRej.Count.countH <= qh ].
@@ -1166,8 +1187,23 @@ call (_ : ={RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1}); last by skip => />.
   smt(dXYZ_acc_supp_m dXYZ_acc_supp).
 qed.
 
-lemma main_bound &m :
-`| Pr[Game(Adv, OLeft).main() @ &m : res] - Pr[Game(Adv, ORight).main() @ &m : res] | < kappa%r * qs%r * qh%r * alpha.
+lemma reprog_once_bound &m :
+  `| Pr[Game(Adv, OLeft).main() @ &m : res] -
+     Pr[Game(Adv, ORight).main() @ &m : res] | <= qh%r * (kappa * qs)%r * alpha.
+proof.
+have ->: Pr[Game(Adv, OLeft).main() @ &m : res] =
+         Pr[RRej.Game(RRej.OLeft, Reduction).main() @ &m: res].
+- byequiv => //.
+  conseq reduction_correct_left => //.
+have ->: Pr[Game(Adv, ORight).main() @ &m : res] =
+         Pr[RRej.Game(RRej.ORight, Reduction).main() @ &m: res].
+- byequiv => //.
+  conseq reduction_correct_right => //.
+apply (ReprogRejBound Reduction).
+move => ORej.
+apply (Reduction_ll ORej).
+move => ORej.
+(* Error with `conseq (Reduction_bound ORej).` *)
 admitted.
 
 end section.
