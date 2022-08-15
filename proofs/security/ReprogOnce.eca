@@ -970,7 +970,12 @@ qed.
 (** -- Reduction to ReprogRej -- **)
 
 module OReduction(O: RRej.Oracle) : Oracle_i = {
-  include var OLeft[init]
+  var sk : SK
+
+  proc init() = {
+    var pk;
+    (pk, sk) <$ keygen;
+  }
 
   proc h = O.h
 
@@ -988,11 +993,11 @@ module OReduction(O: RRej.Oracle) : Oracle_i = {
       f <$ dbiased (p_acc sk);
       z <- witness;
       if(f) {
-        (wm, c, z) <@ O.reprog_acc((OLeft.sk, m));
+        (wm, c, z) <@ O.reprog_acc((sk, m));
         (w, m') <- wm;
       }
       else {
-        O.reprog_rej((OLeft.sk, m));
+        O.reprog_rej((sk, m));
       }
       i <- i + 1;
     }
@@ -1002,7 +1007,7 @@ module OReduction(O: RRej.Oracle) : Oracle_i = {
 
 section.
 
-declare module Adv <: Adversary {-OLeft, -Count, -RRej.Count, -RO, -ORight_rec}.
+declare module Adv <: Adversary {-OReduction, -Count, -RO, -RRej.Count, -ORight_rec, -OLeft}.
 
 declare axiom A_bound : forall (O <: Oracle_i{-Adv}), 
   hoare [ Adv(Count(O)).distinguish : Count.countS = 0 /\ Count.countH = 0 ==> 
@@ -1019,9 +1024,21 @@ lemma ReductionO_ll : forall (O <: RRej.Oracle),
   islossless O.reprog_rej =>
   islossless OReduction(O).h /\ islossless OReduction(O).sign.
 proof.
-admitted.
+move => O h_ll acc_ll rej_ll.
+split; first by apply h_ll.
+proc; sp.
+while(true) (kappa - i) => [t|]; last by skip => />; smt(kappa_gt0).
+wp; seq 2: (i < kappa /\ kappa - i = t) => //.
+- by auto => />; smt(dbiased_ll).
+- if; wp; call(:true); skip => /#.
+- by conseq/>; auto.
+qed.
 
 module (Reduction : RRej.Adversary) (ORej: RRej.Oracle) = {
+  include var OReduction(ORej) [-sign, h]
+  (* Interim hack (?) that stops ORej{-Reduction} from writing count *)
+  include var Count(OReduction(ORej)) [-init]
+
   proc distinguish() = {
     var b; 
     OReduction(ORej).init();
@@ -1036,7 +1053,15 @@ lemma Reduction_ll : forall (O <: RRej.Oracle),
   islossless O.reprog_rej =>
   islossless Reduction(O).distinguish.
 proof.
-admitted.
+move => O h_ll acc_ll rej_ll.
+proc.
+inline OReduction(O).init.
+seq 1: true => //; first by auto; smt(keygen_ll).
+islossless.
+apply (A_ll (OReduction(O))) => //.
+suff: islossless OReduction(O).h /\ islossless OReduction(O).sign by trivial.
+exact (ReductionO_ll O).
+qed.
 
 module (ReductionCount : RRej.Adversary) (ORej: RRej.Oracle) = {
   proc distinguish() = {
@@ -1047,7 +1072,7 @@ module (ReductionCount : RRej.Adversary) (ORej: RRej.Oracle) = {
   }
 }.
 
-lemma ReductionCount_bound : forall (ORej <: RRej.Oracle{-Adv}),
+lemma ReductionCount_bound : forall (ORej <: RRej.Oracle{-Adv, -OReduction}),
   hoare[ ReductionCount(ORej).distinguish :
     Count.countS = 0 /\ Count.countH = 0 ==> 
     Count.countS <= qs /\ Count.countH <= qh ].
@@ -1058,10 +1083,10 @@ seq 1: #pre; 1: by auto.
 by call (A_bound (OReduction(ORej))) => //.
 qed.
 
-lemma ReductionCount_hop : forall (ORej <: RRej.Oracle{-Adv, -RRej.Count, -Count, -OLeft}),
+lemma ReductionCount_hop : forall (ORej <: RRej.Oracle{-Adv, -RRej.Count, -Count, -OReduction}),
   equiv[Reduction(RRej.Count(ORej)).distinguish ~
         ReductionCount(ORej).distinguish :
-    ={glob Adv, glob ORej, glob OLeft, glob RO} /\
+    ={glob Adv, glob ORej} /\
     RRej.Count.countH{1} = 0 /\
     RRej.Count.countR{1} = 0 /\
     Count.countH{2} = 0 /\
@@ -1071,39 +1096,46 @@ lemma ReductionCount_hop : forall (ORej <: RRej.Oracle{-Adv, -RRej.Count, -Count
 proof.
 move => ORej; proc.
 inline OReduction(RRej.Count(ORej)).init.
-seq 1 1: #pre; 1: by auto.
-call (_: ={glob ORej, glob OLeft, glob RO} /\ RRej.Count.countH{1} = Count.countH{2} /\
+
+seq 1 1: (#pre /\ ={OReduction.sk}).
+- inline Count(OReduction(ORej)).init.
+  by rnd => />; auto => //.
+call (_: ={glob ORej, OReduction.sk} /\
+         RRej.Count.countH{1} = Count.countH{2} /\
          RRej.Count.countR{1} <= kappa * Count.countS{2}); last by auto.
 - proc.
   seq 1 1: #pre; 1: by auto.
-  call(_: ={arg, glob ORej, glob RO} ==> ={res, glob ORej, glob RO}); first by sim.
-  by auto => //.
+  call(_: true); by skip => />.
+
 - proc; inline OReduction(ORej).sign.
   (* don't sp or you'll see something terrifying *)
-  wp; seq 5 7: (={glob ORej, glob OLeft, glob RO, w, c, z, i, f, m} /\
+  wp; seq 5 7: (={glob ORej, w, c, z, i, f, m, OReduction.sk} /\
     i{1} = 0 /\
     RRej.Count.countH{1} = Count.countH{2} /\
-    RRej.Count.countR{1} + kappa <= kappa * Count.countS{2}); first by auto => /#.
-  while(={glob ORej, glob OLeft, glob RO, w, c, z, i, f, m} /\
+    RRej.Count.countR{1} + kappa <= kappa * Count.countS{2}).
+  + by auto => /> /#.
+
+  while(={glob ORej, w, c, z, i, f, m, OReduction.sk} /\
     0 <= i{1} <= kappa /\
     RRej.Count.countH{1} = Count.countH{2} /\
     RRej.Count.countR{1} + kappa - i{1} <= kappa * Count.countS{2});
     last by skip => />; smt(kappa_gt0).
-  seq 2 2: (={glob ORej, glob RO, OLeft.sk, w, c, z, i, f, m} /\
+  seq 2 2: (={glob ORej, w, c, z, i, f, m, OReduction.sk} /\
             (0 <= i{1} /\ i{1} < kappa) /\
              RRej.Count.countH{1} = Count.countH{2} /\
              RRej.Count.countR{1} + kappa - i{1} <= kappa * Count.countS{2}).
-  + by auto => />.
+  + by auto.
   if; first by smt().
   + inline RRej.Count(ORej).reprog_acc.
-    sp; wp; call(_: ={arg, glob ORej, glob RO} ==> ={res, glob ORej, glob RO}); first by sim.
-    by skip => />; smt(kappa_gt0).
+    sp; wp; call(_: true).
+    skip => /> *.
+    smt(kappa_gt0).
   + inline RRej.Count(ORej).reprog_rej.
-    sp; wp; call(_: ={arg, glob ORej, glob RO} ==> ={res, glob ORej, glob RO}); first by sim.
+    sp; wp; call(_: ={arg, glob ORej} ==> ={res, glob ORej}); first by sim.
     by skip => />; smt(kappa_gt0).
 qed.
 
-lemma Reduction_bound : forall (RejO <: RRej.Oracle{-Adv, -RRej.Count, -Count, -OLeft}), 
+lemma Reduction_bound : forall (RejO <: RRej.Oracle{-Adv, -RRej.Count, -Count, -OReduction}), 
   hoare [ Reduction(RRej.Count(RejO)).distinguish :
     RRej.Count.countR = 0 /\ RRej.Count.countH = 0 ==> 
     RRej.Count.countR <= kappa * qs /\ RRej.Count.countH <= qh ].
@@ -1118,18 +1150,23 @@ equiv reduction_correct_left :
 proof.
 proc.
 inline RO.init OLeft.init RRej.OLeft.init Reduction(RRej.OLeft).distinguish.
-wp; seq 2 2: (#pre /\ ={RO.m} /\ ={OLeft.sk} /\ valid_sk OLeft.sk{1}); first by rnd; auto => /> /#.
-call (_ : ={RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1}); last by skip => />.
+wp; inline OReduction(RRej.OLeft).init.
+seq 2 2: (#pre /\ ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1});
+  first by rnd; auto => /> /#.
+call (_ : ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1}); last by skip => />.
 - by proc; inline RO.get; auto.
 - transitivity OLeft_drop_rej_info.sign
-  (={OLeft.sk, arg, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1})
-  (={OLeft.sk, arg, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1});
+  ((={arg} /\ ={RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1}) ==>
+   (={res} /\ ={RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1}))
+  ((={arg} /\ ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1}) ==>
+   (={res} /\ ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1}));
     1, 2: smt().
   + conseq OLeft_restructure_all; 1, 2: smt().
   proc; conseq/>.
   seq 5 5: (#pre /\ ={w, c, z, i, f}); 1: by auto.
   while(#pre); last by skip => />.
-  seq 2 2: (={OLeft.sk, m, RO.m, w, c, z, i, f} /\ valid_sk OLeft.sk{1}); first by auto.
+  seq 2 2: (={m, RO.m, w, c, z, i, f} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1});
+    first by auto.
   wp.
   if; first by auto.
   + inline RRej.OLeft.reprog_acc RO.set.
@@ -1160,20 +1197,25 @@ equiv reduction_correct_right :
   ={glob Adv} ==> ={res}.
 proof.
 proc.
-inline RO.init ORight.init RRej.ORight.init Reduction(RRej.ORight).distinguish.
-wp; seq 2 2: (#pre /\ ={RO.m} /\ ={OLeft.sk} /\ valid_sk OLeft.sk{1}); first by rnd; auto => /> /#.
-call (_ : ={RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1}); last by skip => />.
+inline RO.init OLeft.init RRej.OLeft.init Reduction(RRej.ORight).distinguish.
+wp; inline OReduction(RRej.ORight).init.
+seq 2 2: (#pre /\ ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1});
+  first by rnd; auto => /> /#.
+call (_ : ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1}); last by skip => />.
 - by proc; inline RO.get; auto.
-
 - transitivity ORight_drop_rej_info.sign
-  (={OLeft.sk, arg, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1})
-  (={OLeft.sk, arg, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1});
+  ((={arg} /\ ={RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1}) ==>
+   (={res} /\ ={RO.m, OLeft.sk} /\ valid_sk OLeft.sk{1}))
+  ((={arg} /\ ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1}) ==>
+   (={res} /\ ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1}));
     1, 2: smt().
   + conseq ORight_restructure_all; 1, 2: smt().
   proc; conseq/>.
   seq 5 5: (#pre /\ ={w, c, z, i, f}); 1: by auto.
   while(#pre); last by skip => />.
-  wp; seq 2 2: (={OLeft.sk, m, RO.m, w, c, z, i, f} /\ valid_sk OLeft.sk{1}); first by auto.
+  seq 2 2: (={m, RO.m, w, c, z, i, f} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1});
+    first by auto.
+  wp.
   if; 3: by (inline RRej.ORight.reprog_rej; auto).
   + by auto.
   inline RRej.OLeft.reprog_acc RO.set.
@@ -1199,11 +1241,12 @@ have ->: Pr[Game(Adv, ORight).main() @ &m : res] =
          Pr[RRej.Game(RRej.ORight, Reduction).main() @ &m: res].
 - byequiv => //.
   conseq reduction_correct_right => //.
+
 apply (ReprogRejBound Reduction).
 move => ORej.
 apply (Reduction_ll ORej).
 move => ORej.
-(* Error with `conseq (Reduction_bound ORej).` *)
-admitted.
+conseq (Reduction_bound ORej).
+qed.
 
 end section.
