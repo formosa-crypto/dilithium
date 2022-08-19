@@ -1186,7 +1186,7 @@ call (_ : ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1}); la
     rnd (fun wc => let (w, c) = wc in ((w, m{2}), c))
         (fun xy => let (x, y) = xy in let (w, m) = x in (w, y)).
     skip => /> *.
-    (* rnd makes me incredibly sad *)
+    (* you hate to see it *)
     split => [[[??]?]?|_] /=; first smt(dXY_rej_supp_m).
     split => [[[??]?]|_ [??]?] /=; first smt(dXY_rej1E dXY_rej_supp_m).
     smt(dXY_rej_supp_m dXY_rej_supp).
