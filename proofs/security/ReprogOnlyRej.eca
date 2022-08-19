@@ -150,4 +150,9 @@ conseq (RA_Count O)
 conseq (A_bound (ReductionO(O))) => /#.
 qed.
 
+lemma win_bound &m :
+  Pr[Game(Adv).main() @ &m : res] <= qh%r * qr%r * alpha.
+proof.
+admitted.
+
 end section.

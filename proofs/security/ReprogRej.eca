@@ -62,7 +62,9 @@ module type Oracle_i = {
  * The games are indistinguishable in ROM.
  * I hope same is true in QROM.
  *)
-module ORight : Oracle_i = {
+
+module OLeft : Oracle_i = {
+
   proc init() = {
     RO.init();
   }
@@ -80,12 +82,6 @@ module ORight : Oracle_i = {
     return (x, y, z);
   }
 
-  proc reprog_rej(k:K) = { }
-}.
-
-module OLeft : Oracle_i = {
-  include var ORight [init, h, reprog_acc]
-
   proc reprog_rej(m) = {
     var x, y;
     (x, y) <$ dXY_rej m;
@@ -93,6 +89,11 @@ module OLeft : Oracle_i = {
     RO.set(x, y);
     (* no return *)
   }
+}.
+
+module ORight : Oracle_i = {
+  include var OLeft [init, h, reprog_acc]
+  proc reprog_rej(k:K) = { }
 }.
 
 module type Adversary(O: Oracle) = {
@@ -138,8 +139,9 @@ module Count (O: Oracle) : Oracle = {
 
 section.
 
-module ORight_rec : Oracle_i = {
-  include var ORight [reprog_acc]
+
+module OLeft_rec : Oracle_i = {
+  include var OLeft [reprog_acc]
 
   var bad : bool
   var rej_lst : X list
@@ -156,16 +158,6 @@ module ORight_rec : Oracle_i = {
     return y;
   }
 
-  proc reprog_rej(m: K) = {
-    var x, y;
-    (x, y) <$ dXY_rej m;
-    rej_lst <- x :: rej_lst;
-  }
-}.
-
-module OLeft_rec : Oracle_i = {
-  include var ORight_rec[init, h, reprog_acc]
-
   proc reprog_rej(m) = {
     var x, y;
     (x, y) <$ dXY_rej m;
@@ -176,8 +168,18 @@ module OLeft_rec : Oracle_i = {
   }
 }.
 
+module ORight_rec : Oracle_i = {
+  include var OLeft_rec[init, h, reprog_acc]
+
+  proc reprog_rej(m: K) = {
+    var x, y;
+    (x, y) <$ dXY_rej m;
+    rej_lst <- x :: rej_lst;
+  }
+}.
+
 declare module A <: Adversary {-ORight_rec, -RO, -Count}.
-declare axiom A_ll : (forall (O <: Oracle{-A, -Count}),
+declare axiom A_ll : (forall (O <: Oracle{-A}),
   islossless O.h =>
   islossless O.reprog_acc =>
   islossless O.reprog_rej =>
@@ -188,20 +190,24 @@ declare axiom A_bound : forall (O <: Oracle{-A, -Count}),
                                     Count.countR <= qr /\ Count.countH <= qh ].
 
 lemma ReprogRejRecBound &m :
+  `| Pr[Game(OLeft_rec, A).main() @ &m : res]
+   - Pr[Game(ORight_rec, A).main() @ &m : res] |
+  <= Pr[Game(OLeft_rec, A).main() @ &m : OLeft_rec.bad].
+proof.
+suff:
   `| Pr[Game(ORight_rec, A).main() @ &m : res]
    - Pr[Game(OLeft_rec, A).main() @ &m : res] |
-  <= Pr[Game(OLeft_rec, A).main() @ &m : ORight_rec.bad].
-proof.
-byequiv (_: ={glob A, RO.m, ORight_rec.bad, ORight_rec.rej_lst} ==>
-  ={ORight_rec.bad} /\ (!ORight_rec.bad{1} => ={res})) :
-  ORight_rec.bad; 2, 3: smt().
+  <= Pr[Game(OLeft_rec, A).main() @ &m : OLeft_rec.bad] by smt().
+byequiv (_: ={glob A, RO.m, OLeft_rec.bad, OLeft_rec.rej_lst} ==>
+  ={OLeft_rec.bad} /\ (!OLeft_rec.bad{1} => ={res})) :
+  OLeft_rec.bad; 2, 3: smt().
 proc.
-seq 1 1: (#pre /\ !ORight_rec.bad{1} /\ !ORight_rec.bad{2}).
+seq 1 1: (#pre /\ !OLeft_rec.bad{1} /\ !OLeft_rec.bad{2}).
 - inline ORight_rec.init; by auto.
-call (_: ORight_rec.bad,
-     ={ORight_rec.bad, ORight_rec.rej_lst} /\
-     (forall x, (!(x \in ORight_rec.rej_lst{1}) => RO.m{1}.[x] = RO.m{2}.[x])),
-     ={ORight_rec.bad}); 1: by apply A_ll.
+call (_: OLeft_rec.bad,
+     ={OLeft_rec.bad, OLeft_rec.rej_lst} /\
+     (forall x, (!(x \in OLeft_rec.rej_lst{1}) => RO.m{1}.[x] = RO.m{2}.[x])),
+     ={OLeft_rec.bad}); 1: by apply A_ll.
 (* H *)
 - proc; inline RO.get; auto => />.
   smt(get_setE get_set_sameE).
@@ -232,11 +238,17 @@ call (_: ORight_rec.bad,
 - skip => />; smt().
 qed.
 
+print win_bound.
+
+(* TODO bound this using ReprogOnlyRej? *)
+(* Pr[Game(OLeft_rec, A).main() @ &m : OLeft_rec.bad]. *)
+
 lemma ReprogRejBound &m :
   `| Pr[Game(OLeft, A).main() @ &m : res]
    - Pr[Game(ORight, A).main() @ &m : res] |
   <= qh%r * qr%r * alpha.
 proof.
+
 admitted.
 
 end section.
