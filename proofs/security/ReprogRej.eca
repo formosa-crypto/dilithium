@@ -3,6 +3,7 @@ import Biased.
 require import Dexcepted.
 require import Dfilter.
 require import Real RealSeries.
+require import CoreMap.
 import SmtMap.
 import Biased.
 require ReprogOnlyRej.
@@ -111,13 +112,6 @@ module Game (O: Oracle_i) (Adv: Adversary) = {
 
 module Count (O: Oracle) : Oracle = {
   var countR, countH : int
-  (*
-  proc init() = {
-    countR <- 0;
-    countH <- 0;
-    O.init();
-  }
-  *)
   proc reprog_acc(x) = {
     var y;
     y <@ O.reprog_acc(x);
@@ -139,7 +133,6 @@ module Count (O: Oracle) : Oracle = {
 
 section.
 
-
 module OLeft_rec : Oracle_i = {
   include var OLeft [reprog_acc]
 
@@ -147,7 +140,9 @@ module OLeft_rec : Oracle_i = {
   var rej_lst : X list
 
   proc init() = {
+    RO.init();
     bad <- false;
+    rej_lst <- [];
   }
 
   proc h(x) = {
@@ -178,7 +173,40 @@ module ORight_rec : Oracle_i = {
   }
 }.
 
-declare module A <: Adversary {-ORight_rec, -RO, -Count}.
+
+module (ReduceO(O: OnlyRej.Oracle) : Oracle) = {
+  var overlay : (X, Y) fmap
+
+  proc init() = {
+    overlay <- empty;
+  }
+
+  proc h(x) = {
+    var y;
+    y <@ O.h(x);
+    if (x \in overlay) {
+      y <- oget overlay.[x];
+    }
+    return y;
+  }
+
+  proc reprog_rej(m) = {
+    var r;
+    r <@ O.reprog_rej(m);
+    return r;
+  }
+
+  proc reprog_acc(m) = {
+    var x, y, z;
+    (x, y, z) <$ dXYZ_acc m;
+    overlay.[x] <- y;
+    return (x, y, z);
+  }  
+}.
+
+declare module A <: Adversary {-OLeft_rec, -RO, -Count,
+  -RejGuessing.SGO, -RejGuessing.Count, -RejGuessing.SO, -RejGuessing.SCount, -OnlyRej.Count, -OnlyRej.OMain, -ReduceO}.
+
 declare axiom A_ll : (forall (O <: Oracle{-A}),
   islossless O.h =>
   islossless O.reprog_acc =>
@@ -203,7 +231,7 @@ byequiv (_: ={glob A, RO.m, OLeft_rec.bad, OLeft_rec.rej_lst} ==>
   OLeft_rec.bad; 2, 3: smt().
 proc.
 seq 1 1: (#pre /\ !OLeft_rec.bad{1} /\ !OLeft_rec.bad{2}).
-- inline ORight_rec.init; by auto.
+- inline OLeft_rec.init RO.init; by auto.
 call (_: OLeft_rec.bad,
      ={OLeft_rec.bad, OLeft_rec.rej_lst} /\
      (forall x, (!(x \in OLeft_rec.rej_lst{1}) => RO.m{1}.[x] = RO.m{2}.[x])),
@@ -238,10 +266,87 @@ call (_: OLeft_rec.bad,
 - skip => />; smt().
 qed.
 
-print win_bound.
+module (Reduction : OnlyRej.Adversary)(O: OnlyRej.Oracle) = {
+   proc main () = {
+     ReduceO.overlay <- empty;
+     A(ReduceO(O)).distinguish();
+   }
+}.
 
-(* TODO bound this using ReprogOnlyRej? *)
-(* Pr[Game(OLeft_rec, A).main() @ &m : OLeft_rec.bad]. *)
+equiv reduce_to_onlyrej :
+  Game(OLeft_rec, A).main ~ OnlyRej.Game(Reduction).main :
+  ={glob A} ==> OLeft_rec.bad{1} = res{2}.
+proof.
+proc; inline *; sp.
+(* Mmmmm 11 subgoals *)
+call(_: OnlyRej.OMain.win,
+  OLeft_rec.bad{1} = OnlyRej.OMain.win{2} /\
+  (!OLeft_rec.bad{1} =>
+  (OLeft_rec.rej_lst{1} = OnlyRej.OMain.rej_lst{2} /\
+  (forall x, ! x \in OLeft_rec.rej_lst{1} =>
+  RO.m.[x]{1} = if x \in ReduceO.overlay{2} then ReduceO.overlay{2}.[x] else RO.m.[x]{2}))),
+  OLeft_rec.bad{1} = OnlyRej.OMain.win{2}).
+(* lossless stuff *)
+- admit.
+(* H *)
+- proc.
+  inline OMain.h.
+  seq 0 1: (#pre /\ x0{2} = x{2}); first by auto.
+  if; first by auto => />.
+  + (* bad *)
+    by inline RO.get; auto => />.
+  + (* not bad *)
+    inline RO.get.
+    auto => />.
+    smt(get_setE get_set_sameE).
+- move => &2 win.
+  proc.
+  inline RO.get.
+  auto => />.
+  smt(dY_ll).
+- move => &1.
+  proc.
+  inline OMain.h RO.get.
+  auto => />.
+  smt(dY_ll).
+(* acc *)
+- proc; inline *.
+  auto => />.
+  smt(get_setE get_set_sameE).
+- move => &2 win.
+  proc; inline *.
+  auto => /> ?.
+  exact dXYZ_acc_ll.
+- move => &1.
+  proc.
+  auto => /> ??.
+  exact dXYZ_acc_ll.
+(* rej *)
+- proc; inline *.
+  auto => />.
+  smt(get_setE get_set_sameE).
+- move => &2 win.
+  proc; inline *.
+  auto => /> ?.
+  exact dXY_rej_ll.
+- move => &1.
+  proc; inline *.
+  auto => /> ??.
+  exact dXY_rej_ll.
+(* overall *)
+by skip => /#.
+qed.
+
+lemma bad_bound &m :
+  Pr[Game(OLeft_rec, A).main() @ &m : OLeft_rec.bad] <= qr%r * qh%r * alpha.
+proof.
+have ->: Pr[Game(OLeft_rec, A).main() @ &m : OLeft_rec.bad] =
+         Pr[OnlyRej.Game(Reduction).main() @ &m : res].
+- byequiv; 2, 3: smt().
+  by conseq reduce_to_onlyrej => /#.
+apply (OnlyRej.win_bound Reduction).
+(* TODO Reduction query bound... *)
+admitted.
 
 lemma ReprogRejBound &m :
   `| Pr[Game(OLeft, A).main() @ &m : res]

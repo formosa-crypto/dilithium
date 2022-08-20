@@ -65,7 +65,7 @@ module type Adversary(OA: Oracle) = {
   proc main() : unit
 }.
 
-module OG : Oracle_i = {
+module OMain : Oracle_i = {
   var rej_lst : X list
   var win : bool
 
@@ -92,15 +92,15 @@ module OG : Oracle_i = {
 
 module Game(Adv: Adversary) = {
   proc main() = {
-    OG.init();
-    Adv(OG).main();
-    return OG.win;
+    OMain.init();
+    Adv(OMain).main();
+    return OMain.win;
   }
 }.
 
 section.
 
-declare module Adv <: Adversary {-OG, -SGO, -Count, -RejGuessing.Count, -SO, -SCount}.
+declare module Adv <: Adversary {-OMain, -SGO, -Count, -RejGuessing.Count, -SO, -SCount}.
 declare axiom A_bound : forall (O <: Oracle{-Adv}), 
   hoare [ Adv(Count(O)).main : Count.cr = 0 /\ Count.ch = 0 ==> 
                                Count.cr <= qr /\ Count.ch = qh ].
@@ -160,7 +160,7 @@ equiv reduction_correct :
 proof.
 proc.
 inline *.
-call (: ={RO.m} /\ OG.rej_lst{1} = SGO.out{2} /\ OG.win{1} = SGO.win{2}); last by auto.
+call (: ={RO.m} /\ OMain.rej_lst{1} = SGO.out{2} /\ OMain.win{1} = SGO.win{2}); last by auto.
 - (* H *)
   proc.
   by inline *; sim.
