@@ -101,9 +101,9 @@ module Game(Adv: Adversary) = {
 section.
 
 declare module Adv <: Adversary {-OMain, -SGO, -Count, -RejGuessing.Count, -SO, -SCount}.
-declare axiom A_bound : forall (O <: Oracle{-Adv}), 
+declare axiom A_bound : forall (O <: Oracle{-Adv, -Count}), 
   hoare [ Adv(Count(O)).main : Count.cr = 0 /\ Count.ch = 0 ==> 
-                               Count.cr <= qr /\ Count.ch = qh ].
+                               Count.cr <= qr /\ Count.ch <= qh ].
 
 module ReductionO(O: SGOracle) : Oracle = {
   proc h(x : X) = {
