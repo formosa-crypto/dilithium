@@ -1007,7 +1007,10 @@ module OReduction(O: RRej.Oracle) : Oracle_i = {
 
 section.
 
-declare module Adv <: Adversary {-OReduction, -Count, -RO, -RRej.Count, -ORight_rec, -OLeft}.
+declare module Adv <: Adversary {-OReduction, -Count, -RO, -RRej.Count, -ORight_rec, -OLeft,
+-OnlyRej.RejGuessing.SGO, -OnlyRej.RejGuessing.Count,
+-OnlyRej.RejGuessing.SO, -OnlyRej.RejGuessing.SCount,
+-OnlyRej.Count, -OnlyRej.OMain, -RRej.Count, -OLeft_rec, -RRej.ReduceO}.
 
 declare axiom A_bound : forall (O <: Oracle_i{-Adv}), 
   hoare [ Adv(Count(O)).distinguish : Count.countS = 0 /\ Count.countH = 0 ==> 
@@ -1241,7 +1244,7 @@ have ->: Pr[Game(Adv, ORight).main() @ &m : res] =
          Pr[RRej.Game(RRej.ORight, Reduction).main() @ &m: res].
 - byequiv => //.
   conseq reduction_correct_right => //.
-
+print ReprogRejBound.
 apply (ReprogRejBound Reduction).
 move => ORej.
 apply (Reduction_ll ORej).
