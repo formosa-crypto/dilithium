@@ -70,6 +70,7 @@ module OG : Oracle_i = {
   var win : bool
 
   proc init() = {
+    RO.init();
     rej_lst <- [];
     win <- false;
   }
@@ -121,17 +122,19 @@ module (Reduction : RejGuessing.Adversary) (O: SGOracle) = {
   include var Count(ReductionO(O))
 
   proc run() = {
+    RO.init();
     Adv(ReductionO(O)).main();
   }
 }.
 
 equiv RA_Count (O <: SGOracle{-Adv, -Count, -RejGuessing.Count, -RO}) :
   Reduction(RejGuessing.Count(O)).run ~ Adv(Count(ReductionO(O))).main :
-  ={glob Adv, RO.m, glob O} /\ RejGuessing.Count.cs{1} = Count.cr{2} /\ RejGuessing.Count.cg{1} = Count.ch{2} ==>
+  ={glob Adv, glob O} /\ RO.m{2} = empty /\
+  RejGuessing.Count.cs{1} = Count.cr{2} /\ RejGuessing.Count.cg{1} = Count.ch{2} ==>
   RejGuessing.Count.cs{1} = Count.cr{2} /\ RejGuessing.Count.cg{1} = Count.ch{2}.
 proof.
 proc*.
-inline Reduction(RejGuessing.Count(O)).run.
+inline Reduction(RejGuessing.Count(O)).run RO.init; sp.
 call (_: RejGuessing.Count.cs{1} = Count.cr{2} /\ RejGuessing.Count.cg{1} = Count.ch{2} /\ ={RO.m, glob O}); last by auto.
 - proc; inline ReductionO(O).h RejGuessing.Count(O).guess.
   by sim.
@@ -153,7 +156,7 @@ qed.
 
 equiv reduction_correct :
   Game(Adv).main ~ SG_GameS(Reduction).main :
-  ={glob Adv, RO.m} ==> ={res}.
+  ={glob Adv} ==> ={res}.
 proof.
 proc.
 inline *.
