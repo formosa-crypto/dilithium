@@ -82,7 +82,7 @@ lemma dWCoZ_can_acc sk :
   valid_sk sk =>
   0%r <
   mu (dWCoZ sk)
-  (fun (wcz : W * C * Top.Z option) => let (w, c, z) = wcz in z <> None).
+  (fun (wcz : W * C * Z option) => let (w, c, z) = wcz in z <> None).
 proof.
 move => H; apply all_sk_can_accept in H; case H => w st c [?[??]].
 apply witness_support; exists (w, c, respond st c) => /> /=.
@@ -95,7 +95,7 @@ lemma dWCoZ_can_rej sk :
   valid_sk sk =>
   0%r <
   mu (dWCoZ sk)
-  (fun (wcz : W * C * Top.Z option) => let (w, c, z) = wcz in z = None).
+  (fun (wcz : W * C * Z option) => let (w, c, z) = wcz in z = None).
 proof.
 move => H; apply all_sk_can_reject in H; case H => w st c [?[??]].
 apply witness_support; exists (w, c, None) => /=.
@@ -150,7 +150,7 @@ realize dX_pmax by apply dX_pmax.
 realize qh_gt0 by apply qh_gt0.
 realize qr_gt0 by smt(kappa_gt0 qs_gt0).
 
-import RRej.OnlyRej.FullRO.
+import RRej.OnlyRej.RO.
 
 module type Oracle = {
   proc h(w: W, m: M) : C

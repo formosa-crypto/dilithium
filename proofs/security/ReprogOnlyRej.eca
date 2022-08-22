@@ -1,8 +1,8 @@
-require import AllCore List Distr.
-require import PROM.
+require import AllCore List Distr SmtMap.
 require import DistrExtras.
 require Guessing.
-import SmtMap.
+require PROM.
+
 
 (* "Glue code" between ReprogRej and Guessing games. *)
 
@@ -19,7 +19,7 @@ op dXr m = dfst (dXY_rej m).
 axiom dX_pmax m :
   p_max (dXr m) <= alpha.
 
-clone import FullRO with
+clone import PROM.FullRO as RO with
   type in_t <- X,
   type out_t <- Y,
   op dout <- (fun _ => dY)
