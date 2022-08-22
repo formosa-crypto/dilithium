@@ -259,6 +259,13 @@ module Game (Adv: Adversary) (O: Oracle_i) = {
   }
 }.
 
+section Analysis.
+
+declare module Adv <: Adversary {-Count, -RO, -RRej.Count, -OLeft,
+-OnlyRej.RejGuessing.SGO, -OnlyRej.RejGuessing.Count,
+-OnlyRej.RejGuessing.SO, -OnlyRej.RejGuessing.SCount,
+-OnlyRej.Count, -OnlyRej.OMain, -RRej.Count}.
+
 (* Auxiliary lemma *)
 
 lemma sum_over_bool (f : bool -> real):
@@ -267,7 +274,7 @@ proof.
 rewrite (sumE_fin _ [true; false]) /#.
 qed.
 
-lemma dWCoZ_ll sk :
+local lemma dWCoZ_ll sk :
   is_lossless (dWCoZ sk).
 proof.
 apply dlet_ll; first by apply commit_ll.
@@ -281,7 +288,7 @@ op p_rej sk = mu (dWCoZ sk) (fun wcz => let (w, c, oz) = wcz in oz = None).
 
 (* Properties of distributions above *)
 
-lemma dWC_rej_ll sk :
+local lemma dWC_rej_ll sk :
   valid_sk sk =>
   is_lossless (dWC_rej sk).
 proof.
@@ -290,19 +297,19 @@ rewrite /dWCoZ_rej H /=; apply dcond_ll.
 by apply dWCoZ_can_rej => //.
 qed.
 
-lemma dWCoZ_acc_supp sk w c oz :
+local lemma dWCoZ_acc_supp sk w c oz :
   valid_sk sk =>
   (w, c, oz) \in dWCoZ_acc sk =>
   oz <> None.
 proof. smt(dcond_supp). qed.
 
-lemma dWCoZ_rej_None sk w c oz :
+local lemma dWCoZ_rej_None sk w c oz :
   valid_sk sk =>
   (w, c, oz) \in dWCoZ_rej sk =>
   oz = None.
 proof. smt(dcond_supp). qed.
 
-lemma dWCoZ_rej_supp sk w c :
+local lemma dWCoZ_rej_supp sk w c :
   valid_sk sk =>
   (w, c, None) \in dWCoZ_rej sk <=>
   (w, c) \in dWC_rej sk.
@@ -311,7 +318,7 @@ move => ?; split; first by smt(supp_dmap).
 rewrite supp_dmap; smt(dWCoZ_rej_None).
 qed.
 
-lemma p_rej_E sk :
+local lemma p_rej_E sk :
   p_rej sk = 1%r - p_acc sk.
 proof.
 rewrite /p_rej.
@@ -321,17 +328,17 @@ have <-: weight (dWCoZ sk) = 1%r by apply dWCoZ_ll.
 rewrite mu_not; rewrite /p_acc => //.
 qed.
 
-lemma dXYZ_acc_supp_m sk m x y z :
+local lemma dXYZ_acc_supp_m sk m x y z :
   (x, y, z) \in dXYZ_acc (sk, m) => x.`2 = m.
 proof. by rewrite /dXYZ_acc /= supp_dmap /#. qed.
 
-lemma dXYZ_acc1E sk m w c z :
+local lemma dXYZ_acc1E sk m w c z :
   mu1 (dXYZ_acc (sk, m)) ((w, m), c, z) = mu1 (dWCZ_acc sk) (w, c, z).
 proof.
 by rewrite /dXYZ_acc /= dmap1E /(\o) /=; congr => /#.
 qed.
 
-lemma dXYZ_acc_supp sk m w c z :
+local lemma dXYZ_acc_supp sk m w c z :
   (w, c, z) \in dWCZ_acc sk <=>
   ((w, m), c, z) \in dXYZ_acc (sk, m).
 proof.
@@ -340,17 +347,17 @@ split => H; first by rewrite supp_dmap => /#.
 by rewrite supp_dmap in H => /#.
 qed.
 
-lemma dXY_rej_supp_m sk m x y :
+local lemma dXY_rej_supp_m sk m x y :
   (x, y) \in dXY_rej (sk, m) => x.`2 = m.
 proof. by rewrite /dXY_rej /= supp_dmap /#. qed.
 
-lemma dXY_rej1E sk m w c :
+local lemma dXY_rej1E sk m w c :
   mu1 (dXY_rej (sk, m)) ((w, m), c) = mu1 (dWC_rej sk) (w, c).
 proof.
 by rewrite /dXY_rej /= dmap1E /(\o) /=; congr => /#.
 qed.
 
-lemma dXY_rej_supp sk m w c :
+local lemma dXY_rej_supp sk m w c :
   (w, c) \in dWC_rej sk <=>
   ((w, m), c) \in dXY_rej (sk, m).
 proof.
@@ -360,7 +367,7 @@ by rewrite supp_dmap in H => /#.
 qed.
 
 (* Now state the alternative way of sampling transcript is correct *)
-lemma conditional_sampling_transcript sk :
+local lemma conditional_sampling_transcript sk :
   valid_sk sk =>
   dWCoZ sk = dlet (dbiased (p_acc sk)) (fun f =>
     if f then
@@ -380,7 +387,7 @@ qed.
 (* -- Lining up interface to ReprogRej -- *)
 
 (* Helper module to call bypr... *)
-module LoopBodies = {
+local module LoopBodies = {
   include var OLeft[init]
   proc body1() = {
     var w, c, oz;
@@ -418,7 +425,7 @@ module LoopBodies = {
   }
 }.
 
-lemma pr_body1 x &m sk :
+local lemma pr_body1 x &m sk :
   OLeft.sk{m} = sk =>
   Pr[LoopBodies.body1() @ &m : res = x] = mu1 (dWCoZ sk) x.
 proof.
@@ -429,7 +436,7 @@ rnd (fun r => r = x).
 auto => /#.
 qed.
 
-lemma dWCoZ_linearize sk :
+local lemma dWCoZ_linearize sk :
   (dlet (commit sk)
         (fun (w_st : W * ST) =>
            dmap dC (fun (c0 : C) => (w_st.`1, c0, respond w_st.`2 c0)))) =
@@ -444,7 +451,7 @@ proof.
   rewrite /dmap /(\o) => /#.
 qed.
 
-equiv hop_body2 :
+local equiv hop_body2 :
   LoopBodies.body1 ~ LoopBodies.body2 :
   ={OLeft.sk} ==> ={res}.
 proof.
@@ -456,7 +463,7 @@ split.
 - move => _ wcoz H'. rewrite dWCoZ_linearize => //.
 qed.
 
-lemma pr_body2 x &m sk :
+local lemma pr_body2 x &m sk :
   OLeft.sk{m} = sk =>
   Pr[LoopBodies.body2() @ &m : res = x] = mu1 (dWCoZ sk) x.
 proof.
@@ -468,7 +475,7 @@ have <- : Pr[LoopBodies.body1() @ &m : res = x] = Pr[LoopBodies.body2() @ &m : r
 rewrite (pr_body1 x &m sk) => /#.
 qed.
 
-equiv hop_body3 :
+local equiv hop_body3 :
   LoopBodies.body2 ~ LoopBodies.body3 :
   ={OLeft.sk} /\ valid_sk OLeft.sk{1} ==> ={res}.
 proof.
@@ -499,7 +506,7 @@ seq 1: f (p_acc OLeft.sk{1}) (mu1 (dWCoZ_acc OLeft.sk{1}) x) (p_rej OLeft.sk{1})
   smt(p_rej_E).
 qed.
 
-equiv hop_body4 :
+local equiv hop_body4 :
   LoopBodies.body3 ~ LoopBodies.body4 :
   ={OLeft.sk} /\ valid_sk OLeft.sk{1} ==> (res{1}.`1 = res{2}.`1 /\
                          res{1}.`2 = res{2}.`2 /\
@@ -531,7 +538,7 @@ if; 1: by auto.
   by apply mu_eq_support; smt(dWCoZ_rej_None).
 qed.
 
-equiv hop_body2_4 :
+local equiv hop_body2_4 :
   LoopBodies.body2 ~ LoopBodies.body4 :
   ={OLeft.sk} /\ valid_sk OLeft.sk{1} ==> (res{1}.`1 = res{2}.`1 /\
                          res{1}.`2 = res{2}.`2 /\
@@ -553,7 +560,7 @@ qed.
 (* Loop-bodies brute-forcing spaghetti...
  * RIP signal-to-noise ratio *)
 
-module OLeft_body2 : Oracle_i = {
+local module OLeft_body2 : Oracle_i = {
   include var OLeft[init, h]
 
   proc sign(m: M) = {
@@ -573,14 +580,14 @@ module OLeft_body2 : Oracle_i = {
   }
 }.
 
-equiv OLeft_body2_call :
+local equiv OLeft_body2_call :
   OLeft.sign ~ OLeft_body2.sign :
   ={OLeft.sk, m, RO.m} ==> ={res, RO.m}.
 proof.
 by proc; inline LoopBodies.body2; sim.
 qed.
 
-module OLeft_body4 : Oracle_i = {
+local module OLeft_body4 : Oracle_i = {
   include var OLeft[init, h]
  
   proc sign(m: M) = {
@@ -601,7 +608,7 @@ module OLeft_body4 : Oracle_i = {
   }
 }.
 
-equiv OLeft_loop_bodies_hop :
+local equiv OLeft_loop_bodies_hop :
   OLeft_body2.sign ~ OLeft_body4.sign :
   ={OLeft.sk, m, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}.
 proof.
@@ -615,7 +622,7 @@ call hop_body2_4; auto => /#.
 qed.
 
 (* Replaces the transcript generation with the above *)
-module OLeft_cond : Oracle_i = {
+local module OLeft_cond : Oracle_i = {
   include var OLeft[init, h]
 
   proc sign(m: M) = {
@@ -642,13 +649,13 @@ module OLeft_cond : Oracle_i = {
   }
 }.
 
-equiv OLeft_cond_hop : OLeft_body4.sign ~ OLeft_cond.sign :
+local equiv OLeft_cond_hop : OLeft_body4.sign ~ OLeft_cond.sign :
   ={m, OLeft.sk, RO.m} ==> ={res, RO.m}.
 proof.
 by proc; inline LoopBodies.body4; sim.
 qed.
 
-module OLeft_move_reprog : Oracle_i = {
+local module OLeft_move_reprog : Oracle_i = {
   include var OLeft[init, h]
 
   proc sign(m: M) = {
@@ -678,7 +685,7 @@ module OLeft_move_reprog : Oracle_i = {
   }
 }.
 
-equiv OLeft_move_reprog_hop :
+local equiv OLeft_move_reprog_hop :
   OLeft_cond.sign ~ OLeft_move_reprog.sign :
   ={m, OLeft.sk, RO.m} ==> ={res, RO.m}.
 proof.
@@ -689,7 +696,7 @@ seq 2 2: (={m, OLeft.sk, w, c, z, i, f, RO.m}); first by sim.
 if; 1: smt(); 1,2: by sim.
 qed.
 
-module OLeft_drop_rej_info : Oracle_i = {
+local module OLeft_drop_rej_info : Oracle_i = {
   include var OLeft[init, h]
 
   proc sign(m: M) = {
@@ -719,7 +726,7 @@ module OLeft_drop_rej_info : Oracle_i = {
   }
 }.
 
-equiv OLeft_drop_rej_info_hop :
+local equiv OLeft_drop_rej_info_hop :
   OLeft_move_reprog.sign ~ OLeft_drop_rej_info.sign :
   ={m, OLeft.sk, RO.m} ==> ={res, RO.m}.
 proof.
@@ -732,7 +739,7 @@ if; 1: smt().
 - inline RO.set; auto => /#.
 qed.
 
-equiv OLeft_restructure_all :
+local equiv OLeft_restructure_all :
   OLeft.sign ~ OLeft_drop_rej_info.sign :
   ={m, OLeft.sk, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}.
 proof.
@@ -757,7 +764,7 @@ qed.
 
 (** -- Right game transforms -- **)
 
-module ORight_body2 : Oracle_i = {
+local module ORight_body2 : Oracle_i = {
   include var OLeft[init, h]
 
   proc sign(m: M) = {
@@ -778,14 +785,14 @@ module ORight_body2 : Oracle_i = {
   }
 }.
 
-equiv ORight_body2_call :
+local equiv ORight_body2_call :
   ORight.sign ~ ORight_body2.sign :
   ={OLeft.sk, m, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}.
 proof.
 by proc; inline LoopBodies.body2; sim.
 qed.
 
-module ORight_body4 : Oracle_i = {
+local module ORight_body4 : Oracle_i = {
   include var OLeft[init, h]
  
   proc sign(m: M) = {
@@ -807,7 +814,7 @@ module ORight_body4 : Oracle_i = {
   }
 }.
 
-equiv ORight_loop_bodies_hop :
+local equiv ORight_loop_bodies_hop :
   ORight_body2.sign ~ ORight_body4.sign :
   ={OLeft.sk, m, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}.
 proof.
@@ -823,7 +830,7 @@ wp; call hop_body2_4; auto => /#.
 qed.
 
 (* Replaces the transcript generation with the above *)
-module ORight_cond : Oracle_i = {
+local module ORight_cond : Oracle_i = {
   include var OLeft[init, h]
 
   proc sign(m: M) = {
@@ -851,13 +858,13 @@ module ORight_cond : Oracle_i = {
   }
 }.
 
-equiv ORight_cond_hop : ORight_body4.sign ~ ORight_cond.sign :
+local equiv ORight_cond_hop : ORight_body4.sign ~ ORight_cond.sign :
   ={m, OLeft.sk, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}.
 proof.
 by proc; inline LoopBodies.body4; sim.
 qed.
 
-module ORight_move_reprog : Oracle_i = {
+local module ORight_move_reprog : Oracle_i = {
   include var OLeft[init, h]
 
   proc sign(m: M) = {
@@ -886,7 +893,7 @@ module ORight_move_reprog : Oracle_i = {
   }
 }.
 
-equiv ORight_move_reprog_hop :
+local equiv ORight_move_reprog_hop :
   ORight_cond.sign ~ ORight_move_reprog.sign :
   ={m, OLeft.sk, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}.
 proof.
@@ -904,7 +911,7 @@ seq 1 1: (={m, OLeft.sk, w, c, z, i, f} /\
   by inline RO.set; auto => />.
 qed.
 
-module ORight_drop_rej_info : Oracle_i = {
+local module ORight_drop_rej_info : Oracle_i = {
   include var OLeft[init, h]
 
   proc sign(m: M) = {
@@ -930,7 +937,7 @@ module ORight_drop_rej_info : Oracle_i = {
   }
 }.
 
-equiv ORight_drop_rej_info_hop :
+local equiv ORight_drop_rej_info_hop :
   ORight_move_reprog.sign ~ ORight_drop_rej_info.sign :
   ={m, OLeft.sk, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}.
 proof.
@@ -944,7 +951,7 @@ if; 1: smt().
 - auto => />; smt(dWC_rej_ll).
 qed.
 
-equiv ORight_restructure_all :
+local equiv ORight_restructure_all :
   ORight.sign ~ ORight_drop_rej_info.sign :
   ={m, OLeft.sk, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}.
 proof.
@@ -969,7 +976,7 @@ qed.
 
 (** -- Reduction to ReprogRej -- **)
 
-module OReduction(O: RRej.Oracle) : Oracle_i = {
+local module OReduction(O: RRej.Oracle) : Oracle_i = {
   var sk : SK
 
   proc init() = {
@@ -1005,13 +1012,6 @@ module OReduction(O: RRej.Oracle) : Oracle_i = {
   }
 }.
 
-section.
-
-declare module Adv <: Adversary {-OReduction, -Count, -RO, -RRej.Count, -ORight_rec, -OLeft,
--OnlyRej.RejGuessing.SGO, -OnlyRej.RejGuessing.Count,
--OnlyRej.RejGuessing.SO, -OnlyRej.RejGuessing.SCount,
--OnlyRej.Count, -OnlyRej.OMain, -RRej.Count, -OLeft_rec, -RRej.ReduceO}.
-
 declare axiom A_bound : forall (O <: Oracle_i{-Adv}), 
   hoare [ Adv(Count(O)).distinguish : Count.countS = 0 /\ Count.countH = 0 ==> 
                                       Count.countS <= qs /\ Count.countH <= qh ].
@@ -1021,7 +1021,7 @@ declare axiom A_ll : forall (O <: Oracle),
   islossless O.sign =>
   islossless Adv(O).distinguish.
 
-lemma ReductionO_ll : forall (O <: RRej.Oracle),
+local lemma ReductionO_ll : forall (O <: RRej.Oracle),
   islossless O.h =>
   islossless O.reprog_acc =>
   islossless O.reprog_rej =>
@@ -1037,7 +1037,7 @@ wp; seq 2: (i < kappa /\ kappa - i = t) => //.
 - by conseq/>; auto.
 qed.
 
-module (Reduction : RRej.Adversary) (ORej: RRej.Oracle) = {
+local module (Reduction : RRej.Adversary) (ORej: RRej.Oracle) = {
   include var OReduction(ORej) [-sign, h]
   (* Interim hack (?) that stops ORej{-Reduction} from writing count *)
   include var Count(OReduction(ORej)) [-init]
@@ -1050,7 +1050,7 @@ module (Reduction : RRej.Adversary) (ORej: RRej.Oracle) = {
   }
 }.
 
-lemma Reduction_ll : forall (O <: RRej.Oracle),
+local lemma Reduction_ll : forall (O <: RRej.Oracle),
   islossless O.h =>
   islossless O.reprog_acc =>
   islossless O.reprog_rej =>
@@ -1066,7 +1066,7 @@ suff: islossless OReduction(O).h /\ islossless OReduction(O).sign by trivial.
 exact (ReductionO_ll O).
 qed.
 
-module (ReductionCount : RRej.Adversary) (ORej: RRej.Oracle) = {
+local module (ReductionCount : RRej.Adversary) (ORej: RRej.Oracle) = {
   proc distinguish() = {
     var b; 
     Count(OReduction(ORej)).init();
@@ -1075,7 +1075,7 @@ module (ReductionCount : RRej.Adversary) (ORej: RRej.Oracle) = {
   }
 }.
 
-lemma ReductionCount_bound : forall (ORej <: RRej.Oracle{-Adv, -OReduction}),
+local lemma ReductionCount_bound : forall (ORej <: RRej.Oracle{-Adv, -OReduction}),
   hoare[ ReductionCount(ORej).distinguish :
     Count.countS = 0 /\ Count.countH = 0 ==> 
     Count.countS <= qs /\ Count.countH <= qh ].
@@ -1086,7 +1086,7 @@ seq 1: #pre; 1: by auto.
 by call (A_bound (OReduction(ORej))) => //.
 qed.
 
-lemma ReductionCount_hop : forall (ORej <: RRej.Oracle{-Adv, -RRej.Count, -Count, -OReduction}),
+local lemma ReductionCount_hop : forall (ORej <: RRej.Oracle{-Adv, -RRej.Count, -Count, -OReduction}),
   equiv[Reduction(RRej.Count(ORej)).distinguish ~
         ReductionCount(ORej).distinguish :
     ={glob Adv, glob ORej} /\
@@ -1138,7 +1138,7 @@ call (_: ={glob ORej, OReduction.sk} /\
     by skip => />; smt(kappa_gt0).
 qed.
 
-lemma Reduction_bound : forall (RejO <: RRej.Oracle{-Adv, -RRej.Count, -Count, -OReduction}), 
+local lemma Reduction_bound : forall (RejO <: RRej.Oracle{-Adv, -RRej.Count, -Count, -OReduction}), 
   hoare [ Reduction(RRej.Count(RejO)).distinguish :
     RRej.Count.countR = 0 /\ RRej.Count.countH = 0 ==> 
     RRej.Count.countR <= kappa * qs /\ RRej.Count.countH <= qh ].
@@ -1147,7 +1147,7 @@ move => RejO.
 conseq (ReductionCount_hop RejO) (ReductionCount_bound RejO); smt(kappa_gt0).
 qed.
 
-equiv reduction_correct_left :
+local equiv reduction_correct_left :
   Game(Adv, OLeft).main ~ RRej.Game(RRej.OLeft, Reduction).main :
   ={glob Adv} ==> ={res}.
 proof.
@@ -1195,7 +1195,7 @@ call (_ : ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1}); la
     smt(dXY_rej_supp_m dXY_rej_supp).
 qed.
 
-equiv reduction_correct_right :
+local equiv reduction_correct_right :
   Game(Adv, ORight).main ~ RRej.Game(RRej.ORight, Reduction).main :
   ={glob Adv} ==> ={res}.
 proof.
@@ -1232,7 +1232,7 @@ call (_ : ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1}); la
   smt(dXYZ_acc_supp_m dXYZ_acc_supp).
 qed.
 
-lemma reprog_once_bound &m :
+lemma adv_bound &m :
   `| Pr[Game(Adv, OLeft).main() @ &m : res] -
      Pr[Game(Adv, ORight).main() @ &m : res] | <= qh%r * (kappa * qs)%r * alpha.
 proof.
@@ -1244,12 +1244,11 @@ have ->: Pr[Game(Adv, ORight).main() @ &m : res] =
          Pr[RRej.Game(RRej.ORight, Reduction).main() @ &m: res].
 - byequiv => //.
   conseq reduction_correct_right => //.
-print ReprogRejBound.
-apply (ReprogRejBound Reduction).
+apply (RRej.adv_bound Reduction).
 move => ORej.
 apply (Reduction_ll ORej).
 move => ORej.
 conseq (Reduction_bound ORej).
 qed.
 
-end section.
+end section Analysis.

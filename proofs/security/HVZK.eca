@@ -458,7 +458,7 @@ rewrite (sumE_fin _ [true; false]) /#.
 qed.
 
 (* Now 40% less magical! *)
-lemma line12_magic :
+local lemma line12_magic :
   forall c s1, c \in dC => s1 \in ds1 =>
   transz c s1 = dsimoz.
 proof.

@@ -98,14 +98,14 @@ module Game(Adv: Adversary) = {
   }
 }.
 
-section.
+section Analysis.
 
 declare module Adv <: Adversary {-OMain, -SGO, -Count, -RejGuessing.Count, -SO, -SCount}.
 declare axiom A_bound : forall (O <: Oracle{-Adv, -Count}), 
   hoare [ Adv(Count(O)).main : Count.cr = 0 /\ Count.ch = 0 ==> 
                                Count.cr <= qr /\ Count.ch <= qh ].
 
-module ReductionO(O: SGOracle) : Oracle = {
+local module ReductionO(O: SGOracle) : Oracle = {
   proc h(x : X) = {
     var y;
     O.guess(x);
@@ -118,7 +118,7 @@ module ReductionO(O: SGOracle) : Oracle = {
   }
 }.
 
-module (Reduction : RejGuessing.Adversary) (O: SGOracle) = {
+local module (Reduction : RejGuessing.Adversary) (O: SGOracle) = {
   include var Count(ReductionO(O))
 
   proc run() = {
@@ -127,7 +127,7 @@ module (Reduction : RejGuessing.Adversary) (O: SGOracle) = {
   }
 }.
 
-equiv RA_Count (O <: SGOracle{-Adv, -Count, -RejGuessing.Count, -RO}) :
+local equiv RA_Count (O <: SGOracle{-Adv, -Count, -RejGuessing.Count, -RO}) :
   Reduction(RejGuessing.Count(O)).run ~ Adv(Count(ReductionO(O))).main :
   ={glob Adv, glob O} /\ RO.m{2} = empty /\
   RejGuessing.Count.cs{1} = Count.cr{2} /\ RejGuessing.Count.cg{1} = Count.ch{2} ==>
@@ -142,7 +142,7 @@ call (_: RejGuessing.Count.cs{1} = Count.cr{2} /\ RejGuessing.Count.cg{1} = Coun
   by sim.
 qed.
 
-lemma RA_Bound :
+local lemma RA_Bound :
   forall (O <: SGOracle{-Adv, -Count, -RO, -RejGuessing.Count}), 
   hoare [ Reduction(RejGuessing.Count(O)).run :
             RejGuessing.Count.cs = 0 /\ RejGuessing.Count.cg = 0 ==> 
@@ -154,7 +154,7 @@ conseq (RA_Count O)
 conseq (A_bound (ReductionO(O))) => /#.
 qed.
 
-equiv reduction_correct :
+local equiv reduction_correct :
   Game(Adv).main ~ SG_GameS(Reduction).main :
   ={glob Adv} ==> ={res}.
 proof.
@@ -184,4 +184,4 @@ move => O.
 apply (RA_Bound O).
 qed.
 
-end section.
+end section Analysis.

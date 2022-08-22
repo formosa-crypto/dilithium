@@ -65,7 +65,6 @@ module type Oracle_i = {
  *)
 
 module OLeft : Oracle_i = {
-
   proc init() = {
     RO.init();
   }
@@ -131,9 +130,12 @@ module Count (O: Oracle) : Oracle = {
   }
 }.
 
-section.
+section Analysis.
 
-module OLeft_rec : Oracle_i = {
+declare module A <: Adversary {-RO, -Count,
+  -RejGuessing.SGO, -RejGuessing.Count, -RejGuessing.SO, -RejGuessing.SCount, -OnlyRej.Count, -OnlyRej.OMain}.
+
+local module OLeft_rec : Oracle_i = {
   include var OLeft [reprog_acc]
 
   var bad : bool
@@ -163,7 +165,7 @@ module OLeft_rec : Oracle_i = {
   }
 }.
 
-module ORight_rec : Oracle_i = {
+local module ORight_rec : Oracle_i = {
   include var OLeft_rec[init, h, reprog_acc]
 
   proc reprog_rej(m: K) = {
@@ -174,7 +176,7 @@ module ORight_rec : Oracle_i = {
 }.
 
 
-module (ReduceO(O: OnlyRej.Oracle) : Oracle) = {
+local module (ReduceO(O: OnlyRej.Oracle) : Oracle) = {
   var overlay : (X, Y) fmap
 
   proc init() = {
@@ -203,11 +205,7 @@ module (ReduceO(O: OnlyRej.Oracle) : Oracle) = {
     return (x, y, z);
   }  
 }.
-
-declare module A <: Adversary {-OLeft_rec, -RO, -Count,
-  -RejGuessing.SGO, -RejGuessing.Count, -RejGuessing.SO, -RejGuessing.SCount, -OnlyRej.Count, -OnlyRej.OMain, -ReduceO}.
-
-equiv OLeft_rec_eq :
+local equiv OLeft_rec_eq :
   Game(OLeft, A).main ~ Game(OLeft_rec, A).main :
   ={glob A}  ==> ={res}.
 proof.
@@ -220,7 +218,7 @@ call(: ={RO.m}).
 by auto => />.
 qed.
 
-equiv ORight_rec_eq :
+local equiv ORight_rec_eq :
   Game(ORight, A).main ~ Game(ORight_rec, A).main :
   ={glob A}  ==> ={res}.
 proof.
@@ -243,7 +241,7 @@ declare axiom A_bound : forall (O <: Oracle{-A, -Count}),
   hoare [ A(Count(O)).distinguish : Count.countR = 0 /\ Count.countH = 0 ==> 
                                     Count.countR <= qr /\ Count.countH <= qh ].
 
-lemma ReprogRejRecBound &m :
+local lemma ReprogRejRecBound &m :
   `| Pr[Game(OLeft_rec, A).main() @ &m : res]
    - Pr[Game(ORight_rec, A).main() @ &m : res] |
   <= Pr[Game(OLeft_rec, A).main() @ &m : OLeft_rec.bad].
@@ -292,7 +290,7 @@ call (_: OLeft_rec.bad,
 - skip => />; smt().
 qed.
 
-module (Reduction : OnlyRej.Adversary)(O: OnlyRej.Oracle) = {
+local module (Reduction : OnlyRej.Adversary)(O: OnlyRej.Oracle) = {
   include var Count(ReduceO(O))
 
   proc main () = {
@@ -301,7 +299,7 @@ module (Reduction : OnlyRej.Adversary)(O: OnlyRej.Oracle) = {
   }
 }.
 
-lemma count_reduce (O <: OnlyRej.Oracle{-Reduction, -Count, -OnlyRej.Count} ) :
+local lemma count_reduce (O <: OnlyRej.Oracle{-Reduction, -Count, -OnlyRej.Count} ) :
   equiv[Reduction(OnlyRej.Count(O)).main ~ A(Count(ReduceO(O))).distinguish :
   ={glob O, glob A} /\
   ReduceO.overlay{2} = empty /\
@@ -326,7 +324,7 @@ call (: ={glob O, ReduceO.overlay} /\
 by auto => />.
 qed.
 
-lemma Reduction_count :
+local lemma Reduction_count :
   forall (O <: OnlyRej.Oracle{-Reduction, -Count, -OnlyRej.Count} ),
     hoare[ Reduction(OnlyRej.Count(O)).main :
           OnlyRej.Count.cr = 0 /\ OnlyRej.Count.ch = 0 ==>
@@ -336,7 +334,7 @@ move => O.
 by conseq (count_reduce O) (A_bound (ReduceO(O))) => /#.
 qed.
 
-equiv reduce_to_onlyrej :
+local equiv reduce_to_onlyrej :
   Game(OLeft_rec, A).main ~ OnlyRej.Game(Reduction).main :
   ={glob A} ==> OLeft_rec.bad{1} = res{2}.
 proof.
@@ -400,7 +398,7 @@ call(_: OnlyRej.OMain.win,
 by skip => /#.
 qed.
 
-lemma bad_bound &m :
+local lemma bad_bound &m :
   Pr[Game(OLeft_rec, A).main() @ &m : OLeft_rec.bad] <= qr%r * qh%r * alpha.
 proof.
 have ->: Pr[Game(OLeft_rec, A).main() @ &m : OLeft_rec.bad] =
@@ -411,7 +409,7 @@ apply (OnlyRej.win_bound Reduction).
 exact Reduction_count.
 qed.
 
-lemma ReprogRejBound &m :
+lemma adv_bound &m :
   `| Pr[Game(OLeft, A).main() @ &m : res]
    - Pr[Game(ORight, A).main() @ &m : res] |
   <= qh%r * qr%r * alpha.
@@ -427,4 +425,4 @@ have ->: Pr[Game(ORight, A).main() @ &m : res] =
 smt(ReprogRejRecBound bad_bound).
 qed.
 
-end section.
+end section Analysis.
