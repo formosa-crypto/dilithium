@@ -19,6 +19,11 @@ clone import FinType as FinVector_t with type t <- vector.
 axiom vector_move_add :
   forall (u v w : vector), u + v = w <=> u = w - v.
 
+(* I'd rather axiomatize this than think about ring axioms... *)
+axiom some_vector_property :
+  forall (a : matrix) (c : scalar) (y s1 s2 : vector),
+  a *^ y - c * s2 = a *^ (y + c * s1) - c * (a *^ s1 + s2).
+
 type sk_t = matrix * vector * vector.
 type pk_t = matrix * vector.
 type commit_t = vector.
@@ -75,6 +80,12 @@ axiom masking_range :
   forall c s1 z0, c \in dC => s1 \in ds1 => check_znorm z0 =>
     z0 - c * s1 \in dy.
 
+axiom mask_size :
+  size (to_seq check_znorm) < size (to_seq (support dy)).
+
+axiom mask_nonzero :
+  0 < size (to_seq check_znorm).
+
 (* transcript + leakage
  *
  * Supposedly = sig_t option * leak_t.
@@ -122,20 +133,54 @@ op respond (sk : sk_t) (c : challenge_t) (st : st_t) : trans_leak_t =
   else
     failed_znorm.
 
-(* HVZK game as found in KLS, generalized for leakage. *)
-module HVZK_Games = {
-  (* Adversary gets HVZK transcript *)
-  proc game0(sk: sk_t) : trans_leak_t = {
+module Transcript = {
+  proc main(sk: sk_t) : trans_leak_t = {
     var w1, c, z, st;
     (w1, st) <$ commit sk;
     c <$ dC;
     z <- respond sk c st;
     return z;
   }
+}.
 
-  (* Another (equivalent) way to write game0.
-   * Mostly just inlining functions and reordering instructions. *)
-  proc game1(sk: sk_t) : trans_leak_t = {
+module Simulator = {
+  proc main(pk: pk_t) : trans_leak_t = {
+    var a, t, t0, w', c, oz, z;
+    var result;
+    (a, t) <- pk;
+    t0 <- lowbits t;
+    c <$ dC;
+    oz <$ dsimoz;
+    if(oz <> None) {
+      z <- oget oz;
+      w' <- a *^ z - c * t;
+      result <- trans_second_half z c w' t0;
+    } else {
+      result <- failed_znorm;
+    }
+    return result;
+  }
+}.
+
+section Analysis.
+
+(**
+
+(* More crutch; dmap stuff...
+ * Is this really not in the standard library?
+ *)
+lemma dmap_surj ['a 'b 'c] (f: 'a -> 'b) (g: 'b -> 'c) da b :
+  bijective g => mu1 (dmap da f) b = mu1 (dmap da (g \o f)) (g b).
+proof.
+rewrite ?dmap1E ?/pred1 ?/(\o) => /#.
+qed.
+
+*)
+
+(* Another (equivalent) way to write game0.
+ * Mostly just inlining functions and reordering instructions. *)
+local module Game1 = {
+  proc main(sk: sk_t) : trans_leak_t = {
     var a, s1, s2, w, w', y, c, z, t, t0;
     var result;
 
@@ -154,9 +199,32 @@ module HVZK_Games = {
     }
     return result;
   }
+}.
 
-  (* Compute w' using only public information *)
-  proc game2(sk: sk_t) = {
+local lemma hop1 :
+  equiv[Transcript.main ~ Game1.main : ={sk} ==> ={res}].
+proof.
+proc.
+swap{1} 1 1.
+swap{2} [1..3] 1.
+seq 1 1: (={sk, c}).
+- by rnd => //.
+seq 0 1: (#pre /\ sk{2} = (a{2}, s1{2}, s2{2})).
+- by auto => /#.
+seq 0 2: (#pre /\ t{2} = a{2} *^ s1{2} + s2{2} /\ t0{2} = lowbits t{2}).
+- by auto => /#.
+seq 1 2: (#pre /\ st{1} = (y{2}, w{2})).
+- rnd: *0 *0; auto => /=.
+  move => />.
+  move => &2.
+  split; by rewrite /commit /= dmap_comp /(\o) => /#.
+by auto => /#.
+qed.
+
+
+(* Compute w' using only public information *)
+local module Game2 = {
+  proc main(sk: sk_t) = {
     var a, s1, s2, w, w', y, c, z, t, t0;
     var result;
 
@@ -175,9 +243,24 @@ module HVZK_Games = {
     }
     return result;
   }
+}.
 
-  (* If we must... Let's talk about `oz` *)
-  proc game2b(sk: sk_t) = {
+local lemma hop2 :
+  equiv[Game1.main ~ Game2.main : ={sk} ==> ={res}].
+proof.
+proc.
+seq 7 7: (={a, z, c, t, t0, w, s2} /\
+  w{1} - c{1} * s2{1} = a{2} *^ z{2} - c{2} * t{2}).
+auto => />.
+move => &2 c c_valid y y_valid.
+case (sk{2}) => a s1 s2 /=.
+apply some_vector_property.
+auto => /#.
+qed.
+
+(* If we must... Let's talk about `oz` *)
+local module Game2b = {
+  proc main(sk: sk_t) = {
     var a, s1, s2, w, w', y, c, z, t, t0, oz;
     var result;
 
@@ -198,9 +281,18 @@ module HVZK_Games = {
     }
     return result;
   }
+}.
 
-  (* Rewrite relevant parts of the above as operator *)
-  proc game3(sk: sk_t) = {
+local lemma hop2b :
+  equiv[Game2.main ~ Game2b.main : ={sk} ==> ={res}].
+proof.
+proc.
+by auto => /> /#.
+qed.
+
+(* Rewrite relevant parts of the above as operator *)
+local module Game3 = {
+  proc main(sk: sk_t) = {
     var a, s1, s2, oz, z, c, t, t0, w';
     var result;
     (a, s1, s2) <- sk;
@@ -217,127 +309,10 @@ module HVZK_Games = {
     }
     return result;
   }
-
-  (* Get (a, t) from public key *)
-  proc game4(sk: sk_t, pk: pk_t) = {
-    var a, a', s1, s2, oz, z, c, t, t0, w';
-    var result;
-    (a', s1, s2) <- sk;
-    (a, t) <- pk;
-    t0 <- lowbits t;
-    c <$ dC;
-    oz <$ transz c s1;
-    if(oz <> None) {
-      z <- oget oz;
-      w' <- a *^ z - c * t;
-      result <- trans_second_half z c w' t0;
-    } else {
-      result <- failed_znorm;
-    }
-    return result;
-  }
-
-  (* Now simulate using only public information *)
-  proc game5(pk: pk_t) = {
-    var a, t, t0, w', c, oz, z;
-    var result;
-    (a, t) <- pk;
-    t0 <- lowbits t;
-    c <$ dC;
-    oz <$ dsimoz;
-    if(oz <> None) {
-      z <- oget oz;
-      w' <- a *^ z - c * t;
-      result <- trans_second_half z c w' t0;
-    } else {
-      result <- failed_znorm;
-    }
-    return result;
-  }
 }.
 
-(* Crutch for `rnd*` tactic reordering variables *)
-op swap_yw (wy : vector * vector) = let (w, y) = wy in (y, w).
-lemma swap_yw_bij : bijective swap_yw by smt().
-
-(* More crutch; dmap stuff...
- * Is this really not in the standard library?
- *)
-lemma dmap_surj ['a 'b 'c] (f: 'a -> 'b) (g: 'b -> 'c) da b :
-  bijective g => mu1 (dmap da f) b = mu1 (dmap da (g \o f)) (g b).
-proof.
-rewrite ?dmap1E ?/pred1 ?/(\o) => /#.
-qed.
-
-lemma HVZK_hop1 :
-  equiv[HVZK_Games.game0 ~ HVZK_Games.game1 : ={sk} ==> ={res}].
-proof.
-proc.
-swap{1} 1 1.
-swap{2} [1..3] 1.
-seq 1 1: (={sk, c}).
-  rnd => //.
-seq 0 1: (#pre /\ sk{2} = (a{2}, s1{2}, s2{2})).
-  auto => /#.
-seq 0 2: (#pre /\ t{2} = a{2} *^ s1{2} + s2{2} /\ t0{2} = lowbits t{2}).
-  auto => /#.
-seq 1 2: (#pre /\ st{1} = (y{2}, w{2})).
-  rnd swap_yw swap_yw: *0 *0; auto => /=.
-  move => />.
-  move => &2.
-  split; 1: smt().
-  move => _.
-  split.
-  move => wy _.
-  rewrite /commit /swap_yw /=.
-  rewrite dmap_comp /=.
-  rewrite (dmap_surj _ swap_yw) ?swap_yw_bij.
-  congr.
-    congr; smt().
-    smt().
-  move => _ yw.
-  case yw => y w.
-  move => yw_valid.
-  rewrite supp_dmap in yw_valid.
-  case yw_valid => w1yw.
-  case w1yw => [w1 [y' w']].
-  move => [#] H ? ?; subst.
-   rewrite /commit /= supp_dmap /= in H.
-  smt(supp_dmap).
-auto => /#.
-qed.
-
-(* I'd rather axiomatize this than think about ring axioms... *)
-axiom some_vector_property :
-  forall (a : matrix) (c : scalar) (y s1 s2 : vector),
-  a *^ y - c * s2 = a *^ (y + c * s1) - c * (a *^ s1 + s2).
-
-lemma HVZK_hop2 :
-  equiv[HVZK_Games.game1 ~ HVZK_Games.game2 : ={sk} ==> ={res}].
-proof.
-proc.
-seq 7 7: (={a, z, c, t, t0, w, s2} /\
-  w{1} - c{1} * s2{1} = a{2} *^ z{2} - c{2} * t{2}).
-auto => />.
-move => &2 c c_valid y y_valid.
-case (sk{2}) => a s1 s2 /=.
-apply some_vector_property.
-auto => /#.
-qed.
-
-lemma HVZK_hop2b :
-  equiv[HVZK_Games.game2 ~ HVZK_Games.game2b : ={sk} ==> ={res}].
-proof.
-proc.
-seq 7 8: (={a, z, c, t, t0, w, s2} /\
-  (oz{2} = if check_znorm z{2} then Some z{2} else None) /\
-  check_znorm z{1} = (oz{2} <> None)).
-auto => /#.
-auto => /#.
-qed.
-
-lemma HVZK_hop3 :
-  equiv[HVZK_Games.game2b ~ HVZK_Games.game3 :
+local lemma hop3 :
+  equiv[Game2b.main ~ Game3.main :
     ={sk} /\
     exists pk, (pk, sk{1}) \in keygen ==> ={res}].
 proof.
@@ -370,8 +345,29 @@ seq 4 1: (#pre /\ ={oz}).
 auto => /#.
 qed.
 
-lemma HVZK_hop4 :
-  equiv[HVZK_Games.game3 ~ HVZK_Games.game4 : ={sk} /\ (pk{2}, sk{2}) \in keygen ==> ={res}].
+local module Game4 = {
+  (* Get (a, t) from public key *)
+  proc main(sk: sk_t, pk: pk_t) = {
+    var a, a', s1, s2, oz, z, c, t, t0, w';
+    var result;
+    (a', s1, s2) <- sk;
+    (a, t) <- pk;
+    t0 <- lowbits t;
+    c <$ dC;
+    oz <$ transz c s1;
+    if(oz <> None) {
+      z <- oget oz;
+      w' <- a *^ z - c * t;
+      result <- trans_second_half z c w' t0;
+    } else {
+      result <- failed_znorm;
+    }
+    return result;
+  }
+}.
+
+local lemma hop4 :
+  equiv[Game3.main ~ Game4.main : ={sk} /\ (pk{2}, sk{2}) \in keygen ==> ={res}].
 proof.
 proc.
 seq 2 2: (#pre /\ ={a, s1, s2, t} /\ a{2} = a'{2}).
@@ -379,7 +375,9 @@ seq 2 2: (#pre /\ ={a, s1, s2, t} /\ a{2} = a'{2}).
 auto => /#.
 qed.
 
-lemma line12_magic_some :
+(* Now simulate using only public information *)
+
+local lemma line12_magic_some :
   forall c s1 z0, c \in dC => s1 \in ds1 => check_znorm z0 =>
     mu1 (transz c s1) (Some z0) = 1%r / (size (to_seq (support dy)))%r.
 proof.
@@ -394,7 +392,7 @@ proof.
   exact masking_range.
 qed.
 
-lemma line12_outofbound :
+local lemma line12_outofbound :
   forall c s1 z0, c \in dC => s1 \in ds1 => ! (check_znorm z0) =>
     (Some z0) \notin (transz c s1).
 proof.
@@ -403,7 +401,7 @@ rewrite /transz /pred1 /(\o) => /=.
 rewrite supp_dmap => /#.
 qed.
 
-lemma sumD1_None (f : 'a option -> real) :
+local lemma sumD1_None (f : 'a option -> real) :
   summable f =>
   sum f = sum (fun y => f (Some y)) + f None.
 proof.
@@ -414,7 +412,7 @@ apply eq_sum => -[|x /=]; 1: by rewrite /= sum0.
 rewrite (sumE_fin _ [x]) // /#.
 qed.
 
-lemma sum_characteristic (P : 't -> bool) (v : real) :
+local lemma sum_characteristic (P : 't -> bool) (v : real) :
   is_finite P =>
   sum (fun z => if P z then v else 0%r) = (size (to_seq P))%r * v.
 proof.
@@ -427,7 +425,7 @@ rewrite count_predT_eq_in => //.
 move => z; apply mem_to_seq => //.
 qed.
 
-lemma line12_magic_none :
+local lemma line12_magic_none :
   forall c s1, c \in dC => s1 \in ds1 =>
     mu1 (transz c s1) None = 1%r - (size (to_seq check_znorm))%r / (size (to_seq (support dy)))%r.
 proof.
@@ -449,7 +447,8 @@ have -> :
     apply supportPn.
     apply line12_outofbound => //.
 apply sum_characteristic.
-by apply (finite_leq predT<:vector> check_znorm) => //; apply finite_t.
+apply (finite_leq predT<:vector> check_znorm) => //.
+by apply is_finite.
 qed.
 
 lemma sum_over_bool (f : bool -> real):
@@ -457,12 +456,6 @@ lemma sum_over_bool (f : bool -> real):
 proof.
 rewrite (sumE_fin _ [true; false]) /#.
 qed.
-
-axiom mask_size :
-  size (to_seq check_znorm) < size (to_seq (support dy)).
-
-axiom mask_nonzero :
-  0 < size (to_seq check_znorm).
 
 (* Now 40% less magical! *)
 lemma line12_magic :
@@ -496,8 +489,8 @@ case z.
     smt(supp_dmap supp_dunit dsimz_supp).
 qed.
 
-lemma HVZK_hop5 :
-  equiv[HVZK_Games.game4 ~ HVZK_Games.game5 : (pk{1}, sk{1}) \in keygen /\ ={pk} ==> ={res}].
+local lemma hop5 :
+  equiv[Game4.main ~ Simulator.main : (pk{1}, sk{1}) \in keygen /\ ={pk} ==> ={res}].
 proof.
 proc.
 seq 4 3 : (#pre /\ ={a, t, t0, c} /\ a{1} = a'{1} /\ sk{1} = (a'{1}, s1{1}, s2{1}) /\ pk{1} = (a{1}, t{1}) /\ c{1} \in dC).
@@ -537,31 +530,33 @@ auto => /#.
 qed.
 
 lemma HVZK_main :
-  equiv[HVZK_Games.game0 ~ HVZK_Games.game5 : (pk{2}, sk{1}) \in keygen ==> ={res}].
+  equiv[Transcript.main ~ Simulator.main : (pk{2}, sk{1}) \in keygen ==> ={res}].
 proof.
-transitivity HVZK_Games.game1 (={sk} ==> ={res}) ((pk{2}, sk{1}) \in keygen ==> ={res}).
+transitivity Game1.main (={sk} ==> ={res}) ((pk{2}, sk{1}) \in keygen ==> ={res}).
   smt().
   smt().
-  apply HVZK_hop1.
-transitivity HVZK_Games.game2 (={sk} ==> ={res}) ((pk{2}, sk{1}) \in keygen ==> ={res}).
+  apply hop1.
+transitivity Game2.main (={sk} ==> ={res}) ((pk{2}, sk{1}) \in keygen ==> ={res}).
   smt().
   smt().
-  apply HVZK_hop2.
-transitivity HVZK_Games.game2b (={sk} ==> ={res}) ((pk{2}, sk{1}) \in keygen ==> ={res}).
+  apply hop2.
+transitivity Game2b.main (={sk} ==> ={res}) ((pk{2}, sk{1}) \in keygen ==> ={res}).
   smt().
   smt().
-  apply HVZK_hop2b.
-transitivity HVZK_Games.game3 (={sk} /\
+  apply hop2b.
+transitivity Game3.main (={sk} /\
     exists pk, (pk, arg{1}) \in keygen ==> ={res}) ((pk{2}, sk{1}) \in keygen ==> ={res}).
   smt().
   smt().
-  apply HVZK_hop3.
-transitivity HVZK_Games.game4 (={sk} /\
+  apply hop3.
+transitivity Game4.main (={sk} /\
     (pk{2}, sk{2}) \in keygen ==> ={res}) ((pk{1}, sk{1}) \in keygen /\ ={pk} ==> ={res}).
   move => &1 &2 ?.
   exists (arg{1}, arg{2}).
   smt().
   smt().
-  apply HVZK_hop4.
-apply HVZK_hop5.
+  apply hop4.
+apply hop5.
 qed.
+
+end section Analysis.
