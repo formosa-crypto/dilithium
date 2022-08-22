@@ -331,7 +331,14 @@ conseq (: _ ==> has (mem SOl.out) B.log /\ size SOl.log <= qs /\ size B.log <= q
 seq 5 : (size SOl.log <= qs /\ size B.log <= qg) 
         1%r (qs%r * qg%r * alpha) 1%r 0%r => //; last by hoare; auto => />.
 conseq />. rnd; skip => /> &1 log_qs log_qg. 
-have ? : 0%r <= alpha by smt(d_max ge0_mu).
+
+(* Ethan: The following `have` fails on my end for some reasons.
+ * I rewrote the proof.
+ *)
+have ? : 0%r <= alpha.
+  suff: mu1 (d witness) witness <= alpha by smt(ge0_mu).
+  smt(d_max).
+
 apply (ler_trans ((size B.log{1})%r * (qs%r * alpha))); last smt(qs_gt0 qg_gt0).
 apply mu_has_leM => x x_log. 
 apply (ler_trans _ _ _ (le_djoin_size (map d SOl.log{1}) x alpha _)).
@@ -355,9 +362,11 @@ section STATIC.
 
 declare module A <: Adversary{-Count,-SGO,-SO,-SCount}.
 
-declare axiom A_bound : forall (O <: SGOracle{-A}), 
+(* Ethan: Added `-Count` to the oracle restriction.
+ * Otherwise this is unsatisfiable in general. *)
+declare axiom A_bound : forall (O <: SGOracle{-A, -Count}), 
   hoare [ A(Count(O)).run : Count.cs = 0 /\ Count.cg = 0 ==> 
-                            Count.cs <= qs /\ Count.cg = qg ].
+                            Count.cs <= qs /\ Count.cg <= qg ].
 
 lemma SG_boundS &m : Pr [ SG_GameS(A).main() @ &m : res ] <= qs%r * qg%r * alpha.
 proof.

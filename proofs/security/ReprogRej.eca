@@ -3,6 +3,7 @@ import Biased.
 require import Dexcepted.
 require import Dfilter.
 require import Real RealSeries.
+require import CoreMap.
 import SmtMap.
 import Biased.
 require ReprogOnlyRej.
@@ -62,7 +63,9 @@ module type Oracle_i = {
  * The games are indistinguishable in ROM.
  * I hope same is true in QROM.
  *)
-module ORight : Oracle_i = {
+
+module OLeft : Oracle_i = {
+
   proc init() = {
     RO.init();
   }
@@ -80,12 +83,6 @@ module ORight : Oracle_i = {
     return (x, y, z);
   }
 
-  proc reprog_rej(k:K) = { }
-}.
-
-module OLeft : Oracle_i = {
-  include var ORight [init, h, reprog_acc]
-
   proc reprog_rej(m) = {
     var x, y;
     (x, y) <$ dXY_rej m;
@@ -93,6 +90,11 @@ module OLeft : Oracle_i = {
     RO.set(x, y);
     (* no return *)
   }
+}.
+
+module ORight : Oracle_i = {
+  include var OLeft [init, h, reprog_acc]
+  proc reprog_rej(k:K) = { }
 }.
 
 module type Adversary(O: Oracle) = {
@@ -110,13 +112,6 @@ module Game (O: Oracle_i) (Adv: Adversary) = {
 
 module Count (O: Oracle) : Oracle = {
   var countR, countH : int
-  (*
-  proc init() = {
-    countR <- 0;
-    countH <- 0;
-    O.init();
-  }
-  *)
   proc reprog_acc(x) = {
     var y;
     y <@ O.reprog_acc(x);
@@ -138,14 +133,16 @@ module Count (O: Oracle) : Oracle = {
 
 section.
 
-module ORight_rec : Oracle_i = {
-  include var ORight [reprog_acc]
+module OLeft_rec : Oracle_i = {
+  include var OLeft [reprog_acc]
 
   var bad : bool
   var rej_lst : X list
 
   proc init() = {
+    RO.init();
     bad <- false;
+    rej_lst <- [];
   }
 
   proc h(x) = {
@@ -155,16 +152,6 @@ module ORight_rec : Oracle_i = {
     y <@ RO.get(x);
     return y;
   }
-
-  proc reprog_rej(m: K) = {
-    var x, y;
-    (x, y) <$ dXY_rej m;
-    rej_lst <- x :: rej_lst;
-  }
-}.
-
-module OLeft_rec : Oracle_i = {
-  include var ORight_rec[init, h, reprog_acc]
 
   proc reprog_rej(m) = {
     var x, y;
@@ -176,8 +163,77 @@ module OLeft_rec : Oracle_i = {
   }
 }.
 
-declare module A <: Adversary {-ORight_rec, -RO, -Count}.
-declare axiom A_ll : (forall (O <: Oracle{-A, -Count}),
+module ORight_rec : Oracle_i = {
+  include var OLeft_rec[init, h, reprog_acc]
+
+  proc reprog_rej(m: K) = {
+    var x, y;
+    (x, y) <$ dXY_rej m;
+    rej_lst <- x :: rej_lst;
+  }
+}.
+
+
+module (ReduceO(O: OnlyRej.Oracle) : Oracle) = {
+  var overlay : (X, Y) fmap
+
+  proc init() = {
+    overlay <- empty;
+  }
+
+  proc h(x) = {
+    var y;
+    y <@ O.h(x);
+    if (x \in overlay) {
+      y <- oget overlay.[x];
+    }
+    return y;
+  }
+
+  proc reprog_rej(m) = {
+    var r;
+    r <@ O.reprog_rej(m);
+    return r;
+  }
+
+  proc reprog_acc(m) = {
+    var x, y, z;
+    (x, y, z) <$ dXYZ_acc m;
+    overlay.[x] <- y;
+    return (x, y, z);
+  }  
+}.
+
+declare module A <: Adversary {-OLeft_rec, -RO, -Count,
+  -RejGuessing.SGO, -RejGuessing.Count, -RejGuessing.SO, -RejGuessing.SCount, -OnlyRej.Count, -OnlyRej.OMain, -ReduceO}.
+
+equiv OLeft_rec_eq :
+  Game(OLeft, A).main ~ Game(OLeft_rec, A).main :
+  ={glob A}  ==> ={res}.
+proof.
+proc.
+inline *.
+call(: ={RO.m}).
+- by proc; sim.
+- by proc; sim.
+- by proc; sim.
+by auto => />.
+qed.
+
+equiv ORight_rec_eq :
+  Game(ORight, A).main ~ Game(ORight_rec, A).main :
+  ={glob A}  ==> ={res}.
+proof.
+proc.
+inline *.
+call(: ={RO.m}).
+- by proc; sim.
+- by proc; sim.
+- by proc; auto => //.
+by auto => />.
+qed.
+
+declare axiom A_ll : (forall (O <: Oracle{-A}),
   islossless O.h =>
   islossless O.reprog_acc =>
   islossless O.reprog_rej =>
@@ -188,20 +244,24 @@ declare axiom A_bound : forall (O <: Oracle{-A, -Count}),
                                     Count.countR <= qr /\ Count.countH <= qh ].
 
 lemma ReprogRejRecBound &m :
+  `| Pr[Game(OLeft_rec, A).main() @ &m : res]
+   - Pr[Game(ORight_rec, A).main() @ &m : res] |
+  <= Pr[Game(OLeft_rec, A).main() @ &m : OLeft_rec.bad].
+proof.
+suff:
   `| Pr[Game(ORight_rec, A).main() @ &m : res]
    - Pr[Game(OLeft_rec, A).main() @ &m : res] |
-  <= Pr[Game(OLeft_rec, A).main() @ &m : ORight_rec.bad].
-proof.
-byequiv (_: ={glob A, RO.m, ORight_rec.bad, ORight_rec.rej_lst} ==>
-  ={ORight_rec.bad} /\ (!ORight_rec.bad{1} => ={res})) :
-  ORight_rec.bad; 2, 3: smt().
+  <= Pr[Game(OLeft_rec, A).main() @ &m : OLeft_rec.bad] by smt().
+byequiv (_: ={glob A, RO.m, OLeft_rec.bad, OLeft_rec.rej_lst} ==>
+  ={OLeft_rec.bad} /\ (!OLeft_rec.bad{1} => ={res})) :
+  OLeft_rec.bad; 2, 3: smt().
 proc.
-seq 1 1: (#pre /\ !ORight_rec.bad{1} /\ !ORight_rec.bad{2}).
-- inline ORight_rec.init; by auto.
-call (_: ORight_rec.bad,
-     ={ORight_rec.bad, ORight_rec.rej_lst} /\
-     (forall x, (!(x \in ORight_rec.rej_lst{1}) => RO.m{1}.[x] = RO.m{2}.[x])),
-     ={ORight_rec.bad}); 1: by apply A_ll.
+seq 1 1: (#pre /\ !OLeft_rec.bad{1} /\ !OLeft_rec.bad{2}).
+- inline OLeft_rec.init RO.init; by auto.
+call (_: OLeft_rec.bad,
+     ={OLeft_rec.bad, OLeft_rec.rej_lst} /\
+     (forall x, (!(x \in OLeft_rec.rej_lst{1}) => RO.m{1}.[x] = RO.m{2}.[x])),
+     ={OLeft_rec.bad}); 1: by apply A_ll.
 (* H *)
 - proc; inline RO.get; auto => />.
   smt(get_setE get_set_sameE).
@@ -232,13 +292,139 @@ call (_: ORight_rec.bad,
 - skip => />; smt().
 qed.
 
+module (Reduction : OnlyRej.Adversary)(O: OnlyRej.Oracle) = {
+  include var Count(ReduceO(O))
+
+  proc main () = {
+    ReduceO.overlay <- empty;
+    A(ReduceO(O)).distinguish();
+  }
+}.
+
+lemma count_reduce (O <: OnlyRej.Oracle{-Reduction, -Count, -OnlyRej.Count} ) :
+  equiv[Reduction(OnlyRej.Count(O)).main ~ A(Count(ReduceO(O))).distinguish :
+  ={glob O, glob A} /\
+  ReduceO.overlay{2} = empty /\
+  Count.countH{2} = OnlyRej.Count.ch{1} /\
+  Count.countR{2} = OnlyRej.Count.cr{1}
+  ==>
+  Count.countH{2} = OnlyRej.Count.ch{1} /\
+  Count.countR{2} = OnlyRej.Count.cr{1}].
+proof.
+proc *.
+inline *.
+call (: ={glob O, ReduceO.overlay} /\
+        Count.countH{2} = OnlyRej.Count.ch{1} /\
+        Count.countR{2} = OnlyRej.Count.cr{1}).
+- by proc; inline *; sim.
+- proc; inline *.
+  by auto => />.
+- proc; inline *.
+  wp.
+  call(: true).
+  by auto => />.
+by auto => />.
+qed.
+
+lemma Reduction_count :
+  forall (O <: OnlyRej.Oracle{-Reduction, -Count, -OnlyRej.Count} ),
+    hoare[ Reduction(OnlyRej.Count(O)).main :
+          OnlyRej.Count.cr = 0 /\ OnlyRej.Count.ch = 0 ==>
+          OnlyRej.Count.cr <= qr /\ OnlyRej.Count.ch <= qh].
+proof.
+move => O.
+by conseq (count_reduce O) (A_bound (ReduceO(O))) => /#.
+qed.
+
+equiv reduce_to_onlyrej :
+  Game(OLeft_rec, A).main ~ OnlyRej.Game(Reduction).main :
+  ={glob A} ==> OLeft_rec.bad{1} = res{2}.
+proof.
+proc; inline *; sp.
+(* Mmmmm 11 subgoals *)
+call(_: OnlyRej.OMain.win,
+  OLeft_rec.bad{1} = OnlyRej.OMain.win{2} /\
+  (!OLeft_rec.bad{1} =>
+  (OLeft_rec.rej_lst{1} = OnlyRej.OMain.rej_lst{2} /\
+  (forall x, ! x \in OLeft_rec.rej_lst{1} =>
+  RO.m.[x]{1} = if x \in ReduceO.overlay{2} then ReduceO.overlay{2}.[x] else RO.m.[x]{2}))),
+  OLeft_rec.bad{1} = OnlyRej.OMain.win{2}).
+(* lossless  *)
+- apply A_ll.
+(* H *)
+- proc.
+  inline OMain.h.
+  seq 0 1: (#pre /\ x0{2} = x{2}); first by auto.
+  if; first by auto => />.
+  + (* bad *)
+    by inline RO.get; auto => />.
+  + (* not bad *)
+    inline RO.get.
+    auto => />.
+    smt(get_setE get_set_sameE).
+- move => &2 win.
+  proc.
+  inline RO.get.
+  auto => />.
+  smt(dY_ll).
+- move => &1.
+  proc.
+  inline OMain.h RO.get.
+  auto => />.
+  smt(dY_ll).
+(* acc *)
+- proc; inline *.
+  auto => />.
+  smt(get_setE get_set_sameE).
+- move => &2 win.
+  proc; inline *.
+  auto => /> ?.
+  exact dXYZ_acc_ll.
+- move => &1.
+  proc.
+  auto => /> ??.
+  exact dXYZ_acc_ll.
+(* rej *)
+- proc; inline *.
+  auto => />.
+  smt(get_setE get_set_sameE).
+- move => &2 win.
+  proc; inline *.
+  auto => /> ?.
+  exact dXY_rej_ll.
+- move => &1.
+  proc; inline *.
+  auto => /> ??.
+  exact dXY_rej_ll.
+(* overall *)
+by skip => /#.
+qed.
+
+lemma bad_bound &m :
+  Pr[Game(OLeft_rec, A).main() @ &m : OLeft_rec.bad] <= qr%r * qh%r * alpha.
+proof.
+have ->: Pr[Game(OLeft_rec, A).main() @ &m : OLeft_rec.bad] =
+         Pr[OnlyRej.Game(Reduction).main() @ &m : res].
+- byequiv; 2, 3: smt().
+  by conseq reduce_to_onlyrej => /#.
+apply (OnlyRej.win_bound Reduction).
+exact Reduction_count.
+qed.
+
 lemma ReprogRejBound &m :
   `| Pr[Game(OLeft, A).main() @ &m : res]
    - Pr[Game(ORight, A).main() @ &m : res] |
   <= qh%r * qr%r * alpha.
 proof.
-admitted.
+have ->: Pr[Game(OLeft, A).main() @ &m : res] =
+         Pr[Game(OLeft_rec, A).main() @ &m : res].
+- byequiv => //.
+  conseq OLeft_rec_eq => //.
+have ->: Pr[Game(ORight, A).main() @ &m : res] =
+         Pr[Game(ORight_rec, A).main() @ &m : res].
+- byequiv => //.
+  conseq ORight_rec_eq => //.
+smt(ReprogRejRecBound bad_bound).
+qed.
 
 end section.
-
-print ReprogRejBound.
