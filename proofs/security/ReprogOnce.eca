@@ -387,47 +387,19 @@ qed.
 (* -- Lining up interface to ReprogRej -- *)
 
 (* Helper module to call bypr... *)
-local module LoopBodies = {
-  include var OLeft[init]
-  proc body1() = {
+local module LoopBody1 = {
+  include var OLeft
+  proc main() = {
     var w, c, oz;
     (w, c, oz) <$ dWCoZ sk;
     return (w, c, oz);
   }
-
-  proc body2() = {
-    var w, c, oz, st;
-    (w, st) <$ commit sk;
-    c <$ dC;
-    oz <- respond st c;
-    return (w, c, oz);
-  }
-
-  proc body3() = {
-    var w, c, oz, f;
-    f <$ dbiased (p_acc sk);
-    if(f)
-      (w, c, oz) <$ dWCoZ_acc sk;
-    else
-      (w, c, oz) <$ dWCoZ_rej sk;
-    return (w, c, oz);
-  }
-
-  proc body4() = {
-    var w, c, z, f;
-    f <$ dbiased (p_acc sk);
-    z <- witness; (* silences unused variable warning *)
-    if(f)
-      (w, c, z) <$ dWCZ_acc sk;
-    else
-      (w, c) <$ dWC_rej sk;
-    return (w, c, f, z);
-  }
 }.
 
+(* Helper module to call bypr... *)
 local lemma pr_body1 x &m sk :
   OLeft.sk{m} = sk =>
-  Pr[LoopBodies.body1() @ &m : res = x] = mu1 (dWCoZ sk) x.
+  Pr[LoopBody1.main() @ &m : res = x] = mu1 (dWCoZ sk) x.
 proof.
 move => *.
 byphoare (_ : (OLeft.sk = sk) ==> (res = x)) => //=.
@@ -451,8 +423,19 @@ proof.
   rewrite /dmap /(\o) => /#.
 qed.
 
+local module LoopBody2 = {
+  include var OLeft
+  proc main() = {
+    var w, c, oz, st;
+    (w, st) <$ commit sk;
+    c <$ dC;
+    oz <- respond st c;
+    return (w, c, oz);
+  }
+}.
+
 local equiv hop_body2 :
-  LoopBodies.body1 ~ LoopBodies.body2 :
+  LoopBody1.main ~ LoopBody2.main :
   ={OLeft.sk} ==> ={res}.
 proof.
 proc.
@@ -465,18 +448,31 @@ qed.
 
 local lemma pr_body2 x &m sk :
   OLeft.sk{m} = sk =>
-  Pr[LoopBodies.body2() @ &m : res = x] = mu1 (dWCoZ sk) x.
+  Pr[LoopBody2.main() @ &m : res = x] = mu1 (dWCoZ sk) x.
 proof.
 move => *.
-have <- : Pr[LoopBodies.body1() @ &m : res = x] = Pr[LoopBodies.body2() @ &m : res = x].
+have <- : Pr[LoopBody1.main() @ &m : res = x] = Pr[LoopBody2.main() @ &m : res = x].
   byequiv.
   conseq (_ : ={OLeft.sk} ==> ={res}). trivial. trivial.
   apply hop_body2. trivial. trivial.
 rewrite (pr_body1 x &m sk) => /#.
 qed.
 
+local module LoopBody3 = {
+  include var OLeft
+  proc main() = {
+    var w, c, oz, f;
+    f <$ dbiased (p_acc sk);
+    if(f)
+      (w, c, oz) <$ dWCoZ_acc sk;
+    else
+      (w, c, oz) <$ dWCoZ_rej sk;
+    return (w, c, oz);
+  }
+}.
+
 local equiv hop_body3 :
-  LoopBodies.body2 ~ LoopBodies.body3 :
+  LoopBody2.main ~ LoopBody3.main :
   ={OLeft.sk} /\ valid_sk OLeft.sk{1} ==> ={res}.
 proof.
 bypr res{1} res{2}; 1: auto => /#.
@@ -506,8 +502,22 @@ seq 1: f (p_acc OLeft.sk{1}) (mu1 (dWCoZ_acc OLeft.sk{1}) x) (p_rej OLeft.sk{1})
   smt(p_rej_E).
 qed.
 
+local module LoopBody4 = {
+  include var OLeft
+  proc main() = {
+    var w, c, z, f;
+    f <$ dbiased (p_acc sk);
+    z <- witness; (* silences unused variable warning *)
+    if(f)
+      (w, c, z) <$ dWCZ_acc sk;
+    else
+      (w, c) <$ dWC_rej sk;
+    return (w, c, f, z);
+  }
+}.
+
 local equiv hop_body4 :
-  LoopBodies.body3 ~ LoopBodies.body4 :
+  LoopBody3.main ~ LoopBody4.main :
   ={OLeft.sk} /\ valid_sk OLeft.sk{1} ==> (res{1}.`1 = res{2}.`1 /\
                          res{1}.`2 = res{2}.`2 /\
                          (res{1}.`3 <> None <=> res{2}.`3) /\
@@ -539,13 +549,13 @@ if; 1: by auto.
 qed.
 
 local equiv hop_body2_4 :
-  LoopBodies.body2 ~ LoopBodies.body4 :
+  LoopBody2.main ~ LoopBody4.main :
   ={OLeft.sk} /\ valid_sk OLeft.sk{1} ==> (res{1}.`1 = res{2}.`1 /\
                          res{1}.`2 = res{2}.`2 /\
                          (res{1}.`3 <> None <=> res{2}.`3) /\
                          (res{1}.`3 <> None => oget res{1}.`3 = res{2}.`4)).
 proof.
-transitivity LoopBodies.body3
+transitivity LoopBody3.main
   (={OLeft.sk} /\ valid_sk OLeft.sk{1} ==> ={res})
   (={OLeft.sk} /\ valid_sk OLeft.sk{1} ==> res{1}.`1 = res{2}.`1 /\
   res{1}.`2 = res{2}.`2 /\
@@ -572,7 +582,7 @@ local module OLeft_body2 : Oracle_i = {
     i <- 0;
     oz <- None;
     while(oz = None /\ i < kappa) {
-      (w, c, oz) <@ LoopBodies.body2();
+      (w, c, oz) <@ LoopBody2.main();
       RO.set((w, m), c);
       i <- i + 1;
     }
@@ -584,7 +594,7 @@ local equiv OLeft_body2_call :
   OLeft.sign ~ OLeft_body2.sign :
   ={OLeft.sk, m, RO.m} ==> ={res, RO.m}.
 proof.
-by proc; inline LoopBodies.body2; sim.
+by proc; inline LoopBody2.main; sim.
 qed.
 
 local module OLeft_body4 : Oracle_i = {
@@ -600,7 +610,7 @@ local module OLeft_body4 : Oracle_i = {
     i <- 0;
     f <- false;
     while(!f /\ i < kappa) {
-      (w, c, f, z) <@ LoopBodies.body4();
+      (w, c, f, z) <@ LoopBody4.main();
       RO.set((w, m), c);
       i <- i + 1;
     }
@@ -652,7 +662,7 @@ local module OLeft_cond : Oracle_i = {
 local equiv OLeft_cond_hop : OLeft_body4.sign ~ OLeft_cond.sign :
   ={m, OLeft.sk, RO.m} ==> ={res, RO.m}.
 proof.
-by proc; inline LoopBodies.body4; sim.
+by proc; inline LoopBody4.main; sim.
 qed.
 
 local module OLeft_move_reprog : Oracle_i = {
@@ -776,7 +786,7 @@ local module ORight_body2 : Oracle_i = {
     i <- 0;
     oz <- None;
     while(oz = None /\ i < kappa) {
-      (w, c, oz) <@ LoopBodies.body2();
+      (w, c, oz) <@ LoopBody2.main();
       i <- i + 1;
     }
     if(oz <> None)
@@ -789,7 +799,7 @@ local equiv ORight_body2_call :
   ORight.sign ~ ORight_body2.sign :
   ={OLeft.sk, m, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}.
 proof.
-by proc; inline LoopBodies.body2; sim.
+by proc; inline LoopBody2.main; sim.
 qed.
 
 local module ORight_body4 : Oracle_i = {
@@ -805,7 +815,7 @@ local module ORight_body4 : Oracle_i = {
     i <- 0;
     f <- false;
     while(!f /\ i < kappa) {
-      (w, c, f, z) <@ LoopBodies.body4();
+      (w, c, f, z) <@ LoopBody4.main();
       i <- i + 1;
     }
     if(f)
@@ -861,7 +871,7 @@ local module ORight_cond : Oracle_i = {
 local equiv ORight_cond_hop : ORight_body4.sign ~ ORight_cond.sign :
   ={m, OLeft.sk, RO.m} /\ valid_sk OLeft.sk{1} ==> ={res, RO.m}.
 proof.
-by proc; inline LoopBodies.body4; sim.
+by proc; inline LoopBody4.main; sim.
 qed.
 
 local module ORight_move_reprog : Oracle_i = {
