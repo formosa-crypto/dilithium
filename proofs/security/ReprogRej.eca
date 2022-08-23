@@ -42,7 +42,7 @@ realize qh_gt0 by apply qh_gt0.
 realize qr_gt0 by apply qr_gt0.
 realize dX_pmax by apply dX_pmax.
 
-import FullRO.
+import OnlyRej.RO.
 
 module type Oracle = {
   proc h(x: X) : Y
