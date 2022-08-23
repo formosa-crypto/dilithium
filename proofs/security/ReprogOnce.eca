@@ -45,6 +45,7 @@ axiom kappa_gt0 : 0 < kappa.
 
 (* -- Ingredients required for cloning ReprogRej -- *)
 
+(* CD: dtrans? - with follow up renamings *)
 (* Transcript distribution *)
 op dWCoZ sk : (W * C * Z option) distr =
   dlet (commit sk) (fun wst =>
@@ -54,16 +55,24 @@ op dWCoZ sk : (W * C * Z option) distr =
   dunit (w, c, z))).
 
 (* Transcript distribution, conditioned on accept or reject. *)
-op dWCoZ_acc sk = if valid_sk sk then
-  dcond (dWCoZ sk) (fun wcz => let (w, c, z) = wcz in z <> None)
-else
-  dunit witness.
-op dWCZ_acc sk = dmap (dWCoZ_acc sk) (fun wcoz => let (w, c, oz) = wcoz in (w, c, oget oz)).
-op dWCoZ_rej sk = if valid_sk sk then
-  dcond (dWCoZ sk) (fun wcz => let (w, c, z) = wcz in z = None)
-else
-  dunit witness.
-op dWC_rej sk = dmap (dWCoZ_rej sk) (fun wcz => let (w, c, _) = wcz in (w, c)).
+(* CD: is the if-then-else really necessary? *)
+op dWCoZ_acc sk = 
+  if valid_sk sk then
+    dcond (dWCoZ sk) (fun wcz => let (w, c, z) = wcz in z <> None)
+  else
+    dunit witness.
+
+op dWCZ_acc sk = 
+  dmap (dWCoZ_acc sk) (fun wcoz => let (w, c, oz) = wcoz in (w, c, oget oz)).
+
+op dWCoZ_rej sk = 
+  if valid_sk sk then
+    dcond (dWCoZ sk) (fun wcz => let (w, c, z) = wcz in z = None)
+  else
+    dunit witness.
+
+op dWC_rej sk = 
+  dmap (dWCoZ_rej sk) (fun wcz => let (w, c, _) = wcz in (w, c)).
 
 op dXYZ_acc (k: SK * M) : ((W * M) * C * Z) distr =
   let (sk, m) = k in
@@ -166,6 +175,7 @@ module Count (O: Oracle_i) : Oracle = {
   var countS : int
   var countH : int
 
+  (* Where are the counters initialized *)
   proc init = O.init
 
   proc h(w: W, m : M) : C = {
@@ -253,6 +263,7 @@ module Game (Adv: Adversary) (O: Oracle_i) = {
 
 section Analysis.
 
+(* CD: can we use local clones to avoid some of this? *)
 declare module Adv <: Adversary {-Count, -RO, -RRej.Count, -OLeft,
 -OnlyRej.RejGuessing.SGO, -OnlyRej.RejGuessing.Count,
 -OnlyRej.RejGuessing.SO, -OnlyRej.RejGuessing.SCount,
@@ -289,6 +300,7 @@ rewrite /dWCoZ_rej H /=; apply dcond_ll.
 by apply dWCoZ_can_rej => //.
 qed.
 
+(* CD: are these necessary? can you just use smt in place of them? *)
 local lemma dWCoZ_acc_supp sk w c oz :
   valid_sk sk =>
   (w, c, oz) \in dWCoZ_acc sk =>
@@ -472,7 +484,10 @@ move => &1 &2 x eq_sk.
 rewrite (pr_body2 x &1 OLeft.sk{1}) => //.
 byphoare (_: (OLeft.sk = OLeft.sk{1}) ==> (res = x)) => //=; 2: by smt().
 proc.
-seq 1: f (p_acc OLeft.sk{1}) (mu1 (dWCoZ_acc OLeft.sk{1}) x) (p_rej OLeft.sk{1}) (mu1 (dWCoZ_rej OLeft.sk{1}) x) #pre => //=.
+seq 1: f (p_acc OLeft.sk{1}) 
+         (mu1 (dWCoZ_acc OLeft.sk{1}) x) 
+         (p_rej OLeft.sk{1}) 
+         (mu1 (dWCoZ_rej OLeft.sk{1}) x) #pre => //=.
 - by auto.
 - rnd; auto => /> /=.
   rewrite dbiasedE => /=.
