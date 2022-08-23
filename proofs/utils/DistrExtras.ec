@@ -366,3 +366,13 @@ move => d_ll; apply eq_distr => x.
 rewrite dbiased1E clamp_id; first by smt(ge0_mu le1_mu).
 rewrite dmap1E /(\o) /pred1; smt(mu_not).
 qed.
+
+require import SDist.
+
+lemma sdist_dbiased a b :
+  sdist (dbiased a) (dbiased b) = `|clamp a - clamp b|.
+proof.
+rewrite sdist_tvd !dbiased_ll /= normr0 /=.
+rewrite (sumE_fin _ [true; false]) // /=; 1: smt().
+rewrite !big_cons big_nil /predT /=; smt(dbiased1E).
+qed.
