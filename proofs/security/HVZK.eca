@@ -5,6 +5,7 @@ require import FinType.
 require import StdBigop.
 import Bigreal BRA.
 
+(* NEED TO INSTANTIATE THESE *)
 type matrix.
 type vector.
 type scalar.
@@ -16,10 +17,11 @@ op [ - ] : vector -> vector.
 
 clone import FinType as FinVector_t with type t <- vector.
 
+(* Some vector properties to prove *)
+
 axiom vector_move_add :
   forall (u v w : vector), u + v = w <=> u = w - v.
 
-(* I'd rather axiomatize this than think about ring axioms... *)
 axiom some_vector_property :
   forall (a : matrix) (c : scalar) (y s1 s2 : vector),
   a *^ y - c * s2 = a *^ (y + c * s1) - c * (a *^ s1 + s2).
@@ -30,6 +32,7 @@ type commit_t = vector.
 type st_t = vector * vector.
 type challenge_t = scalar.
 
+(*  NEED TO INSTANTIATE THESE *)
 op [lossless full uniform] dA : matrix distr.
 op [lossless uniform] ds1 : vector distr.
 op [lossless uniform] ds2 : vector distr.
@@ -37,6 +40,9 @@ op [lossless uniform] dy : vector distr.
 op dC : challenge_t distr.
 op highbits, lowbits : vector -> vector.
 op check_znorm : vector -> bool.
+
+op [lossless uniform] dsimz : vector distr.
+axiom dsimz_supp : support dsimz = check_znorm.
 
 op keygen : (pk_t * sk_t) distr =
   dlet dA (fun a =>
@@ -62,9 +68,6 @@ smt(supp_dlet supp_dunit).
 qed.
 
 op line12_magicnumber : real = (size (to_seq check_znorm))%r / (size (to_seq (support dy)))%r.
-op [lossless uniform] dsimz : vector distr.
-
-axiom dsimz_supp : support dsimz = check_znorm.
 
 lemma dsimz1E :
   forall z, check_znorm z =>
@@ -86,35 +89,25 @@ axiom mask_size :
 axiom mask_nonzero :
   0 < size (to_seq check_znorm).
 
-(* transcript + leakage
- *
- * Supposedly = sig_t option * leak_t.
- * Probably doesn't matter that it does. *)
-type trans_leak_t.
+(* NEED TO INSTANTIATE THESE *)
 
+(* Response and/or leakage.
+ * For now, just `response_t option` would do
+ *)
+type resp_leak_t.
+(* Second half of response *)
+op resp_second_half (z : vector) (c : scalar) (w' t0 : vector) : resp_leak_t.
 (* Failed on first znorm check *)
-op failed_znorm : trans_leak_t.
-
-(* Second half of transcript
- * The actual definition probably doesn't matter here? *)
-op trans_second_half (z : vector) (c : scalar) (w' t0 : vector) : trans_leak_t. (* =
-  if check_znorm z then
-    if check_lowbits w' then
-      let h = makehint (w' + c * t0) in
-      if checkhint h then
-        (Some (c, (z, h)), [true; true; true])
-      else
-        (None, [true; true; false])
-    else
-      (None, [true; false])
-  else
-    (None, [false]). *)
-
-op transz c s1 =
-  dmap dy (fun y =>
-    let z = y + c * s1 in
-    if check_znorm z then Some z else None
-  ).
+op failed_znorm : resp_leak_t.
+(* transcript + leakage.
+ * Intended instantiation: (W * C * Z) option. *)
+type trans_leak_t.
+(* Constructs a transcript.
+ * Intended instantiation: if z <> None then Some (w, c, oget z) else None.
+ *)
+op trans_of : commit_t -> challenge_t -> resp_leak_t -> trans_leak_t.
+(* Commitment recoverable version of above *)
+op recover_trans_of : challenge_t -> resp_leak_t -> trans_leak_t.
 
 op commit (sk : sk_t) : (commit_t * st_t) distr =
   let (a, s1, s2) = sk in
@@ -122,31 +115,40 @@ op commit (sk : sk_t) : (commit_t * st_t) distr =
       let w = a *^ y in
       (highbits w, (y, w))).
 
-op respond (sk : sk_t) (c : challenge_t) (st : st_t) : trans_leak_t =
+op respond (sk : sk_t) (c : challenge_t) (st : st_t) : resp_leak_t =
   let (a, s1, s2) = sk in
   let t0 = lowbits (a *^ s1 + s2) in
   let (y, w) = st in
   let z = y + c * s1 in
   let w' = w - c * s2 in
   if check_znorm z then
-    trans_second_half z c w' t0
+    resp_second_half z c w' t0
   else
     failed_znorm.
 
+(* Should hopefully be a straightforward consequence of the *real*
+ * commitment-recovery property... *)
+axiom commitment_recoverable pk sk w1 st c z :
+  (pk, sk) \in keygen =>
+  (w1, st) \in commit sk =>
+  c \in dC =>
+  z = respond sk c st =>
+  trans_of w1 c z = recover_trans_of c z.
+
 module Transcript = {
-  proc main(sk: sk_t) : trans_leak_t = {
+  proc main(pk: pk_t, sk: sk_t) : trans_leak_t = {
     var w1, c, z, st;
     (w1, st) <$ commit sk;
     c <$ dC;
     z <- respond sk c st;
-    return z;
+    return trans_of w1 c z;
   }
 }.
 
 module Simulator = {
   proc main(pk: pk_t) : trans_leak_t = {
     var a, t, t0, w', c, oz, z;
-    var result;
+    var resp;
     (a, t) <- pk;
     t0 <- lowbits t;
     c <$ dC;
@@ -154,28 +156,24 @@ module Simulator = {
     if(oz <> None) {
       z <- oget oz;
       w' <- a *^ z - c * t;
-      result <- trans_second_half z c w' t0;
+      resp <- resp_second_half z c w' t0;
     } else {
-      result <- failed_znorm;
+      resp <- failed_znorm;
     }
-    return result;
+    return recover_trans_of c resp;
   }
 }.
 
 section Analysis.
 
-(**
-
-(* More crutch; dmap stuff...
- * Is this really not in the standard library?
- *)
-lemma dmap_surj ['a 'b 'c] (f: 'a -> 'b) (g: 'b -> 'c) da b :
-  bijective g => mu1 (dmap da f) b = mu1 (dmap da (g \o f)) (g b).
+lemma HVZK_main :
+  equiv[Transcript.main ~ Simulator.main : (pk{1}, sk{1}) \in keygen /\ ={pk} ==> ={res}].
 proof.
-rewrite ?dmap1E ?/pred1 ?/(\o) => /#.
-qed.
+admitted.
 
-*)
+(** Proofs below broken by interface change.
+
+(* TODO Let's just handle the commitment-recovery shenanigans in the first game? *)
 
 (* Another (equivalent) way to write game0.
  * Mostly just inlining functions and reordering instructions. *)
@@ -558,5 +556,7 @@ transitivity Game4.main (={sk} /\
   apply hop4.
 apply hop5.
 qed.
+
+**)
 
 end section Analysis.
