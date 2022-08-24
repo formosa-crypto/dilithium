@@ -14,7 +14,7 @@ type M, W, C, Z, ST, PK, SK.
 op [lossless] keygen : (PK * SK) distr.
 op [lossless] commit : SK -> (W * ST) distr.
 op [lossless uniform] dC : C distr.
-op respond : ST -> C -> Z option.
+op respond : SK -> ST -> C -> Z option.
 
 op valid_sk sk =
   exists pk, (pk, sk) \in keygen.
@@ -26,14 +26,14 @@ axiom all_sk_can_accept sk :
   exists w st c,
   (w, st) \in commit sk /\
   c \in dC /\
-  respond st c <> None.
+  respond sk st c <> None.
 
 axiom all_sk_can_reject sk :
   valid_sk sk =>
   exists w st c,
   (w, st) \in commit sk /\
   c \in dC /\
-  respond st c = None.
+  respond sk st c = None.
 
 op alpha : real. (* pmax *)
 op qs : int. (* max. number of signing queries *)
@@ -51,7 +51,7 @@ op dWCoZ sk : (W * C * Z option) distr =
   dlet (commit sk) (fun wst =>
   let (w, st) = wst in
   dlet dC (fun c =>
-  let z = respond st c in
+  let z = respond sk st c in
   dunit (w, c, z))).
 
 (* Transcript distribution, conditioned on accept or reject. *)
@@ -94,7 +94,7 @@ lemma dWCoZ_can_acc sk :
   (fun (wcz : W * C * Z option) => let (w, c, z) = wcz in z <> None).
 proof.
 move => H; apply all_sk_can_accept in H; case H => w st c [?[??]].
-apply witness_support; exists (w, c, respond st c) => /> /=.
+apply witness_support; exists (w, c, respond sk st c) => /> /=.
 apply supp_dlet; exists (w, st) => />.
 apply supp_dlet; exists c => />.
 apply supp_dunit => /#.
@@ -214,7 +214,7 @@ module OLeft : Oracle_i = {
     while(oz = None /\ i < kappa) {
       (w, st) <$ commit sk;
       c <$ dC;
-      oz <- respond st c;
+      oz <- respond sk st c;
       RO.set((w, m), c);
       i <- i + 1;
     }
@@ -238,7 +238,7 @@ module ORight : Oracle_i = {
     while(oz = None /\ i < kappa) {
       (w, st) <$ commit sk;
       c <$ dC;
-      oz <- respond st c;
+      oz <- respond sk st c;
       i <- i + 1;
     }
     if(oz <> None)
@@ -415,7 +415,7 @@ qed.
 local lemma dWCoZ_linearize sk :
   (dlet (commit sk)
         (fun (w_st : W * ST) =>
-           dmap dC (fun (c0 : C) => (w_st.`1, c0, respond w_st.`2 c0)))) =
+           dmap dC (fun (c0 : C) => (w_st.`1, c0, respond sk w_st.`2 c0)))) =
   (dmap (dWCoZ sk)
         (fun (w_c_oz : W * C * Z option) => (w_c_oz.`1, w_c_oz.`2, w_c_oz.`3))).
 proof.
@@ -433,7 +433,7 @@ local module LoopBody2 = {
     var w, c, oz, st;
     (w, st) <$ commit sk;
     c <$ dC;
-    oz <- respond st c;
+    oz <- respond sk st c;
     return (w, c, oz);
   }
 }.
