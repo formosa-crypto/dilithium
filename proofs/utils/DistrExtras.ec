@@ -1,4 +1,4 @@
-require import AllCore RealLub RealFLub RealExp Distr.
+require import AllCore RealLub RealFLub RealExp Distr SDist.
 require import AllCore Bool StdRing StdOrder RealLub.
 require import Finite FinType List Binomial DBool.
 require import Ring StdRing StdOrder StdBigop Discrete.
@@ -244,6 +244,7 @@ lemma dcondE (d : 'a distr) (p : 'a -> bool) (p' : 'a -> bool) :
 proof.
 by rewrite dscaleE drestrictE weight_drestrict.
 qed.
+
 lemma dcond1E (d : 'a distr) (p : 'a -> bool) (x : 'a):
   mu1 (dcond d p) x = if p x then mu1 d x / mu d p else 0%r.
 proof.
@@ -268,6 +269,7 @@ lemma dcond_dnull (P: 'a -> bool) :
 proof.
 apply eq_distr; smt(dnull1E dcond_supp supp_dnull ge0_mu).
 qed.
+
 lemma marginal_sampling (d : 'a distr) (f : 'a -> 'b) :
   d = dlet (dmap d f) (fun b => dcond d (fun a => f a = b)).
 proof.
@@ -277,6 +279,7 @@ rewrite dcond1E dmap1E /(\o) /pred1 -/(pred1 a) /=.
 case (a \in d) => [a_d|]; 2: smt(ge0_mu).
 suff : mu d (fun (a0 : 'a) => f a0 = f a) > 0%r; smt(mu_sub).
 qed.
+
 lemma dcond_pmax (d: 'a distr) P :
   p_max (dcond d P) <= p_max d / mu d P.
 proof.
@@ -315,7 +318,33 @@ apply (flub_upper_bound (mu1 d) x); exists 1%r => /=.
 by move => ?; apply le1_mu.
 qed.
 
+lemma dmap_dbiased (d: 'a distr) (p: 'a -> bool) :
+  is_lossless d =>
+  dmap d p = dbiased (mu d p).
+proof.
+move => d_ll; apply eq_distr => x.
+rewrite dbiased1E clamp_id; first by smt(ge0_mu le1_mu).
+rewrite dmap1E /(\o) /pred1; smt(mu_not).
+qed.
 
+lemma marginal_sampling_pred (d : 'a distr) (p : 'a -> bool) :
+  is_lossless d =>
+  d = dlet (dbiased (mu d p)) (fun b => if b then (dcond d p) else (dcond d (predC p))).
+proof.
+move => ?.
+rewrite -dmap_dbiased => //.
+rewrite {1} (marginal_sampling d p).
+congr; apply fun_ext => b.
+by case b => _; congr => /#.
+qed.
+
+lemma dbiased_true x :
+  1%r <= x => dbiased x = dunit true.
+proof.
+move => ?.
+rewrite eq_distr => b.
+rewrite dbiased1E dunit1E => /#.
+qed.
 
 (** CD **)
 
@@ -358,21 +387,23 @@ rewrite fromintD RField.mulrDl /=; apply ler_add; first by apply bound_ds.
 by apply IHds => /#.
 qed.
 
-lemma dmap_dbiased (d: 'a distr) (p: 'a -> bool) :
-  is_lossless d =>
-  dmap d p = dbiased (mu d p).
-proof.
-move => d_ll; apply eq_distr => x.
-rewrite dbiased1E clamp_id; first by smt(ge0_mu le1_mu).
-rewrite dmap1E /(\o) /pred1; smt(mu_not).
-qed.
-
-require import SDist.
-
 lemma sdist_dbiased a b :
   sdist (dbiased a) (dbiased b) = `|clamp a - clamp b|.
 proof.
 rewrite sdist_tvd !dbiased_ll /= normr0 /=.
 rewrite (sumE_fin _ [true; false]) // /=; 1: smt().
 rewrite !big_cons big_nil /predT /=; smt(dbiased1E).
+qed.
+
+lemma sdist_dcond (d : 'a distr) p :
+  is_lossless d =>
+  sdist d (dcond d p) <= mu d (predC p).
+proof.
+move => ?.
+have ->: dcond d p = dlet (dbiased 1%r) (fun (b : bool) => if b then dcond d p else dcond d (predC p)).
+- by rewrite dbiased_true // dlet_unit //.
+rewrite {1} (marginal_sampling_pred d p) //.
+apply (ler_trans (sdist (dbiased (mu d p)) (dbiased 1%r))).
+- exact sdist_dlet.
+by rewrite sdist_dbiased; smt(mu_not le1_mu).
 qed.
