@@ -5,7 +5,6 @@ require import FinType.
 require import StdBigop.
 import Bigreal BRA.
 
-(* NEED TO INSTANTIATE THESE *)
 type matrix.
 type vector.
 type scalar.
@@ -32,7 +31,6 @@ type commit_t = vector.
 type st_t = vector * vector.
 type challenge_t = scalar.
 
-(*  NEED TO INSTANTIATE THESE *)
 op [lossless full uniform] dA : matrix distr.
 op [lossless uniform] ds1 : vector distr.
 op [lossless uniform] ds2 : vector distr.
@@ -88,8 +86,6 @@ axiom mask_size :
 
 axiom mask_nonzero :
   0 < size (to_seq check_znorm).
-
-(* NEED TO INSTANTIATE THESE *)
 
 (* Response and/or leakage.
  * For now, just `response_t option` would do
