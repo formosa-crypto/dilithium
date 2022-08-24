@@ -1,0 +1,189 @@
+require import AllCore Distr.
+require import DistrExtras.
+
+(* -- necessary abstract stuff -- *)
+
+type M, W, C, Z, ST, PK, SK.
+
+op [lossless] keygen : (PK * SK) distr.
+op [lossless] commit : SK -> (W * ST) distr.
+op [lossless uniform] dC : C distr.
+op respond : SK -> ST -> C -> Z option.
+
+(* -- Require most (valid?) keys to have high min-entropy -- *)
+
+op check_entropy : SK -> bool.
+op gamma, alpha : real.
+
+op valid_sk sk =
+  exists pk, (pk, sk) \in keygen.
+
+axiom check_entropy_correct :
+  forall sk, valid_sk sk => check_entropy sk => p_max (commit sk) >= alpha.
+
+axiom most_keys_high_entropy :
+  mu keygen (fun keys => let (pk, sk) = keys in ! check_entropy sk) <= gamma.
+
+(* -- Axiom lifted from other reprogramming games -- *)
+
+axiom all_sk_can_accept sk :
+  valid_sk sk =>
+  exists w st c,
+  (w, st) \in commit sk /\
+  c \in dC /\
+  respond sk st c <> None.
+
+axiom all_sk_can_reject sk :
+  valid_sk sk =>
+  exists w st c,
+  (w, st) \in commit sk /\
+  c \in dC /\
+  respond sk st c = None.
+
+(* -- various bounds -- *)
+
+(* max. number of signing queries *)
+op qs : {int | 0 < qs} as qs_gt0.
+(* max. number of hash queries *)
+op qh : {int | 0 < qh} as qh_gt0.
+(* max. number of iterations *)
+op kappa : {int | 0 < kappa} as kappa_gt0.
+
+(* -- Security Game -- *)
+
+clone import PROM.FullRO with
+  type in_t <= W * M,
+  type out_t <= C,
+  op dout <= fun _ => dC
+proof *.
+
+module type Oracle = {
+  proc h(w: W, m: M) : C
+  proc sign(m: M) : W * C * Z
+}.
+
+module type Oracle_i = {
+  include Oracle
+  proc init() : unit
+}.
+
+module Count (O: Oracle_i) : Oracle = {
+  var countS : int
+  var countH : int
+
+  proc init = O.init
+
+  proc h(w: W, m : M) : C = {
+    var y;
+    countH <- countH + 1;
+    y <@ O.h((w, m));
+    return y;
+  }
+
+  proc sign(x) = {
+    var y;
+    countS <- countS + 1;
+    y <@ O.sign(x);
+    return y;
+  }
+}.
+
+module OLeft : Oracle_i = {
+  var sk : SK
+
+  proc init() = {
+    var pk;
+    (pk, sk) <$ keygen;
+  }
+
+  proc h = RO.get
+
+  proc sign(m: M) = {
+    var w, st, c, oz, i;
+    (* Silences unused variables warning *)
+    w <- witness;
+    c <- witness;
+
+    i <- 0;
+    oz <- None;
+    while(oz = None /\ i < kappa) {
+      (w, st) <$ commit sk;
+      c <$ dC;
+      oz <- respond sk st c;
+      RO.set((w, m), c);
+      i <- i + 1;
+    }
+    return if oz <> None then (w, c, oget oz) else witness;
+  }
+}.
+
+(* Moving RO.set outside while-loop *)
+module ORight : Oracle_i = {
+  include var OLeft[init, h]
+
+  proc sign(m: M) = {
+    var w, st, c, oz, i;
+
+    (* Silences unused variables warning *)
+    w <- witness;
+    c <- witness;
+
+    i <- 0;
+    oz <- None;
+    while(oz = None /\ i < kappa) {
+      (w, st) <$ commit sk;
+      c <$ dC;
+      oz <- respond sk st c;
+      i <- i + 1;
+    }
+    if(oz <> None)
+      RO.set((w, m), c);
+    return if oz <> None then (w, c, oget oz) else witness;
+  }
+}.
+
+module type Adversary(O: Oracle) = {
+  proc distinguish(): bool
+}.
+
+module Game (Adv: Adversary) (O: Oracle_i) = {
+  proc main() = {
+    var b;
+    RO.init();
+    O.init();
+    b <@ Adv(O).distinguish();
+    return b;
+  }
+}.
+
+section Analysis.
+
+declare module Adv <: Adversary {-Count, -RO, -OLeft}.
+
+declare axiom A_bound : forall (O <: Oracle_i{-Adv}), 
+  hoare [ Adv(Count(O)).distinguish : Count.countS = 0 /\ Count.countH = 0 ==> 
+                                      Count.countS <= qs /\ Count.countH <= qh ].
+
+declare axiom A_ll : forall (O <: Oracle),
+  islossless O.h =>
+  islossless O.sign =>
+  islossless Adv(O).distinguish.
+
+(* TODO Reduction to SDist game...? *)
+
+(* Left *)
+
+(* Right *)
+
+(* TODO local clone ReprogOnce to finish the proof...? *)
+
+lemma adv_bound &m :
+  `| Pr[Game(Adv, OLeft).main() @ &m : res] -
+     Pr[Game(Adv, ORight).main() @ &m : res] |
+  (* Maybe factor of 2?
+   * Both OLeft and ORight need to be reduced to SDist game. *)
+  <= 2%r * gamma + qh%r * (kappa * qs)%r * alpha.
+proof.
+admitted.
+
+end section Analysis.
