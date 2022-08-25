@@ -130,158 +130,115 @@ module P = {
    an EF_CMA adversary. The first module is the sign oracle the reduction 
    implements, and the second module is the reduction itself. *)
 
-(*
+module ORedKOA (Sim : HVZK_Sim) : SOracle_CMA = {
+  var pk : PK
+  var qs : M list
+  var overlay : (W*M,C) fmap
 
-module (CMA_KOA_Red_Oracle (Sim : HVZK_Sim, O: PRO.RO): SOracle_CMA)  = {    
-    include var BaseOracle
+  proc init(pki: PK) : unit = {
+    pk <- pki;
+    qs <- [];
+    overlay <- empty;
+  }
 
-    var pk: PK
+  proc sign(m: M) : Sig = {
+    var sig: Sig;
+    var w,c,z;
+    var ot <- None;
+    var k;
 
-    proc init(pki: PK) : unit = {
-      pk <- pki;
-      qs <- [];
-    }
-
-    proc sign(m: M) : Sig = {
-      var sig: Sig;
-      var w,c,z;
-      var t <- None;
-
-      qs <- rcons qs m;
-      while (t = None) {  
-        t <@ Sim.get_trans(pk);
-      } 
-      (w, c, z) <- oget t;
-      O.set((w,m),c);
-      return (w,z);      
-    }
-}.
-
-
- (* The actual reduction. (This builds step-wise, 
-    see the reduction below for the steps)
-  *)
-
-
-module (KOA_Forger (A : Adv_EFCMA_RO, Sim : HVZK_Sim): Adv_EFKOA_RO) (RO: QRO) = {
-    
-    module R = Wrapped_QRO(RO)
-    module O = CMA_KOA_Red_Oracle(Sim, R)
-    module A = A(R,O)
-
-    proc forge(pk:PK) : (M*Sig) = {
-      var m': M;
-      var sig': Sig;
-
-      R.init();
-      O.init(pk);
-      (m', sig') <@ A.forge(pk);
-      return (m',sig'); 
-    }
-  }.
-
-*)
-
-(* -------------- Reduction to HVZK --------------------- *)
-(* First part: The oracle. Uses a transcript oracle  *)
-
-(*
-module (OracleRed_HVZK ( OSim : HVZK_Oracle ) : SOracle_CMA)  = {
-    include var BaseOracle
-
-    proc init() : unit = {
-      qs <- [];
-    }
-
-    proc sign(m: M) : Sig = {
-      var sig: Sig;
-      var w,c,z;
-
-      qs <- rcons qs m;
-      (w, c, z) <@ OSim.get_trans();
-      Rep_QRO.set((w,m),c);
-      return (w,z);      
-    }
-}.
-
-(* Reduction: Simulates Game3 or Game4 to depending on the given oracle *)
-module (Red_HVZK ( A : Adv_EFCMA_RO) : HVZK_Distinguisher) (OSim: HVZK_Oracle) = {
-  module R = Rep_QRO
-  module O = OracleRed_HVZK(OSim)
-  module A = A(R,O)
-
-  proc distinguish (pk: PK): bool = {
-      var m': M;
-      var sig': Sig;
-      var is_valid: bool;
-      var is_fresh: bool;
-      var w', c', z', nrqs;
-
-      R.init();
-      O.init();
-      (m', sig') <@ A.forge(pk);
-      (w', z') <- sig'; 
-      c' <@ R.h {(w',m')};
-      is_valid <- verify pk w' c' z';
-      is_fresh <@ O.fresh(m');
-      nrqs <@ O.nr_queries();
-
-      return is_valid /\ is_fresh /\ nrqs <= qs_bound;
+    qs <- rcons qs m;
+    k <- 0; 
+    while (ot = None /\ k < reject_bound) {  
+      ot <@ Sim.get_trans(pk);
+      k <- k + 1;
+    } 
+    (w, c, z) <- oget ot;
+    if (ot <> None) 
+      overlay.[(w,m)] <- c;
+    return if (ot <> None) then (w,z) else witness;
   }
 }.
 
-*)
+module (RedKOA (A : Adv_EFCMA_RO) (Sim : HVZK_Sim) : Adv_EFKOA_RO) (H : Hash) = { 
+  import var ORedKOA
 
-(* Old approach to bound number of queries. 
-We should actually solve this using the cost logic 
+  module H' = { 
+    proc get(x : W*M) : C = { 
+      var oc : C option;
+      var c : C;
 
-module Wrap_SO (O: SOracle_CMA) : SOracle_CMA = {
-  var qc : int
-  
-  proc sign(m : M) : Sig = {
-    var sig;
-    
-    qc <- qc + 1;
-    sig <@ O.sign(m);
-    
-    return sig;
+      oc <- overlay.[x];
+      if (oc = None) { 
+        c <@ H.get(x);
+        oc <- Some c;
+      }
+      return oget oc;
     }
+  }
+
+  proc forge (pk : PK) : M * Sig = { 
+    var m,sig;
+    
+    ORedKOA(Sim).init(pk);
+    (m,sig) <@ A(H',ORedKOA(Sim)).forge(pk);
+    return (m,sig);
+  } 
 }.
-*)
+
+module CountS (O : SOracle_CMA) = { 
+  var qs : int
+  proc sign (m : M) = { 
+    var s;
+    qs <- qs + 1;
+    s <@ O.sign(m);
+    return s;
+  } 
+}.
+
+module CountH (H : Hash) = { 
+  var qh : int
+  proc get (w,m) = { 
+    var c;
+    qh <- qh + 1;
+    c <@ H.get(w,m);
+    return c;
+  } 
+}.
+
 
 section PROOF. 
 
-declare module A <: Adv_EFCMA_RO{-RO,-P,-V,-HVZK_HE_Oracle,-HVZK_Sim_Oracle, -O_CMA_Default}.
+(* We assume a CMA adversary A making at most [ro_bound] [get] queries
+to the random oracle and at most [qs_bound] queries to the signing
+oracle *)
+
+declare module A <: Adv_EFCMA_RO{-RO,-P,-V,-O_CMA_Default,-ORedKOA,-CountS,-CountH}.
+
+declare axiom A_query_bound &m (SO <: SOracle_CMA{-CountH, -CountS}) (H <: Hash{-CountH,-CountS}) : 
+ hoare[ A(CountH(H),CountS(SO)).forge : 
+        CountH.qh = 0 /\ CountS.qs = 0 ==> 
+        CountH.qh <= ro_bound /\ CountS.qs <= qs_bound].
 
 declare axiom A_ll : forall (R <: Hash{-A} ) (O <: SOracle_CMA{-A} ),
   islossless O.sign => islossless R.get => islossless A(R, O).forge.
 
-(*
-declare axiom A_query_bound &m :
- (forall (SO <: SOracle_CMA) (RO <: QRO_i),
- hoare[ A(Wrapped_QRO(RO), Wrap_SO(SO)).forge : 
-     Wrapped_QRO.ch = 0 /\ Wrap_SO.qc = 0
-     ==> Wrapped_QRO.ch <= ro_bound /\ Wrap_SO.qc <= qs_bound]).
-*)
+(* We also assume a perfect HVZK simulator for the ID scheme *)
 
-module Game0 (A:Adv_EFCMA_RO,O:Oracle_CMA) = EF_CMA_RO(IDS_Sig(P,V),A,RO,O).
-
-declare module Sim <: HVZK_Sim {-RO,-P,-V,-HVZK_HE_Oracle,-HVZK_Sim_Oracle,-A}.
+declare module Sim <: HVZK_Sim {-RO,-P,-V,-A,-ORedKOA,-CountS,-CountH}.
 
 declare axiom Sim_perfect_HVZK k : 
   equiv [ Honest_Execution(P,V).get_trans ~ Sim.get_trans : 
           k \in keygen /\ arg{1} = k /\ arg{2} = k.`1 ==> ={res}].
 
+
+module Game0 (A:Adv_EFCMA_RO,O:Oracle_CMA) = EF_CMA_RO(IDS_Sig(P,V),A,RO,O).
+
+
 (* ----------------------------------------------------------------------*)
 (*                            First game hop:                            *)
 (* Simply replace the generic game by one that uses our scheme           *)
-(*             (Oracle is defined above)                                 *)
 (* ----------------------------------------------------------------------*)
-
-(* CMA oracle for EF-CMA game that is tailored to the given IDS_Sig 
-   (First game hop switches from default orcale to this one) *)
-
-print DS.Stateless.BaseOracle.
 
 local module (Oracle1_CMA : Oracle_CMA) (S : Scheme)  = {
     include var O_CMA_Default(S) [-sign]
@@ -305,7 +262,7 @@ local module (Oracle1_CMA : Oracle_CMA) (S : Scheme)  = {
     }
   }.
  
-(*   *)   
+(* This is basically just inlining and renaming  *)   
 local lemma hop1 &m : 
   Pr [ Game0(A, O_CMA_Default).main() @ &m : res] = 
   Pr [ Game0(A, Oracle1_CMA).main() @ &m : res].
@@ -319,62 +276,75 @@ while (={oz,w,m,glob O_CMA_Default, glob RO}
        /\ m0{1} = m{2}); by inline*; auto => />.
 qed.
 
+(* ----------------------------------------------------------------------*)
+(*                            Second game hop:                           *)
+(* Introduce an upper bound on the number of signing attempts            *)
+(* ----------------------------------------------------------------------*)
+
 local module (Oracle1b_CMA : Oracle_CMA) (S : Scheme)  = {
   include var O_CMA_Default(S) [-init,sign]
   var bad : bool
 
-   proc init(ski: SK) : unit = {
-     sk <- ski;
-     qs <- [];
-     bad <- false;
+  proc init(ski: SK) : unit = {
+    sk <- ski;
+    qs <- [];
+    bad <- false;
   }
 
-   proc sign(m: M) : Sig = {
-     var pstate;
-     var sig: Sig;
-     var c,k;
-     var w <- witness;
-     var oz <- None;
-     qs <- rcons qs m;
+  proc sign(m: M) : Sig = {
+    var pstate;
+    var sig: Sig;
+    var c,k;
+    var w <- witness;
+    var oz <- None;
+    qs <- rcons qs m;
 
-     k <- 0;
-     while (oz = None /\ k < reject_bound) { 
-       (w, pstate) <$ commit sk;
-       c <@ RO.get((w,m));
-       oz <- response sk c pstate;
-       k <- k+1;
-     } 
-     bad <- bad \/ oz = None; 
-     return if oz <> None then (w,oget oz) else witness;
-   }
+    k <- 0;
+    while (oz = None /\ k < reject_bound) { 
+      (w, pstate) <$ commit sk;
+      c <@ RO.get((w,m));
+      oz <- response sk c pstate;
+      k <- k+1;
+    } 
+    bad <- bad \/ oz = None; 
+    return if oz <> None then (w,oget oz) else witness;
+  }
 }.
+
+(* TOTHINK: Proving termination actually requires us to prove 
+
+forall c sk, sk \in dsnd keygen => 
+  exists w st, (w,st) \in commit sk /\ respond sk c st <> None 
+
+Otherwise, there is a miniscule chance that the (finately many) spaces
+in the random oracle all get filled with c's that do not admit any
+positive response, making it impossible to exit the loop. 
+
+Maybe we should assume the loop to be bounded a priory? *)
 
 local lemma hop1a &m : 
      Pr [Game0(A,Oracle1_CMA).main()  @ &m : res] 
-  <=   Pr [Game0(A,Oracle1b_CMA).main() @ &m : res /\ ! Oracle1b_CMA.bad ] 
-     + Pr [Game0(A,Oracle1b_CMA).main() @ &m :          Oracle1b_CMA.bad ].
+  <=   Pr [Game0(A,Oracle1b_CMA).main() @ &m : res ] 
+     + Pr [Game0(A,Oracle1b_CMA).main() @ &m : Oracle1b_CMA.bad ].
 proof.
-byequiv => //.
-proc; inline*; wp. 
-(*
-conseq (: _ ==> !Oracle1a_CMA.bad{2} => ={glob Rep_QRO, BaseOracle.qs, m, sig, pk}). 
-- by auto => /> /#.
-call (: Oracle1a_CMA.bad, ={glob Rep_QRO, BaseOracle.qs, O_CMA_Default.sk}).
-- exact A_ll.
-- proc; wp. conseq />.  
-  splitwhile{1} 5 : (k < reject_bound).
-  seq 5 5 : (={w,oz,Rep_QRO.ch, BaseOracle.qs}); 1: by sim. 
-  case (oz{2} = None); 2: by rcondf{1} 1; by auto.
-  conseq (:_ ==> true) (: _ ==> true : =1%r) _; 1: smt(). 
-  admit.
-- move => *. islossless. admit. 
-- move => *; proc. admit.
-- proc. auto.
-- move => *; islossless. 
-- move => *; proc; auto. 
-by auto => /> /#.
-*)
-admit.
+byequiv => //. proc. inline{1} 2; inline{2} 2. 
+seq 4 4 : (!Oracle1b_CMA.bad{2} => ={glob O_CMA_Default,RO.m,pk,sk,m,sig}); last first.
+- case (Oracle1b_CMA.bad{2}). 
+  + conseq (:_ ==> true); [smt()| by inline*; auto]. 
+  + conseq (: _ ==> ={r}); [smt() | sim => /#].
+call (: Oracle1b_CMA.bad, ={RO.m, glob O_CMA_Default}).
+- exact A_ll. 
+- proc. wp. conseq />. smt().
+  splitwhile{1} 5 : (k < reject_bound). 
+  seq 5 5 : (={w,oz,glob O_CMA_Default,RO.m}); first by sim.
+  admit. (* termination *)
+- move => *. islossless.
+  admit. (* termination *)
+- admit. (* preservation of bad *)
+- sim.
+- move => *; islossless.
+- move => *. conseq />. islossless. 
+by inline*; auto => /> /#.
 qed.
 
 (* ----------------------------------------------------------------------*)
@@ -386,8 +356,7 @@ qed.
 (* Second SIGN oracle: First samples challenge, then programs the QRO. This
    handles the reprogramming bound  *)
 local module (Oracle2_CMA : Oracle_CMA) (S : Scheme)  = {
-    import var O_CMA_Default(S)
-    include var Oracle1b_CMA(S) [-sign]
+    include var O_CMA_Default(S) [-sign]
     var bad2 : bool
 
     proc sign(m: M) : Sig = {
@@ -408,15 +377,50 @@ local module (Oracle2_CMA : Oracle_CMA) (S : Scheme)  = {
         k <- k+1;
       } 
       (* bad <- bad || oz = None;  *)
-      return (w,oget oz);      
+      return if oz <> None then (w,oget oz) else witness;
    }
 }.
 
 local lemma hop2 &m : 
   Pr [Game0(A,Oracle1b_CMA).main() @ &m : res ] 
-  <=   Pr [Game0(A,Oracle2_CMA).main() @ &m : res /\ !Oracle2_CMA.bad2]
+  <=   Pr [Game0(A,Oracle2_CMA).main() @ &m : res ]
      + Pr [Game0(A,Oracle2_CMA).main() @ &m : Oracle2_CMA.bad2].
-
+proof.
+byequiv => //; proc. inline{1} 2; inline{2} 2. 
+seq 4 4 : (!Oracle2_CMA.bad2{2} => ={glob O_CMA_Default,RO.m,pk,sk,m,sig}); last first.
+- case (Oracle2_CMA.bad2{2}). 
+  + conseq (:_ ==> true); [smt() | by inline*; auto ].
+  + conseq (: _ ==> ={r}); [smt() | sim => /#].
+call (: Oracle2_CMA.bad2, ={RO.m, glob O_CMA_Default}); last 6 first.
+- admit.
+- admit.
+- admit.
+- admit. 
+- admit.
+- admit.
+- exact A_ll. 
+proc. wp. conseq />.
+seq 4 4 : (#[1:3]pre /\ ={w,oz,glob O_CMA_Default,k}); 1: by auto.
+transitivity*{1} { 
+  while (k < reject_bound) {     
+   if (oz = None) { 
+     (w, pstate) <$ commit O_CMA_Default.sk;
+     c <@ RO.get((w, m));
+     oz <- response O_CMA_Default.sk c pstate;
+   }
+   k <- k + 1;
+ }
+}; 1,2: smt(). 
+- splitwhile{2} 1 : (oz = None).
+  seq 1 1 : (#post /\ !(k{2} < reject_bound /\ oz{2} = None)). 
+  while (#pre). 
+  rcondt{2} 1; first by auto => />. 
+  conseq (: _ ==> ={O_CMA_Default.sk, O_CMA_Default.qs, RO.m, c, k, m, oz, pstate, w}). 
+  smt(). sim. auto => />.
+  while{2} (#pre) (reject_bound - k{2}). 
+  + move => &h z. admit. 
+  auto => />. smt().
+(* RHS transtivity and then the "up to bad while" *)
 
 admitted.
 
@@ -615,73 +619,27 @@ exlim (OGame1.sk{1}) => sk.
 by call (Sim_perfect_HVZK (pk,sk)); auto => />.
 qed.
 
-local module ORedKOA (Sim : HVZK_Sim) : SOracle_CMA = {
-  var pk : PK
-  var qs : M list
-  var overlay : (W*M,C) fmap
 
-  proc init(pki: PK) : unit = {
-    pk <- pki;
-    qs <- [];
-    overlay <- empty;
-  }
+(* Reduction to the EF_KOA game. Note that [RedKOA], beeing an
+adversary, only gets access to the [get] procedure of the RO and
+therefore cannot reprogam the oracle in the way the simulation game
+does. Thus the random oracle passed to the CMA adversary A is hidden
+behind an overlay containing the reprogramming necessary during the
+simulated signing queries. However, since a successful forgery by A
+must be on a fresh message, any such forgery is also a valid forgery
+with respect to the underlying (unpatched) oracle.
 
-  proc sign(m: M) : Sig = {
-    var sig: Sig;
-    var w,c,z;
-    var ot <- None;
-    var k;
+For strong unforgeability, the argument becomes more involved, as the
+adversary can hit the overlay if he manages to break comutational
+unique response of the ID scheme. *)
 
-    qs <- rcons qs m;
-    k <- 0; 
-    while (ot = None /\ k < reject_bound) {  
-      ot <@ Sim.get_trans(pk);
-      k <- k + 1;
-    } 
-    (w, c, z) <- oget ot;
-    if (ot <> None) 
-      overlay.[(w,m)] <- c;
-    return if (ot <> None) then (w,z) else witness;
-  }
-}.
-
-local module (RedKOA (A : Adv_EFCMA_RO) (Sim : HVZK_Sim) : Adv_EFKOA_RO) (H : Hash) = { 
-  import var ORedKOA
-
-  module H' = { 
-    proc get(x : W*M) : C = { 
-      var oc : C option;
-      var c : C;
-
-      oc <- overlay.[x];
-      if (oc = None) { 
-        c <@ H.get(x);
-        oc <- Some c;
-      }
-      return oget oc;
-    }
-  }
-
-  proc forge (pk : PK) : M * Sig = { 
-    var m,sig;
-    
-    ORedKOA(Sim).init(pk);
-    (m,sig) <@ A(H',ORedKOA(Sim)).forge(pk);
-    return (m,sig);
-  } 
-}.
-
-op ounion (o1 o2 : 'a option) = 
-  with o1 = None => o2
-  with o1 = Some x => o1.
-
-lemma KOA_bound &m : 
+local lemma KOA_bound &m : 
      Pr [ Game2(A).main() @ &m : res ] 
   <= Pr [ EF_KOA_RO(IDS_Sig(P,V),RedKOA(A,Sim),RO).main() @ &m : res ].
 proof.
 byequiv (_: ={glob RO,glob A,glob Sim} ==> res{1} => res{2}) => //.
 proc; inline{2} 2. 
-seq 4 3 : (={m,sig} 
+seq 4 3 : (={m,sig,pk} 
           /\ (RO.m{1} = (union_map ORedKOA.overlay RO.m){2})
           /\ ={qs,pk}(OGame2,ORedKOA)
           /\ forall w m, (w,m) \in ORedKOA.overlay{2} => m \in ORedKOA.qs{2}
@@ -692,8 +650,7 @@ seq 4 3 : (={m,sig}
          /\ forall w m, (w,m) \in ORedKOA.overlay{2} => m \in ORedKOA.qs{2}).
   + proc; inline RO.set; wp.
     while (={k,ot,glob Sim} /\ ={pk}(OGame2,ORedKOA)); 1: by sim. 
-    auto => /> &1 k.
-    by auto => /> &1 k [//|[w c z]] /=; rewrite set_union_map_l.
+    auto => />; smt(mem_rcons mem_set set_union_map_l).
   + proc. wp. sp. if{2}.
     * inline*. auto => /> &1 hO c Hc. 
       smt(set_union_map_r set_union_map_l mem_union_map 
@@ -701,7 +658,7 @@ seq 4 3 : (={m,sig}
     * auto => />.
       smt(set_union_map_r set_union_map_l mem_union_map 
           get_setE get_set_sameE mergeE).
-  inline* ; auto => />.  smt(merge_empty).
+  by inline* ; auto => />; smt(merge_empty mem_empty).
 - inline{1} 3; inline{1} 2 ; wp. 
   conseq (:_ ==> is_valid{1} /\ ! (m{1} \in OGame2.qs{1}) => is_valid{2}); 1: smt().
   inline IDS_Sig(P,V,RO).verify.
@@ -709,13 +666,14 @@ seq 4 3 : (={m,sig}
   + by conseq (:_ ==> true);[smt()|inline*; auto].
   inline*; swap 6 -5.
   seq 1 1 : (#pre /\ r{1} = r0{2}); first by auto.
-  sp 5 5. if. auto => />. smt(mem_union_map).
-auto => />. 
-      smt(set_union_map_r set_union_map_l mem_union_map 
+  sp 5 5. 
+  if; first by auto => />; smt(mem_union_map). 
+  conseq (: _ ==> ={is_valid}); 1: smt().
+  - auto => />; smt(set_union_map_r set_union_map_l mem_union_map 
           get_setE get_set_sameE mergeE).
-(* local lemma hop5 &m :  *)
-(*   Pr [Game4(Rep_QRO, A, Sim).main() @ &m : res] <= *)
-(*   Pr [EF_KOA_RO(IDS_Sig(P, V), KOA_Forger(A, Sim), QRO).main() @ &m : res]. *)
+  - auto => />; smt(set_union_map_r set_union_map_l mem_union_map 
+          get_setE get_set_sameE mergeE).
+qed.
 
 (* lemma main_result &m :  *)
 (*   Pr [EF_CMA_RO(IDS_Sig(P, V), A, QRO, O_CMA_Default).main() @ &m : res] *)
