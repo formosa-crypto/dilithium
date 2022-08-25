@@ -1,6 +1,8 @@
 require import AllCore Distr.
 require import DistrExtras.
-
+require import SDist.
+require import StdOrder.
+import RealOrder.
 (* -- necessary abstract stuff -- *)
 
 type M, W, C, Z, ST, PK, SK.
@@ -169,13 +171,241 @@ declare axiom A_ll : forall (O <: Oracle),
   islossless O.sign =>
   islossless Adv(O).distinguish.
 
-(* TODO Reduction to SDist game...? *)
+(* -- Reduction to SDist game -- *)
 
-(* Left *)
+op keygen_good = dcond keygen (fun keys => let (pk, sk) = keys in check_entropy sk).
 
-(* Right *)
+lemma keygen_good_sdist :
+  sdist keygen keygen_good <= gamma.
+print sdist_dcond.
+proof.
+apply (ler_trans (mu keygen (predC (fun keys => let (pk, sk) = keys in check_entropy sk)))).
+- apply sdist_dcond.
+  exact keygen_ll.
+- rewrite /predC /=.
+  have ->: (fun (x : PK * SK) => ! (let (_, sk) = x in check_entropy sk)) =
+           (fun (x : PK * SK) => (let (_, sk) = x in ! check_entropy sk)).
+  + by apply fun_ext => x /#.
+  exact most_keys_high_entropy.
+qed.
+
+local clone Dist with
+  type a <- PK * SK.
+
+(* -- Left game reduction -- *)
+
+local module OReduceLeft : Oracle = {
+  var sk : SK
+
+  proc h = RO.get
+
+  proc sign(m: M) = {
+    var w, st, c, oz, i;
+    (* Silences unused variables warning *)
+    w <- witness;
+    c <- witness;
+
+    i <- 0;
+    oz <- None;
+    while(oz = None /\ i < kappa) {
+      (w, st) <$ commit sk;
+      c <$ dC;
+      oz <- respond sk st c;
+      RO.set((w, m), c);
+      i <- i + 1;
+    }
+    return if oz <> None then (w, c, oget oz) else witness;
+  }
+}.
+
+local module ReductionLeft : Dist.GenDist.Distinguisher = {
+  proc guess(keys : PK * SK) = {
+      var b;
+      OReduceLeft.sk <- keys.`2;
+      RO.init();
+      b <@ Adv(OReduceLeft).distinguish();
+      return b;
+  }
+}.
+
+local equiv left_reduce_bad :
+  Game(Adv, OLeft).main ~ Dist.Sample(ReductionLeft).main :
+  ={glob Adv} /\ arg{2} = keygen ==> ={res}.
+proof.
+proc. inline*. wp.
+seq 2 4: (={glob Adv, RO.m} /\ OLeft.sk{1} = OReduceLeft.sk{2}).
+- by auto => />.
+call(: ={RO.m} /\ OLeft.sk{1} = OReduceLeft.sk{2}).
+- by proc; auto.
+- proc; inline *.
+  by sim; skip => />.
+by auto.
+qed.
+
+local module OLeft_good = {
+  var sk : SK
+
+  proc init() = {
+    var pk;
+    (pk, sk) <$ keygen_good;
+  }
+
+  proc h = RO.get
+
+  proc sign(m: M) = {
+    var w, st, c, oz, i;
+    (* Silences unused variables warning *)
+    w <- witness;
+    c <- witness;
+
+    i <- 0;
+    oz <- None;
+    while(oz = None /\ i < kappa) {
+      (w, st) <$ commit sk;
+      c <$ dC;
+      oz <- respond sk st c;
+      RO.set((w, m), c);
+      i <- i + 1;
+    }
+    return if oz <> None then (w, c, oget oz) else witness;
+  }
+}.
+
+local equiv left_reduce_good :
+  Game(Adv, OLeft_good).main ~ Dist.Sample(ReductionLeft).main :
+  ={glob Adv} /\ arg{2} = keygen_good ==> ={res}.
+proof.
+proc. inline*. wp.
+seq 2 4: (={glob Adv, RO.m} /\ OLeft_good.sk{1} = OReduceLeft.sk{2}).
+- by auto => />.
+call(: ={RO.m} /\ OLeft_good.sk{1} = OReduceLeft.sk{2}).
+- by proc; auto.
+- proc; inline *.
+  by sim; skip => />.
+by auto.
+qed.
+
+local lemma left_reduce_bound &m :
+  `|Pr[Dist.Sample(ReductionLeft).main(keygen) @ &m : res] -
+    Pr[Dist.Sample(ReductionLeft).main(keygen_good) @ &m : res]| <=
+    gamma.
+proof.
+apply (ler_trans (sdist keygen keygen_good)).
+- exact (Dist.adv_sdist ReductionLeft).
+exact keygen_good_sdist.
+qed.
+
+(* Exactly same as above for right game *)
+
+local module OReduceRight : Oracle = {
+  var sk : SK
+
+  proc h = RO.get
+
+  proc sign(m: M) = {
+    var w, st, c, oz, i;
+
+    (* Silences unused variables warning *)
+    w <- witness;
+    c <- witness;
+
+    i <- 0;
+    oz <- None;
+    while(oz = None /\ i < kappa) {
+      (w, st) <$ commit sk;
+      c <$ dC;
+      oz <- respond sk st c;
+      i <- i + 1;
+    }
+    if(oz <> None)
+      RO.set((w, m), c);
+    return if oz <> None then (w, c, oget oz) else witness;
+  }
+}.
+
+local module ReductionRight : Dist.GenDist.Distinguisher = {
+  proc guess(keys : PK * SK) = {
+      var b;
+      OReduceRight.sk <- keys.`2;
+      RO.init();
+      b <@ Adv(OReduceRight).distinguish();
+      return b;
+  }
+}.
+
+local equiv right_reduce_bad :
+  Game(Adv, ORight).main ~ Dist.Sample(ReductionRight).main :
+  ={glob Adv} /\ arg{2} = keygen ==> ={res}.
+proof.
+proc. inline*. wp.
+seq 2 4: (={glob Adv, RO.m} /\ OLeft.sk{1} = OReduceRight.sk{2}).
+- by auto => />.
+call(: ={RO.m} /\ OLeft.sk{1} = OReduceRight.sk{2}).
+- by proc; auto.
+- proc; inline *.
+  by sim; skip => />.
+by auto.
+qed.
+
+local module ORight_good = {
+  var sk : SK
+
+  proc init() = {
+    var pk;
+    (pk, sk) <$ keygen_good;
+  }
+
+  proc h = RO.get
+
+  proc sign(m: M) = {
+    var w, st, c, oz, i;
+
+    (* Silences unused variables warning *)
+    w <- witness;
+    c <- witness;
+
+    i <- 0;
+    oz <- None;
+    while(oz = None /\ i < kappa) {
+      (w, st) <$ commit sk;
+      c <$ dC;
+      oz <- respond sk st c;
+      i <- i + 1;
+    }
+    if(oz <> None)
+      RO.set((w, m), c);
+    return if oz <> None then (w, c, oget oz) else witness;
+  }
+}.
+
+local equiv right_reduce_good :
+  Game(Adv, ORight_good).main ~ Dist.Sample(ReductionRight).main :
+  ={glob Adv} /\ arg{2} = keygen_good ==> ={res}.
+proof.
+proc. inline*. wp.
+seq 2 4: (={glob Adv, RO.m} /\ ORight_good.sk{1} = OReduceRight.sk{2}).
+- by auto => />.
+call(: ={RO.m} /\ ORight_good.sk{1} = OReduceRight.sk{2}).
+- by proc; auto.
+- proc; inline *.
+  by sim; skip => />.
+by auto.
+qed.
+
+local lemma right_reduce_bound &m :
+  `|Pr[Dist.Sample(ReductionRight).main(keygen) @ &m : res] -
+    Pr[Dist.Sample(ReductionRight).main(keygen_good) @ &m : res]| <=
+    gamma.
+proof.
+apply (ler_trans (sdist keygen keygen_good)).
+- exact (Dist.adv_sdist ReductionRight).
+exact keygen_good_sdist.
+qed.
 
 (* TODO local clone ReprogOnce to finish the proof...? *)
+
+
+
 
 lemma adv_bound &m :
   `| Pr[Game(Adv, OLeft).main() @ &m : res] -
