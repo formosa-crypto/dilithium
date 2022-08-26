@@ -3,7 +3,7 @@ require import Dexcepted.
 require import Dfilter.
 require import Real RealSeries.
 require import DistrExtras.
-require ReprogRej.
+require GuessReprog.
 import Biased.
 import SmtMap.
 
@@ -36,14 +36,6 @@ axiom all_sk_can_reject sk :
   respond sk st c = None.
 
 op alpha : real. (* pmax *)
-op qs : int. (* max. number of signing queries *)
-axiom qs_gt0 : 0 < qs.
-op qh : int. (* max. number of hash queries *)
-axiom qh_gt0 : 0 < qh.
-op kappa : int. (* max. number of iterations *)
-axiom kappa_gt0 : 0 < kappa.
-
-(* -- Ingredients required for cloning ReprogRej -- *)
 
 (* CD: dtrans? - with follow up renamings *)
 (* Transcript distribution *)
@@ -56,14 +48,6 @@ op dWCoZ sk : (W * C * Z option) distr =
 
 (* Transcript distribution, conditioned on accept or reject. *)
 (* CD: is the if-then-else really necessary? *)
-op dWCoZ_acc sk = 
-  if valid_sk sk then
-    dcond (dWCoZ sk) (fun wcz => let (w, c, z) = wcz in z <> None)
-  else
-    dunit witness.
-
-op dWCZ_acc sk = 
-  dmap (dWCoZ_acc sk) (fun wcoz => let (w, c, oz) = wcoz in (w, c, oget oz)).
 
 op dWCoZ_rej sk = 
   if valid_sk sk then
@@ -74,11 +58,6 @@ op dWCoZ_rej sk =
 op dWC_rej sk = 
   dmap (dWCoZ_rej sk) (fun wcz => let (w, c, _) = wcz in (w, c)).
 
-op dXYZ_acc (k: SK * M) : ((W * M) * C * Z) distr =
-  let (sk, m) = k in
-  dmap (dWCZ_acc sk) (fun wcz =>
-    let (w, c, z) = wcz in ((w, m), c, z)).
-
 op dXY_rej (k: SK * M) : ((W * M) * C) distr =
   let (sk, m) = k in
   dmap (dWC_rej sk) (fun wc =>
@@ -87,79 +66,18 @@ op dXY_rej (k: SK * M) : ((W * M) * C) distr =
 axiom dX_pmax k :
   p_max (dfst (dXY_rej k)) <= alpha.
 
-lemma dWCoZ_can_acc sk :
-  valid_sk sk =>
-  0%r <
-  mu (dWCoZ sk)
-  (fun (wcz : W * C * Z option) => let (w, c, z) = wcz in z <> None).
-proof.
-move => H; apply all_sk_can_accept in H; case H => w st c [?[??]].
-apply witness_support; exists (w, c, respond sk st c) => /> /=.
-apply supp_dlet; exists (w, st) => />.
-apply supp_dlet; exists c => />.
-apply supp_dunit => /#.
-qed.
+ (* max. number of signing queries *)
+op qs : {int | 0 < qs} as qs_gt0.
+op qh : int. (* max. number of hash queries *)
+axiom qh_gt0 : 0 < qh.
+op kappa : int. (* max. number of iterations *)
+axiom kappa_gt0 : 0 < kappa.
 
-lemma dWCoZ_can_rej sk :
-  valid_sk sk =>
-  0%r <
-  mu (dWCoZ sk)
-  (fun (wcz : W * C * Z option) => let (w, c, z) = wcz in z = None).
-proof.
-move => H; apply all_sk_can_reject in H; case H => w st c [?[??]].
-apply witness_support; exists (w, c, None) => /=.
-apply supp_dlet; exists (w, st) => />.
-apply supp_dlet; exists c => />.
-apply supp_dunit => /#.
-qed.
-
-lemma dXYZ_acc_ll k :
-  is_lossless (dXYZ_acc k).
-proof.
-case k => sk m.
-case (valid_sk sk) => H.
-- rewrite /dXYZ_acc /= dmap_ll dmap_ll.
-  rewrite /dWCoZ_acc H /= dcond_ll.
-  exact dWCoZ_can_acc.
-- rewrite /dXYZ_acc /= dmap_ll dmap_ll.
-  rewrite /dWCoZ_acc H /=.
-  exact dunit_ll.
-qed.
-
-lemma dXY_rej_ll k :
-  is_lossless (dXY_rej k).
-proof.
-case k => sk m.
-case (valid_sk sk) => H.
-- rewrite /dXY_rej /= dmap_ll dmap_ll.
-  rewrite /dWCoZ_rej H /= dcond_ll.
-  exact dWCoZ_can_rej.
-- rewrite /dXY_rej /= dmap_ll dmap_ll.
-  rewrite /dWCoZ_rej H /=.
-  exact dunit_ll.
-qed.
-
-clone import ReprogRej as RRej with
-  type K <- SK * M,
-  type X <- W * M,
-  type Y <- C,
-  type Z <- Z,
-  op dXYZ_acc <- dXYZ_acc,
-  op dXY_rej <- dXY_rej,
-  op dY <- dC,
-  op qh <- qh,
-  op qr <- kappa * qs,
-  op alpha <- alpha
+clone import PROM.FullRO as RO with
+  type in_t <= W * M,
+  type out_t <= C,
+  op dout <= (fun _ => dC)
 proof *.
-realize dXYZ_acc_ll by apply dXYZ_acc_ll.
-realize dXY_rej_ll by apply dXY_rej_ll.
-realize dY_ll by apply dC_ll.
-realize dY_uni by apply dC_uni.
-realize dX_pmax by apply dX_pmax.
-realize qh_gt0 by apply qh_gt0.
-realize qr_gt0 by smt(kappa_gt0 qs_gt0).
-
-import RRej.OnlyRej.RO.
 
 module type Oracle = {
   proc h(w: W, m: M) : C
@@ -263,11 +181,105 @@ module Game (Adv: Adversary) (O: Oracle_i) = {
 
 section Analysis.
 
-(* CD: can we use local clones to avoid some of this? *)
-declare module Adv <: Adversary {-Count, -RO, -RRej.Count, -OLeft,
--OnlyRej.RejGuessing.SGO, -OnlyRej.RejGuessing.Count,
--OnlyRej.RejGuessing.SO, -OnlyRej.RejGuessing.SCount,
--OnlyRej.Count, -OnlyRej.OMain, -RRej.Count}.
+declare module Adv <: Adversary {-Count, -RO, -OLeft}.
+
+declare axiom A_bound : forall (O <: Oracle_i{-Adv}), 
+  hoare [ Adv(Count(O)).distinguish : Count.countS = 0 /\ Count.countH = 0 ==> 
+                                      Count.countS <= qs /\ Count.countH <= qh ].
+
+declare axiom A_ll : forall (O <: Oracle),
+  islossless O.h =>
+  islossless O.sign =>
+  islossless Adv(O).distinguish.
+
+(* -- Ingredients required for cloning ReprogRej -- *)
+
+op dWCoZ_acc sk = 
+  if valid_sk sk then
+    dcond (dWCoZ sk) (fun wcz => let (w, c, z) = wcz in z <> None)
+  else
+    dunit witness.
+
+op dWCZ_acc sk = 
+  dmap (dWCoZ_acc sk) (fun wcoz => let (w, c, oz) = wcoz in (w, c, oget oz)).
+
+op dXYZ_acc (k: SK * M) : ((W * M) * C * Z) distr =
+  let (sk, m) = k in
+  dmap (dWCZ_acc sk) (fun wcz =>
+    let (w, c, z) = wcz in ((w, m), c, z)).
+
+lemma dWCoZ_can_acc sk :
+  valid_sk sk =>
+  0%r <
+  mu (dWCoZ sk)
+  (fun (wcz : W * C * Z option) => let (w, c, z) = wcz in z <> None).
+proof.
+move => H; apply all_sk_can_accept in H; case H => w st c [?[??]].
+apply witness_support; exists (w, c, respond sk st c) => /> /=.
+apply supp_dlet; exists (w, st) => />.
+apply supp_dlet; exists c => />.
+apply supp_dunit => /#.
+qed.
+
+lemma dWCoZ_can_rej sk :
+  valid_sk sk =>
+  0%r <
+  mu (dWCoZ sk)
+  (fun (wcz : W * C * Z option) => let (w, c, z) = wcz in z = None).
+proof.
+move => H; apply all_sk_can_reject in H; case H => w st c [?[??]].
+apply witness_support; exists (w, c, None) => /=.
+apply supp_dlet; exists (w, st) => />.
+apply supp_dlet; exists c => />.
+apply supp_dunit => /#.
+qed.
+
+lemma dXYZ_acc_ll k :
+  is_lossless (dXYZ_acc k).
+proof.
+case k => sk m.
+case (valid_sk sk) => H.
+- rewrite /dXYZ_acc /= dmap_ll dmap_ll.
+  rewrite /dWCoZ_acc H /= dcond_ll.
+  exact dWCoZ_can_acc.
+- rewrite /dXYZ_acc /= dmap_ll dmap_ll.
+  rewrite /dWCoZ_acc H /=.
+  exact dunit_ll.
+qed.
+
+lemma dXY_rej_ll k :
+  is_lossless (dXY_rej k).
+proof.
+case k => sk m.
+case (valid_sk sk) => H.
+- rewrite /dXY_rej /= dmap_ll dmap_ll.
+  rewrite /dWCoZ_rej H /= dcond_ll.
+  exact dWCoZ_can_rej.
+- rewrite /dXY_rej /= dmap_ll dmap_ll.
+  rewrite /dWCoZ_rej H /=.
+  exact dunit_ll.
+qed.
+
+local clone GuessReprog as Guess with
+  type K <- SK * M,
+  type X <- W * M,
+  type Y <- C,
+  type Z <- Z,
+  op dXYZ_acc <- dXYZ_acc,
+  op dXY_rej <- dXY_rej,
+  op dY <- dC,
+  op qh <- qh,
+  op qr <- kappa * qs,
+  op alpha <- alpha,
+  theory RO <- RO
+proof *.
+realize dXYZ_acc_ll by apply dXYZ_acc_ll.
+realize dXY_rej_ll by apply dXY_rej_ll.
+realize dY_ll by apply dC_ll.
+realize dY_uni by apply dC_uni.
+realize dX_pmax by apply dX_pmax.
+realize qh_gt0 by apply qh_gt0.
+realize qr_gt0 by smt(kappa_gt0 qs_gt0).
 
 (* Auxiliary lemma *)
 
@@ -993,7 +1005,7 @@ qed.
 
 (** -- Reduction to ReprogRej -- **)
 
-local module OReduction(O: RRej.Oracle) : Oracle_i = {
+local module OReduction(O: Guess.Oracle) : Oracle_i = {
   var sk : SK
 
   proc init() = {
@@ -1029,16 +1041,7 @@ local module OReduction(O: RRej.Oracle) : Oracle_i = {
   }
 }.
 
-declare axiom A_bound : forall (O <: Oracle_i{-Adv}), 
-  hoare [ Adv(Count(O)).distinguish : Count.countS = 0 /\ Count.countH = 0 ==> 
-                                      Count.countS <= qs /\ Count.countH <= qh ].
-
-declare axiom A_ll : forall (O <: Oracle),
-  islossless O.h =>
-  islossless O.sign =>
-  islossless Adv(O).distinguish.
-
-local lemma ReductionO_ll : forall (O <: RRej.Oracle),
+local lemma ReductionO_ll : forall (O <: Guess.Oracle),
   islossless O.h =>
   islossless O.reprog_acc =>
   islossless O.reprog_rej =>
@@ -1054,7 +1057,7 @@ wp; seq 2: (i < kappa /\ kappa - i = t) => //.
 - by conseq/>; auto.
 qed.
 
-local module (Reduction : RRej.Adversary) (ORej: RRej.Oracle) = {
+local module (Reduction : Guess.Adversary) (ORej: Guess.Oracle) = {
   include var OReduction(ORej) [-sign, h]
   (* Interim hack (?) that stops ORej{-Reduction} from writing count *)
   include var Count(OReduction(ORej)) [-init]
@@ -1067,7 +1070,7 @@ local module (Reduction : RRej.Adversary) (ORej: RRej.Oracle) = {
   }
 }.
 
-local lemma Reduction_ll : forall (O <: RRej.Oracle),
+local lemma Reduction_ll : forall (O <: Guess.Oracle),
   islossless O.h =>
   islossless O.reprog_acc =>
   islossless O.reprog_rej =>
@@ -1083,7 +1086,7 @@ suff: islossless OReduction(O).h /\ islossless OReduction(O).sign by trivial.
 exact (ReductionO_ll O).
 qed.
 
-local module (ReductionCount : RRej.Adversary) (ORej: RRej.Oracle) = {
+local module (ReductionCount : Guess.Adversary) (ORej: Guess.Oracle) = {
   proc distinguish() = {
     var b; 
     Count(OReduction(ORej)).init();
@@ -1092,7 +1095,7 @@ local module (ReductionCount : RRej.Adversary) (ORej: RRej.Oracle) = {
   }
 }.
 
-local lemma ReductionCount_bound : forall (ORej <: RRej.Oracle{-Adv, -OReduction}),
+local lemma ReductionCount_bound : forall (ORej <: Guess.Oracle{-Adv, -OReduction}),
   hoare[ ReductionCount(ORej).distinguish :
     Count.countS = 0 /\ Count.countH = 0 ==> 
     Count.countS <= qs /\ Count.countH <= qh ].
@@ -1103,26 +1106,26 @@ seq 1: #pre; 1: by auto.
 by call (A_bound (OReduction(ORej))) => //.
 qed.
 
-local lemma ReductionCount_hop : forall (ORej <: RRej.Oracle{-Adv, -RRej.Count, -Count, -OReduction}),
-  equiv[Reduction(RRej.Count(ORej)).distinguish ~
+local lemma ReductionCount_hop : forall (ORej <: Guess.Oracle{-Adv, -Guess.Count, -Count, -OReduction}),
+  equiv[Reduction(Guess.Count(ORej)).distinguish ~
         ReductionCount(ORej).distinguish :
     ={glob Adv, glob ORej} /\
-    RRej.Count.countH{1} = 0 /\
-    RRej.Count.countR{1} = 0 /\
+    Guess.Count.countH{1} = 0 /\
+    Guess.Count.countR{1} = 0 /\
     Count.countH{2} = 0 /\
     Count.countS{2} = 0 ==>
-    RRej.Count.countH{1} = Count.countH{2} /\
-    RRej.Count.countR{1} <= kappa * Count.countS{2}].
+    Guess.Count.countH{1} = Count.countH{2} /\
+    Guess.Count.countR{1} <= kappa * Count.countS{2}].
 proof.
 move => ORej; proc.
-inline OReduction(RRej.Count(ORej)).init.
+inline OReduction(Guess.Count(ORej)).init.
 
 seq 1 1: (#pre /\ ={OReduction.sk}).
 - inline Count(OReduction(ORej)).init.
   by rnd => />; auto => //.
 call (_: ={glob ORej, OReduction.sk} /\
-         RRej.Count.countH{1} = Count.countH{2} /\
-         RRej.Count.countR{1} <= kappa * Count.countS{2}); last by auto.
+         Guess.Count.countH{1} = Count.countH{2} /\
+         Guess.Count.countR{1} <= kappa * Count.countS{2}); last by auto.
 - proc.
   seq 1 1: #pre; 1: by auto.
   call(_: true); by skip => />.
@@ -1131,46 +1134,46 @@ call (_: ={glob ORej, OReduction.sk} /\
   (* don't sp or you'll see something terrifying *)
   wp; seq 5 7: (={glob ORej, w, c, z, i, f, m, OReduction.sk} /\
     i{1} = 0 /\
-    RRej.Count.countH{1} = Count.countH{2} /\
-    RRej.Count.countR{1} + kappa <= kappa * Count.countS{2}).
+    Guess.Count.countH{1} = Count.countH{2} /\
+    Guess.Count.countR{1} + kappa <= kappa * Count.countS{2}).
   + by auto => /> /#.
 
   while(={glob ORej, w, c, z, i, f, m, OReduction.sk} /\
     0 <= i{1} <= kappa /\
-    RRej.Count.countH{1} = Count.countH{2} /\
-    RRej.Count.countR{1} + kappa - i{1} <= kappa * Count.countS{2});
+    Guess.Count.countH{1} = Count.countH{2} /\
+    Guess.Count.countR{1} + kappa - i{1} <= kappa * Count.countS{2});
     last by skip => />; smt(kappa_gt0).
   seq 2 2: (={glob ORej, w, c, z, i, f, m, OReduction.sk} /\
             (0 <= i{1} /\ i{1} < kappa) /\
-             RRej.Count.countH{1} = Count.countH{2} /\
-             RRej.Count.countR{1} + kappa - i{1} <= kappa * Count.countS{2}).
+             Guess.Count.countH{1} = Count.countH{2} /\
+             Guess.Count.countR{1} + kappa - i{1} <= kappa * Count.countS{2}).
   + by auto.
   if; first by smt().
-  + inline RRej.Count(ORej).reprog_acc.
+  + inline Guess.Count(ORej).reprog_acc.
     sp; wp; call(_: true).
     skip => /> *.
     smt(kappa_gt0).
-  + inline RRej.Count(ORej).reprog_rej.
+  + inline Guess.Count(ORej).reprog_rej.
     sp; wp; call(_: ={arg, glob ORej} ==> ={res, glob ORej}); first by sim.
     by skip => />; smt(kappa_gt0).
 qed.
 
-local lemma Reduction_bound : forall (RejO <: RRej.Oracle{-Adv, -RRej.Count, -Count, -OReduction}), 
-  hoare [ Reduction(RRej.Count(RejO)).distinguish :
-    RRej.Count.countR = 0 /\ RRej.Count.countH = 0 ==> 
-    RRej.Count.countR <= kappa * qs /\ RRej.Count.countH <= qh ].
+local lemma Reduction_bound : forall (RejO <: Guess.Oracle{-Adv, -Guess.Count, -Count, -OReduction}), 
+  hoare [ Reduction(Guess.Count(RejO)).distinguish :
+    Guess.Count.countR = 0 /\ Guess.Count.countH = 0 ==> 
+    Guess.Count.countR <= kappa * qs /\ Guess.Count.countH <= qh ].
 proof.
 move => RejO.
 conseq (ReductionCount_hop RejO) (ReductionCount_bound RejO); smt(kappa_gt0).
 qed.
 
 local equiv reduction_correct_left :
-  Game(Adv, OLeft).main ~ RRej.Game(RRej.OLeft, Reduction).main :
+  Game(Adv, OLeft).main ~ Guess.Game(Guess.OLeft, Reduction).main :
   ={glob Adv} ==> ={res}.
 proof.
 proc.
-inline RO.init OLeft.init RRej.OLeft.init Reduction(RRej.OLeft).distinguish.
-wp; inline OReduction(RRej.OLeft).init.
+inline RO.init OLeft.init Guess.OLeft.init Reduction(Guess.OLeft).distinguish.
+wp; inline OReduction(Guess.OLeft).init.
 seq 2 2: (#pre /\ ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1});
   first by rnd; auto => /> /#.
 call (_ : ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1}); last by skip => />.
@@ -1189,7 +1192,7 @@ call (_ : ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1}); la
     first by auto.
   wp.
   if; first by auto.
-  + inline RRej.OLeft.reprog_acc RO.set.
+  + inline Guess.OLeft.reprog_acc RO.set.
     sp; wp; conseq />.
     rnd (fun wcz => let (w, c, z) = wcz in ((w, m{2}), c, z))
         (fun xyz => let (wm, c, z) = xyz in let (w, m) = wm in (w, c, z)).
@@ -1199,7 +1202,7 @@ call (_ : ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1}); la
     split => /= [[[??]??]|_]; first smt(dXYZ_acc_supp_m).
     split => /= [[??]??| _ [???]] /=; first smt(dXYZ_acc1E dXYZ_acc_supp_m).
     smt(dXYZ_acc_supp_m dXYZ_acc_supp).
-  + inline RRej.OLeft.reprog_rej.
+  + inline Guess.OLeft.reprog_rej.
     sp; wp; conseq />.
     seq 1 1: (={RO.m} /\ (wr{1}, m{1}) = x{2} /\ cr{1} = y{2}); last by inline RO.set; auto.
     conseq />.
@@ -1213,12 +1216,12 @@ call (_ : ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1}); la
 qed.
 
 local equiv reduction_correct_right :
-  Game(Adv, ORight).main ~ RRej.Game(RRej.ORight, Reduction).main :
+  Game(Adv, ORight).main ~ Guess.Game(Guess.ORight, Reduction).main :
   ={glob Adv} ==> ={res}.
 proof.
 proc.
-inline RO.init OLeft.init RRej.OLeft.init Reduction(RRej.ORight).distinguish.
-wp; inline OReduction(RRej.ORight).init.
+inline RO.init OLeft.init Guess.OLeft.init Reduction(Guess.ORight).distinguish.
+wp; inline OReduction(Guess.ORight).init.
 seq 2 2: (#pre /\ ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1});
   first by rnd; auto => /> /#.
 call (_ : ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1}); last by skip => />.
@@ -1236,9 +1239,9 @@ call (_ : ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1}); la
   seq 2 2: (={m, RO.m, w, c, z, i, f} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1});
     first by auto.
   wp.
-  if; 3: by (inline RRej.ORight.reprog_rej; auto).
+  if; 3: by (inline Guess.ORight.reprog_rej; auto).
   + by auto.
-  inline RRej.OLeft.reprog_acc RO.set.
+  inline Guess.OLeft.reprog_acc RO.set.
   sp; wp; conseq />.
   rnd (fun wcz => let (w, c, z) = wcz in ((w, m{2}), c, z))
       (fun xyz => let (wm, c, z) = xyz in let (w, m) = wm in (w, c, z)).
@@ -1254,14 +1257,14 @@ lemma adv_bound &m :
      Pr[Game(Adv, ORight).main() @ &m : res] | <= qh%r * (kappa * qs)%r * alpha.
 proof.
 have ->: Pr[Game(Adv, OLeft).main() @ &m : res] =
-         Pr[RRej.Game(RRej.OLeft, Reduction).main() @ &m: res].
+         Pr[Guess.Game(Guess.OLeft, Reduction).main() @ &m: res].
 - byequiv => //.
   conseq reduction_correct_left => //.
 have ->: Pr[Game(Adv, ORight).main() @ &m : res] =
-         Pr[RRej.Game(RRej.ORight, Reduction).main() @ &m: res].
+         Pr[Guess.Game(Guess.ORight, Reduction).main() @ &m: res].
 - byequiv => //.
   conseq reduction_correct_right => //.
-apply (RRej.adv_bound Reduction).
+apply (Guess.adv_bound Reduction).
 move => ORej.
 apply (Reduction_ll ORej).
 move => ORej.
