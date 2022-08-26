@@ -3,8 +3,12 @@ require import DistrExtras.
 require Guessing.
 require PROM.
 
-
-(* "Glue code" between ReprogRej and Guessing games. *)
+(* "Glue code" between ReprogRej and Guessing games.
+ *
+ * Introduces RO and taking marginal in a single step.
+ * Conceptually these should be two different games;
+ * however, both are very minor modifications.
+ * The two are thus combined for brevity. *) 
 
 type X, Y, M.
 
@@ -24,18 +28,6 @@ clone import PROM.FullRO as RO with
   type out_t <- Y,
   op dout <- (fun _ => dY)
 proof *.
-
-clone import Guessing as RejGuessing with
-  type in_t <- M,
-  type out_t <- X,
-  op d <- fun m => dXr m,
-  op qs <- qr,
-  op qg <- qh,
-  op alpha <- alpha
-proof *.
-realize d_pmax by apply dX_pmax.
-realize qs_gt0 by apply qr_gt0.
-realize qg_gt0 by apply qh_gt0.
 
 module type Oracle = {
   proc h(x: X) : Y
@@ -100,12 +92,24 @@ module Game(Adv: Adversary) = {
 
 section Analysis.
 
-declare module Adv <: Adversary {-OMain, -SGO, -Count, -RejGuessing.Count, -SO, -SCount}.
+declare module Adv <: Adversary {-OMain, -Count}.
 declare axiom A_bound : forall (O <: Oracle{-Adv, -Count}), 
   hoare [ Adv(Count(O)).main : Count.cr = 0 /\ Count.ch = 0 ==> 
                                Count.cr <= qr /\ Count.ch <= qh ].
 
-local module ReductionO(O: SGOracle) : Oracle = {
+local clone Guessing as Guess with
+  type in_t <- M,
+  type out_t <- X,
+  op d <- fun m => dXr m,
+  op qs <- qr,
+  op qg <- qh,
+  op alpha <- alpha
+proof *.
+realize d_pmax by apply dX_pmax.
+realize qs_gt0 by apply qr_gt0.
+realize qg_gt0 by apply qh_gt0.
+
+local module ReductionO(O: Guess.SGOracle) : Oracle = {
   proc h(x : X) = {
     var y;
     O.guess(x);
@@ -118,7 +122,7 @@ local module ReductionO(O: SGOracle) : Oracle = {
   }
 }.
 
-local module (Reduction : RejGuessing.Adversary) (O: SGOracle) = {
+local module (Reduction : Guess.Adversary) (O: Guess.SGOracle) = {
   include var Count(ReductionO(O))
 
   proc run() = {
@@ -127,26 +131,24 @@ local module (Reduction : RejGuessing.Adversary) (O: SGOracle) = {
   }
 }.
 
-local equiv RA_Count (O <: SGOracle{-Adv, -Count, -RejGuessing.Count, -RO}) :
-  Reduction(RejGuessing.Count(O)).run ~ Adv(Count(ReductionO(O))).main :
+local equiv RA_Count (O <: Guess.SGOracle{-Adv, -Count, -Guess.Count, -RO}) :
+  Reduction(Guess.Count(O)).run ~ Adv(Count(ReductionO(O))).main :
   ={glob Adv, glob O} /\ RO.m{2} = empty /\
-  RejGuessing.Count.cs{1} = Count.cr{2} /\ RejGuessing.Count.cg{1} = Count.ch{2} ==>
-  RejGuessing.Count.cs{1} = Count.cr{2} /\ RejGuessing.Count.cg{1} = Count.ch{2}.
+  Guess.Count.cs{1} = Count.cr{2} /\ Guess.Count.cg{1} = Count.ch{2} ==>
+  Guess.Count.cs{1} = Count.cr{2} /\ Guess.Count.cg{1} = Count.ch{2}.
 proof.
 proc*.
-inline Reduction(RejGuessing.Count(O)).run RO.init; sp.
-call (_: RejGuessing.Count.cs{1} = Count.cr{2} /\ RejGuessing.Count.cg{1} = Count.ch{2} /\ ={RO.m, glob O}); last by auto.
-- proc; inline ReductionO(O).h RejGuessing.Count(O).guess.
-  by sim.
-- proc. inline ReductionO(O).reprog_rej RejGuessing.Count(O).sample.
-  by sim.
+inline Reduction(Guess.Count(O)).run RO.init; sp.
+call (_: Guess.Count.cs{1} = Count.cr{2} /\ Guess.Count.cg{1} = Count.ch{2} /\ ={RO.m, glob O}); last by auto.
+- by proc; inline *; sim.
+- by proc; inline *; sim.
 qed.
 
 local lemma RA_Bound :
-  forall (O <: SGOracle{-Adv, -Count, -RO, -RejGuessing.Count}), 
-  hoare [ Reduction(RejGuessing.Count(O)).run :
-            RejGuessing.Count.cs = 0 /\ RejGuessing.Count.cg = 0 ==> 
-            RejGuessing.Count.cs <= qr /\ RejGuessing.Count.cg <= qh ].
+  forall (O <: Guess.SGOracle{-Adv, -Count, -RO, -Guess.Count}), 
+  hoare [ Reduction(Guess.Count(O)).run :
+            Guess.Count.cs = 0 /\ Guess.Count.cg = 0 ==> 
+            Guess.Count.cs <= qr /\ Guess.Count.cg <= qh ].
 proof.
 move => O.
 conseq (RA_Count O)
@@ -155,12 +157,12 @@ conseq (A_bound (ReductionO(O))) => /#.
 qed.
 
 local equiv reduction_correct :
-  Game(Adv).main ~ SG_GameS(Reduction).main :
+  Game(Adv).main ~ Guess.SG_GameS(Reduction).main :
   ={glob Adv} ==> ={res}.
 proof.
 proc.
 inline *.
-call (: ={RO.m} /\ OMain.rej_lst{1} = SGO.out{2} /\ OMain.win{1} = SGO.win{2}); last by auto.
+call (: ={RO.m} /\ OMain.rej_lst{1} = Guess.SGO.out{2} /\ OMain.win{1} = Guess.SGO.win{2}); last by auto.
 - (* H *)
   proc.
   by inline *; sim.
@@ -176,10 +178,10 @@ qed.
 lemma win_bound &m :
   Pr[Game(Adv).main() @ &m : res] <= qr%r * qh%r * alpha.
 proof.
-have ->: Pr[Game(Adv).main() @ &m : res] = Pr[SG_GameS(Reduction).main() @ &m : res].
+have ->: Pr[Game(Adv).main() @ &m : res] = Pr[Guess.SG_GameS(Reduction).main() @ &m : res].
 - byequiv; 2,3: smt().
   conseq reduction_correct => /#.
-apply (SG_boundS Reduction).
+apply (Guess.SG_boundS Reduction).
 move => O.
 apply (RA_Bound O).
 qed.
