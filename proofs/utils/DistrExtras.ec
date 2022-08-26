@@ -338,12 +338,10 @@ congr; apply fun_ext => b.
 by case b => _; congr => /#.
 qed.
 
-lemma dbiased_true x :
-  1%r <= x => dbiased x = dunit true.
+lemma dbiased_true : dbiased 1%r = dunit true.
 proof.
-move => ?.
 rewrite eq_distr => b.
-rewrite dbiased1E dunit1E => /#.
+by rewrite dbiased1E dunit1E /#.
 qed.
 
 (** CD **)
@@ -395,13 +393,17 @@ rewrite (sumE_fin _ [true; false]) // /=; 1: smt().
 rewrite !big_cons big_nil /predT /=; smt(dbiased1E).
 qed.
 
+(* better name *)
+lemma dexpand (d1 d2 : 'a distr) : 
+  d1 = dlet (dunit true) (fun b => if b then d1 else d2).
+proof. by rewrite dlet_unit. qed.
+
 lemma sdist_dcond (d : 'a distr) p :
   is_lossless d =>
   sdist d (dcond d p) <= mu d (predC p).
 proof.
-move => ?.
-have ->: dcond d p = dlet (dbiased 1%r) (fun (b : bool) => if b then dcond d p else dcond d (predC p)).
-- by rewrite dbiased_true // dlet_unit //.
+move => ?. 
+rewrite (dexpand (dcond _ _) (dcond d (predC p))) -dbiased_true.
 rewrite {1} (marginal_sampling_pred d p) //.
 apply (ler_trans (sdist (dbiased (mu d p)) (dbiased 1%r))).
 - exact sdist_dlet.
