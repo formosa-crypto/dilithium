@@ -6,9 +6,17 @@ require import Real RealSeries.
 require import CoreMap.
 import SmtMap.
 import Biased.
-require ReprogOnlyRej.
-
+require GuessRO.
 require import DistrExtras.
+
+(*
+ * Basic RO games that we plan to reduce to.
+ * Adversary can make three possible queries, as discussed on the notes.
+ * Only third query (reprog_rej) is different between GameA and GameB.
+ *
+ * The games are indistinguishable in ROM.
+ * I hope same is true in QROM.
+ *)
 
 type X, Y, Z, K.
 
@@ -17,32 +25,20 @@ op [lossless] dXY_rej (k : K) : (X * Y) distr.
 op [lossless uniform] dY : Y distr.
 op alpha : real.
 
-op dXr k = dfst (dXY_rej k).
-axiom dX_pmax k :
-  p_max (dXr k) <= alpha.
-
 op qh, qr : int.
 axiom qh_gt0 : 0 < qh.
 axiom qr_gt0 : 0 < qr.
 
-clone import ReprogOnlyRej as OnlyRej with
-  type X <- X,
-  type Y <- Y,
-  type M <- K,
-  op dY <- dY,
-  op dXY_rej <- dXY_rej,
-  op qh <- qh,
-  op qr <- qr,
-  op alpha <- alpha
-proof *.
-realize dXY_rej_ll by apply dXY_rej_ll.
-realize dY_ll by apply dY_ll.
-realize dY_uni by apply dY_uni.
-realize qh_gt0 by apply qh_gt0.
-realize qr_gt0 by apply qr_gt0.
-realize dX_pmax by apply dX_pmax.
+op dXr k = dfst (dXY_rej k).
+axiom dX_pmax k :
+  p_max (dXr k) <= alpha.
 
-import OnlyRej.RO.
+clone import PROM.FullRO as RO with
+  type in_t <= X,
+  type out_t <= Y,
+  op dout <= (fun _ => dY).
+
+(* import OnlyRej.RO. *)
 
 module type Oracle = {
   proc h(x: X) : Y
@@ -54,15 +50,6 @@ module type Oracle_i = {
   include Oracle
   proc init() : unit
 }.
-
-(*
- * ReprogRej: Basic RO games that we plan to reduce to.
- * Adversary can make three possible queries, as discussed on the notes.
- * Only third query (reprog_rej) is different between GameA and GameB.
- *
- * The games are indistinguishable in ROM.
- * I hope same is true in QROM.
- *)
 
 module OLeft : Oracle_i = {
   proc init() = {
@@ -132,8 +119,18 @@ module Count (O: Oracle) : Oracle = {
 
 section Analysis.
 
-declare module A <: Adversary {-RO, -Count,
-  -RejGuessing.SGO, -RejGuessing.Count, -RejGuessing.SO, -RejGuessing.SCount, -OnlyRej.Count, -OnlyRej.OMain}.
+declare module A <: Adversary {-RO, -Count}.
+
+declare axiom A_ll : (forall (O <: Oracle{-A}),
+  islossless O.h =>
+  islossless O.reprog_acc =>
+  islossless O.reprog_rej =>
+  islossless A(O).distinguish).
+
+declare axiom A_bound : forall (O <: Oracle{-A, -Count}), 
+  hoare [ A(Count(O)).distinguish : Count.countR = 0 /\ Count.countH = 0 ==> 
+                                    Count.countR <= qr /\ Count.countH <= qh ].
+
 
 local module OLeft_rec : Oracle_i = {
   include var OLeft [reprog_acc]
@@ -165,6 +162,19 @@ local module OLeft_rec : Oracle_i = {
   }
 }.
 
+local equiv OLeft_rec_eq :
+  Game(OLeft, A).main ~ Game(OLeft_rec, A).main :
+  ={glob A}  ==> ={res}.
+proof.
+proc.
+inline *.
+call(: ={RO.m}).
+- by proc; sim.
+- by proc; sim.
+- by proc; sim.
+by auto => />.
+qed.
+
 local module ORight_rec : Oracle_i = {
   include var OLeft_rec[init, h, reprog_acc]
 
@@ -175,8 +185,38 @@ local module ORight_rec : Oracle_i = {
   }
 }.
 
+local equiv ORight_rec_eq :
+  Game(ORight, A).main ~ Game(ORight_rec, A).main :
+  ={glob A}  ==> ={res}.
+proof.
+proc.
+inline *.
+call(: ={RO.m}).
+- by proc; sim.
+- by proc; sim.
+- by proc; auto => //.
+by auto => />.
+qed.
 
-local module (ReduceO(O: OnlyRej.Oracle) : Oracle) = {
+local clone GuessRO as Guess with
+  type X <= X,
+  type Y <= Y,
+  type M <= K,
+  op dY <= dY,
+  op dXY_rej <= dXY_rej,
+  op qh <= qh,
+  op qr <= qr,
+  op alpha <= alpha,
+  theory RO <= RO
+proof *.
+realize dXY_rej_ll by apply dXY_rej_ll.
+realize dY_ll by apply dY_ll.
+realize dY_uni by apply dY_uni.
+realize qh_gt0 by apply qh_gt0.
+realize qr_gt0 by apply qr_gt0.
+realize dX_pmax by apply dX_pmax.
+
+local module (ReduceO(O: Guess.Oracle) : Oracle) = {
   var overlay : (X, Y) fmap
 
   proc init() = {
@@ -205,41 +245,6 @@ local module (ReduceO(O: OnlyRej.Oracle) : Oracle) = {
     return (x, y, z);
   }  
 }.
-local equiv OLeft_rec_eq :
-  Game(OLeft, A).main ~ Game(OLeft_rec, A).main :
-  ={glob A}  ==> ={res}.
-proof.
-proc.
-inline *.
-call(: ={RO.m}).
-- by proc; sim.
-- by proc; sim.
-- by proc; sim.
-by auto => />.
-qed.
-
-local equiv ORight_rec_eq :
-  Game(ORight, A).main ~ Game(ORight_rec, A).main :
-  ={glob A}  ==> ={res}.
-proof.
-proc.
-inline *.
-call(: ={RO.m}).
-- by proc; sim.
-- by proc; sim.
-- by proc; auto => //.
-by auto => />.
-qed.
-
-declare axiom A_ll : (forall (O <: Oracle{-A}),
-  islossless O.h =>
-  islossless O.reprog_acc =>
-  islossless O.reprog_rej =>
-  islossless A(O).distinguish).
-
-declare axiom A_bound : forall (O <: Oracle{-A, -Count}), 
-  hoare [ A(Count(O)).distinguish : Count.countR = 0 /\ Count.countH = 0 ==> 
-                                    Count.countR <= qr /\ Count.countH <= qh ].
 
 local lemma ReprogRejRecBound &m :
   `| Pr[Game(OLeft_rec, A).main() @ &m : res]
@@ -290,7 +295,7 @@ call (_: OLeft_rec.bad,
 - skip => />; smt().
 qed.
 
-local module (Reduction : OnlyRej.Adversary)(O: OnlyRej.Oracle) = {
+local module (Reduction : Guess.Adversary)(O: Guess.Oracle) = {
   include var Count(ReduceO(O))
 
   proc main () = {
@@ -299,21 +304,21 @@ local module (Reduction : OnlyRej.Adversary)(O: OnlyRej.Oracle) = {
   }
 }.
 
-local lemma count_reduce (O <: OnlyRej.Oracle{-Reduction, -Count, -OnlyRej.Count} ) :
-  equiv[Reduction(OnlyRej.Count(O)).main ~ A(Count(ReduceO(O))).distinguish :
+local lemma count_reduce (O <: Guess.Oracle{-Reduction, -Count, -Guess.Count} ) :
+  equiv[Reduction(Guess.Count(O)).main ~ A(Count(ReduceO(O))).distinguish :
   ={glob O, glob A} /\
   ReduceO.overlay{2} = empty /\
-  Count.countH{2} = OnlyRej.Count.ch{1} /\
-  Count.countR{2} = OnlyRej.Count.cr{1}
+  Count.countH{2} = Guess.Count.ch{1} /\
+  Count.countR{2} = Guess.Count.cr{1}
   ==>
-  Count.countH{2} = OnlyRej.Count.ch{1} /\
-  Count.countR{2} = OnlyRej.Count.cr{1}].
+  Count.countH{2} = Guess.Count.ch{1} /\
+  Count.countR{2} = Guess.Count.cr{1}].
 proof.
 proc *.
 inline *.
 call (: ={glob O, ReduceO.overlay} /\
-        Count.countH{2} = OnlyRej.Count.ch{1} /\
-        Count.countR{2} = OnlyRej.Count.cr{1}).
+        Count.countH{2} = Guess.Count.ch{1} /\
+        Count.countR{2} = Guess.Count.cr{1}).
 - by proc; inline *; sim.
 - proc; inline *.
   by auto => />.
@@ -325,33 +330,33 @@ by auto => />.
 qed.
 
 local lemma Reduction_count :
-  forall (O <: OnlyRej.Oracle{-Reduction, -Count, -OnlyRej.Count} ),
-    hoare[ Reduction(OnlyRej.Count(O)).main :
-          OnlyRej.Count.cr = 0 /\ OnlyRej.Count.ch = 0 ==>
-          OnlyRej.Count.cr <= qr /\ OnlyRej.Count.ch <= qh].
+  forall (O <: Guess.Oracle{-Reduction, -Count, -Guess.Count} ),
+    hoare[ Reduction(Guess.Count(O)).main :
+          Guess.Count.cr = 0 /\ Guess.Count.ch = 0 ==>
+          Guess.Count.cr <= qr /\ Guess.Count.ch <= qh].
 proof.
 move => O.
 by conseq (count_reduce O) (A_bound (ReduceO(O))) => /#.
 qed.
 
 local equiv reduce_to_onlyrej :
-  Game(OLeft_rec, A).main ~ OnlyRej.Game(Reduction).main :
+  Game(OLeft_rec, A).main ~ Guess.Game(Reduction).main :
   ={glob A} ==> OLeft_rec.bad{1} = res{2}.
 proof.
 proc; inline *; sp.
 (* Mmmmm 11 subgoals *)
-call(_: OnlyRej.OMain.win,
-  OLeft_rec.bad{1} = OnlyRej.OMain.win{2} /\
+call(_: Guess.OMain.win,
+  OLeft_rec.bad{1} = Guess.OMain.win{2} /\
   (!OLeft_rec.bad{1} =>
-  (OLeft_rec.rej_lst{1} = OnlyRej.OMain.rej_lst{2} /\
+  (OLeft_rec.rej_lst{1} = Guess.OMain.rej_lst{2} /\
   (forall x, ! x \in OLeft_rec.rej_lst{1} =>
   RO.m.[x]{1} = if x \in ReduceO.overlay{2} then ReduceO.overlay{2}.[x] else RO.m.[x]{2}))),
-  OLeft_rec.bad{1} = OnlyRej.OMain.win{2}).
+  OLeft_rec.bad{1} = Guess.OMain.win{2}).
 (* lossless  *)
 - apply A_ll.
 (* H *)
 - proc.
-  inline OMain.h.
+  inline Guess.OMain.h.
   seq 0 1: (#pre /\ x0{2} = x{2}); first by auto.
   if; first by auto => />.
   + (* bad *)
@@ -366,13 +371,9 @@ call(_: OnlyRej.OMain.win,
   auto => />.
   smt(dY_ll).
 - move => &1.
-  proc.
-  inline OMain.h RO.get.
-  auto => />.
-  smt(dY_ll).
+  proc; inline*; auto => />; smt(dY_ll).
 (* acc *)
-- proc; inline *.
-  auto => />.
+- proc; inline *; auto => />.
   smt(get_setE get_set_sameE).
 - move => &2 win.
   proc; inline *.
@@ -402,10 +403,10 @@ local lemma bad_bound &m :
   Pr[Game(OLeft_rec, A).main() @ &m : OLeft_rec.bad] <= qr%r * qh%r * alpha.
 proof.
 have ->: Pr[Game(OLeft_rec, A).main() @ &m : OLeft_rec.bad] =
-         Pr[OnlyRej.Game(Reduction).main() @ &m : res].
+         Pr[Guess.Game(Reduction).main() @ &m : res].
 - byequiv; 2, 3: smt().
   by conseq reduce_to_onlyrej => /#.
-apply (OnlyRej.win_bound Reduction).
+apply (Guess.win_bound Reduction).
 exact Reduction_count.
 qed.
 

@@ -24,9 +24,9 @@ axiom dX_pmax m :
   p_max (dXr m) <= alpha.
 
 clone import PROM.FullRO as RO with
-  type in_t <- X,
-  type out_t <- Y,
-  op dout <- (fun _ => dY)
+  type in_t <= X,
+  type out_t <= Y,
+  op dout <= (fun _ => dY)
 proof *.
 
 module type Oracle = {
