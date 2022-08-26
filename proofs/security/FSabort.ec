@@ -22,13 +22,13 @@ import IDS.
 type M.               (* Messages *)
 type Sig = W*Z.       (* Signatures *)
 
-const qs_bound : int. (* allowed number of sig queries *)
-const ro_bound : int. (* allowed number of ro  queries *)
-axiom qs_ge0 : 0 <= qs_bound.
-axiom rs_ge0 : 0 <= ro_bound.
+const qS : int. (* allowed number of sig queries *)
+const qH : int. (* allowed number of ro  queries *)
+axiom qS_ge0 : 0 <= qS.
+axiom qH_ge0 : 0 <= qH.
 
 (* maximal number of iterations allowed for signing *)
-op reject_bound : { int | 0 < reject_bound } as reject_bound_gt0.
+op kappa : { int | 0 < kappa } as kappa_gt0.
 
 op [lossless uniform] dC : C distr.
 
@@ -82,8 +82,8 @@ theory OpBased.
 (* This will simplify the proof here but may render it less
    generic. Will have to see if this is usable. *)
 
-op keygen : (PK * SK) distr.
-op commit : SK -> (W * Pstate) distr.
+op [lossless] keygen : (PK * SK) distr.
+op [lossless] commit : SK -> (W * Pstate) distr.
 op response : SK -> C -> Pstate -> Z option. (* TODO: should be respond *)
 op verify : PK -> W -> C -> Z -> bool.
 
@@ -149,7 +149,7 @@ module ORedKOA (Sim : HVZK_Sim) : SOracle_CMA = {
 
     qs <- rcons qs m;
     k <- 0; 
-    while (ot = None /\ k < reject_bound) {  
+    while (ot = None /\ k < kappa) {  
       ot <@ Sim.get_trans(pk);
       k <- k + 1;
     } 
@@ -209,8 +209,8 @@ module CountH (H : Hash) = {
 
 section PROOF. 
 
-(* We assume a CMA adversary A making at most [ro_bound] [get] queries
-to the random oracle and at most [qs_bound] queries to the signing
+(* We assume a CMA adversary A making at most [qH] [get] queries
+to the random oracle and at most [qS] queries to the signing
 oracle *)
 
 declare module A <: Adv_EFCMA_RO{-RO,-P,-V,-O_CMA_Default,-ORedKOA,-CountS,-CountH}.
@@ -218,7 +218,7 @@ declare module A <: Adv_EFCMA_RO{-RO,-P,-V,-O_CMA_Default,-ORedKOA,-CountS,-Coun
 declare axiom A_query_bound &m (SO <: SOracle_CMA{-CountH, -CountS}) (H <: Hash{-CountH,-CountS}) : 
  hoare[ A(CountH(H),CountS(SO)).forge : 
         CountH.qh = 0 /\ CountS.qs = 0 ==> 
-        CountH.qh <= ro_bound /\ CountS.qs <= qs_bound].
+        CountH.qh <= qH /\ CountS.qs <= qS].
 
 declare axiom A_ll : forall (R <: Hash{-A} ) (O <: SOracle_CMA{-A} ),
   islossless O.sign => islossless R.get => islossless A(R, O).forge.
@@ -300,7 +300,7 @@ local module (Oracle1b_CMA : Oracle_CMA) (S : Scheme)  = {
     qs <- rcons qs m;
 
     k <- 0;
-    while (oz = None /\ k < reject_bound) { 
+    while (oz = None /\ k < kappa) { 
       (w, pstate) <$ commit sk;
       c <@ RO.get((w,m));
       oz <- response sk c pstate;
@@ -313,8 +313,8 @@ local module (Oracle1b_CMA : Oracle_CMA) (S : Scheme)  = {
 
 (* TOTHINK: Proving termination actually requires us to prove 
 
-forall c sk, sk \in dsnd keygen => 
-  exists w st, (w,st) \in commit sk /\ respond sk c st <> None 
+forall sk, sk \in dsnd keygen => 
+  exists w st, (w,st) \in commit sk /\ forall c, respond sk c st <> None
 
 Otherwise, there is a miniscule chance that the (finately many) spaces
 in the random oracle all get filled with c's that do not admit any
@@ -335,7 +335,7 @@ seq 4 4 : (!Oracle1b_CMA.bad{2} => ={glob O_CMA_Default,RO.m,pk,sk,m,sig}); last
 call (: Oracle1b_CMA.bad, ={RO.m, glob O_CMA_Default}).
 - exact A_ll. 
 - proc. wp. conseq />. smt().
-  splitwhile{1} 5 : (k < reject_bound). 
+  splitwhile{1} 5 : (k < kappa). 
   seq 5 5 : (={w,oz,glob O_CMA_Default,RO.m}); first by sim.
   admit. (* termination *)
 - move => *. islossless.
@@ -368,7 +368,7 @@ local module (Oracle2_CMA : Oracle_CMA) (S : Scheme)  = {
       qs <- rcons qs m;
 
       k <- 0;
-      while (oz = None /\ k < reject_bound) { 
+      while (oz = None /\ k < kappa) { 
         (w, pstate) <$ commit sk;
         bad2 <- bad2 \/ (w,m) \in RO.m;
         c <$ dC; 
@@ -381,6 +381,16 @@ local module (Oracle2_CMA : Oracle_CMA) (S : Scheme)  = {
    }
 }.
 
+local lemma bad2_bound &m : 
+  Pr [Game0(A,Oracle2_CMA).main() @ &m : Oracle2_CMA.bad2] <= 
+  (qS * kappa)%r * (qS * kappa + qH)%r * alpha.
+admitted.
+(* Sketch: 
+   - we have (up to) qS*kappa samplings from commit sk
+   - the domain of the RO contains at most (qS * kappa + qH) elements
+   - 
+
+
 local lemma hop2 &m : 
   Pr [Game0(A,Oracle1b_CMA).main() @ &m : res ] 
   <=   Pr [Game0(A,Oracle2_CMA).main() @ &m : res ]
@@ -392,17 +402,22 @@ seq 4 4 : (!Oracle2_CMA.bad2{2} => ={glob O_CMA_Default,RO.m,pk,sk,m,sig}); last
   + conseq (:_ ==> true); [smt() | by inline*; auto ].
   + conseq (: _ ==> ={r}); [smt() | sim => /#].
 call (: Oracle2_CMA.bad2, ={RO.m, glob O_CMA_Default}); last 6 first.
-- admit.
-- admit.
-- admit.
-- admit. 
-- admit.
-- admit.
+- move => *. proc. islossless. 
+  while true (kappa - k). move => z. wp. conseq (: _ ==> true). smt(). islossless. skip; smt(). 
+- move => *. proc. 
+  conseq (:_ ==> true) (:_ ==> Oracle2_CMA.bad2); 1,2: smt(). 
+  + while Oracle2_CMA.bad2; inline*; auto => />. 
+  while true (kappa - k). move => z. wp. conseq (: _ ==> true). smt(). islossless. islossless. smt(). 
+- conseq />. by proc; inline*; auto.
+- move => *; islossless.
+- move => *. conseq />. islossless.
+- by inline*; auto => /> /#.
 - exact A_ll. 
 proc. wp. conseq />.
 seq 4 4 : (#[1:3]pre /\ ={w,oz,glob O_CMA_Default,k}); 1: by auto.
+(* Make loop termination on LHS independent from bad event *)
 transitivity*{1} { 
-  while (k < reject_bound) {     
+  while (k < kappa) {     
    if (oz = None) { 
      (w, pstate) <$ commit O_CMA_Default.sk;
      c <@ RO.get((w, m));
@@ -412,17 +427,57 @@ transitivity*{1} {
  }
 }; 1,2: smt(). 
 - splitwhile{2} 1 : (oz = None).
-  seq 1 1 : (#post /\ !(k{2} < reject_bound /\ oz{2} = None)). 
-  while (#pre). 
-  rcondt{2} 1; first by auto => />. 
-  conseq (: _ ==> ={O_CMA_Default.sk, O_CMA_Default.qs, RO.m, c, k, m, oz, pstate, w}). 
-  smt(). sim. auto => />.
-  while{2} (#pre) (reject_bound - k{2}). 
-  + move => &h z. admit. 
+  seq 1 1 : (#post /\ !(k{2} < kappa /\ oz{2} = None)). 
+  + while (#pre). 
+    * rcondt{2} 1; first by auto => />. 
+      conseq (: _ ==> ={O_CMA_Default.sk, O_CMA_Default.qs, RO.m, c, k, m, oz, pstate, w}). 
+      smt(). sim. auto => />.
+  + while{2} (#pre) (kappa - k{2}). 
+    * move => &h z. by rcondf 1; auto => /> /#. 
   auto => />. smt().
-(* RHS transtivity and then the "up to bad while" *)
-
-admitted.
+(* Make loop termination on RHS independent from bad event - same as above *)
+transitivity*{2} { 
+  while (k < kappa) {     
+   if (oz = None) { 
+     (w, pstate) <$ commit O_CMA_Default.sk;
+     Oracle2_CMA.bad2 <- Oracle2_CMA.bad2 \/ (w, m) \in RO.m;
+     c <$ dC;
+     RO.set((w, m), c);
+     oz <- response O_CMA_Default.sk c pstate;
+   }
+   k <- k + 1;
+ }
+}; 1,2: smt(); last first.
+- splitwhile{1} 1 : (oz = None).
+  seq 1 1 : (#post /\ !(k{1} < kappa /\ oz{1} = None)). 
+  + while (#pre). 
+    * rcondt{1} 1; first by auto => />. 
+      conseq (: _ ==> ={glob O_CMA_Default,Oracle2_CMA.bad2, RO.m, c, k, m, oz, pstate, w}). 
+      smt(). sim. auto => />.
+  + while{1} (#pre) (kappa - k{1}). 
+    * move => &h z. by rcondf 1; auto => /> /#. 
+  auto => />. smt().
+(* main up-to-bad step *)
+while (={k} /\ (!Oracle2_CMA.bad2{2} => ={RO.m,glob O_CMA_Default,w,oz,m}));
+  last by auto => /> /#.
+case (Oracle2_CMA.bad2{2}). 
+- conseq (: ={k} ==> ={k}) _ (: Oracle2_CMA.bad2 ==> Oracle2_CMA.bad2); 1,2: smt(); 
+    first by if; inline*; auto => />.
+  wp. conseq />. 
+  (* usual equitermination trick *)
+  seq 1 0 : true. 
+    conseq (:_ ==> _) (: _ ==> true : 1%r); islossless. 
+  conseq (:_ ==> _) _ (: _ ==> true : 1%r); islossless.
+if; 1,3: by auto => /> /#.
+seq 1 1 : (!Oracle2_CMA.bad2{2} /\ ={RO.m, glob O_CMA_Default, m, k, oz, w, pstate}); 
+  first by auto => /> /#.
+case (((w,m) \in RO.m){2}).
+- conseq (: ={k} ==> ={k}) _ (: ((w,m) \in RO.m) ==> Oracle2_CMA.bad2); 1,2: smt(). 
+  + by inline*; auto => />. 
+  + by wp; conseq />; inline*; auto.
+inline*; rcondt{1} 3; first by auto => /> /#.
+auto => />. smt(get_set_sameE).
+qed.
 
 local module (Oracle3_CMA : Oracle_CMA) (S : Scheme)  = {
     import var O_CMA_Default(S)
@@ -438,7 +493,7 @@ local module (Oracle3_CMA : Oracle_CMA) (S : Scheme)  = {
       qs <- rcons qs m;
 
       k <- 0;
-      while (oz = None /\ k < reject_bound) { 
+      while (oz = None /\ k < kappa) { 
         (w, pstate) <$ commit sk;
         c <$ dC; 
         oz <- response sk c pstate;
@@ -449,6 +504,7 @@ local module (Oracle3_CMA : Oracle_CMA) (S : Scheme)  = {
       return if oz <> None then (w,oget oz) else witness;
    }
 }.
+
 
 (* TODO: prove axioms and make this local *)
 (* TOTHINK: How do we align the RO theories ? *)
@@ -494,7 +550,7 @@ local module OGame1  = {
     qs <- rcons qs m;
 
     k <- 0;
-    while (ot = None /\ k < reject_bound) { 
+    while (ot = None /\ k < kappa) { 
       ot <@ Honest_Execution(P,V).get_trans(pk,sk);
       k <- k+1;
     } 
@@ -566,7 +622,7 @@ local module OGame2  = {
     qs <- rcons qs m;
 
     k <- 0;
-    while (ot = None /\ k < reject_bound) { 
+    while (ot = None /\ k < kappa) { 
       ot <@ Sim.get_trans(pk);
       k <- k+1;
     } 
@@ -678,8 +734,8 @@ qed.
 (* lemma main_result &m :  *)
 (*   Pr [EF_CMA_RO(IDS_Sig(P, V), A, QRO, O_CMA_Default).main() @ &m : res] *)
 (*     <=  Pr [EF_KOA_RO(IDS_Sig(P, V), KOA_Forger(A, Sim), QRO).main() @ &m : res]  *)
-(*        +  `|Pr [HVZK_Game (Sim, P, V, Red_HVZK(A)).main(qs_bound, false) @ &m : res] - *)
-(*              Pr [HVZK_Game (Sim, P, V, Red_HVZK(A)).main(qs_bound, true) @ &m : res]| *)
+(*        +  `|Pr [HVZK_Game (Sim, P, V, Red_HVZK(A)).main(qS, false) @ &m : res] - *)
+(*              Pr [HVZK_Game (Sim, P, V, Red_HVZK(A)).main(qS, true) @ &m : res]| *)
 (*        +  (3%r/2%r) * rep_ctr%r * sqrt (query_ctr%r*p_max_bound). *)
 
 end section PROOF.
