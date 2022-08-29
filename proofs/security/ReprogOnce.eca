@@ -48,7 +48,7 @@ op dWCoZ sk : (W * C * Z option) distr =
 
 (* Transcript distribution, conditioned on accept or reject. *)
 (* CD: is the if-then-else really necessary? *)
-
+(* Ethan: TODO Remove this if-then-else *)
 op dWCoZ_rej sk = 
   if valid_sk sk then
     dcond (dWCoZ sk) (fun wcz => let (w, c, z) = wcz in z = None)
@@ -68,10 +68,10 @@ axiom dX_pmax k :
 
  (* max. number of signing queries *)
 op qs : {int | 0 < qs} as qs_gt0.
-op qh : int. (* max. number of hash queries *)
-axiom qh_gt0 : 0 < qh.
-op kappa : int. (* max. number of iterations *)
-axiom kappa_gt0 : 0 < kappa.
+(* max. number of hash queries *)
+op qh : {int | 0 < qh} as qh_gt0.
+(* max. number of iterations *)
+op kappa : {int | 0 < kappa} as kappa_gt0.
 
 clone import PROM.FullRO as RO with
   type in_t <= W * M,
@@ -86,14 +86,13 @@ module type Oracle = {
 
 module type Oracle_i = {
   include Oracle
-  proc init() : unit
+  proc init(sk_i : SK) : unit
 }.
 
 module Count (O: Oracle_i) : Oracle = {
   var countS : int
   var countH : int
 
-  (* Where are the counters initialized *)
   proc init = O.init
 
   proc h(w: W, m : M) : C = {
@@ -114,9 +113,8 @@ module Count (O: Oracle_i) : Oracle = {
 module OLeft : Oracle_i = {
   var sk : SK
 
-  proc init() = {
-    var pk;
-    (pk, sk) <$ keygen;
+  proc init(sk_i: SK) = {
+    sk <- sk_i;
   }
 
   proc h = RO.get
@@ -166,15 +164,16 @@ module ORight : Oracle_i = {
 }.
 
 module type Adversary(O: Oracle) = {
-  proc distinguish(): bool
+  proc distinguish(pk: PK): bool
 }.
 
 module Game (Adv: Adversary) (O: Oracle_i) = {
   proc main() = {
-    var b;
+    var b, pk, sk;
+    (pk, sk) <$ keygen;
     RO.init();
-    O.init();
-    b <@ Adv(O).distinguish();
+    O.init(sk);
+    b <@ Adv(O).distinguish(pk);
     return b;
   }
 }.
@@ -191,6 +190,8 @@ declare axiom A_ll : forall (O <: Oracle),
   islossless O.h =>
   islossless O.sign =>
   islossless Adv(O).distinguish.
+
+(**
 
 (* -- Ingredients required for cloning ReprogRej -- *)
 
@@ -1252,10 +1253,13 @@ call (_ : ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1}); la
   smt(dXYZ_acc_supp_m dXYZ_acc_supp).
 qed.
 
+**)
+
 lemma adv_bound &m :
   `| Pr[Game(Adv, OLeft).main() @ &m : res] -
      Pr[Game(Adv, ORight).main() @ &m : res] | <= qh%r * (kappa * qs)%r * alpha.
 proof.
+(*
 have ->: Pr[Game(Adv, OLeft).main() @ &m : res] =
          Pr[Guess.Game(Guess.OLeft, Reduction).main() @ &m: res].
 - byequiv => //.
@@ -1270,5 +1274,7 @@ apply (Reduction_ll ORej).
 move => ORej.
 conseq (Reduction_bound ORej).
 qed.
+*)
+admitted.
 
 end section Analysis.
