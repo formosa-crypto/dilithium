@@ -191,8 +191,6 @@ declare axiom A_ll : forall (O <: Oracle),
   islossless O.sign =>
   islossless Adv(O).distinguish.
 
-(**
-
 (* -- Ingredients required for cloning ReprogRej -- *)
 
 op dWCoZ_acc sk = 
@@ -1006,12 +1004,11 @@ qed.
 
 (** -- Reduction to ReprogRej -- **)
 
-local module OReduction(O: Guess.Oracle) : Oracle_i = {
+local module OReduction(O: Guess.Oracle) : Oracle = {
   var sk : SK
 
-  proc init() = {
-    var pk;
-    (pk, sk) <$ keygen;
+  proc init(sk_i : SK) = {
+    sk <- sk_i;
   }
 
   proc h = O.h
@@ -1060,13 +1057,15 @@ qed.
 
 local module (Reduction : Guess.Adversary) (ORej: Guess.Oracle) = {
   include var OReduction(ORej) [-sign, h]
-  (* Interim hack (?) that stops ORej{-Reduction} from writing count *)
+  (* Hack that stops ORej{-Reduction} from writing count *)
   include var Count(OReduction(ORej)) [-init]
 
   proc distinguish() = {
-    var b; 
-    OReduction(ORej).init();
-    b <@ Adv(OReduction(ORej)).distinguish();
+    var b;
+    var pk, sk;
+    (pk, sk) <$ keygen;
+    OReduction(ORej).init(sk);
+    b <@ Adv(OReduction(ORej)).distinguish(pk);
     return b;
   }
 }.
@@ -1089,9 +1088,11 @@ qed.
 
 local module (ReductionCount : Guess.Adversary) (ORej: Guess.Oracle) = {
   proc distinguish() = {
-    var b; 
-    Count(OReduction(ORej)).init();
-    b <@ Adv(Count(OReduction(ORej))).distinguish();
+    var b;
+    var pk, sk;
+    (pk, sk) <$ keygen;
+    Count(OReduction(ORej)).init(sk);
+    b <@ Adv(Count(OReduction(ORej))).distinguish(pk);
     return b;
   }
 }.
@@ -1104,7 +1105,8 @@ proof.
 move => ORej; proc.
 inline Count(OReduction(ORej)).init.
 seq 1: #pre; 1: by auto.
-by call (A_bound (OReduction(ORej))) => //.
+call (A_bound (OReduction(ORej))) => //.
+by auto => //.
 qed.
 
 local lemma ReductionCount_hop : forall (ORej <: Guess.Oracle{-Adv, -Guess.Count, -Count, -OReduction}),
@@ -1121,9 +1123,9 @@ proof.
 move => ORej; proc.
 inline OReduction(Guess.Count(ORej)).init.
 
-seq 1 1: (#pre /\ ={OReduction.sk}).
+seq 3 2: (#pre /\ ={pk, OReduction.sk}).
 - inline Count(OReduction(ORej)).init.
-  by rnd => />; auto => //.
+  by conseq/>; sim.
 call (_: ={glob ORej, OReduction.sk} /\
          Guess.Count.countH{1} = Count.countH{2} /\
          Guess.Count.countR{1} <= kappa * Count.countS{2}); last by auto.
@@ -1175,8 +1177,8 @@ proof.
 proc.
 inline RO.init OLeft.init Guess.OLeft.init Reduction(Guess.OLeft).distinguish.
 wp; inline OReduction(Guess.OLeft).init.
-seq 2 2: (#pre /\ ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1});
-  first by rnd; auto => /> /#.
+seq 4 4: (#pre /\ ={RO.m, pk} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1}).
+- by wp; rnd; auto => /> /#.
 call (_ : ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1}); last by skip => />.
 - by proc; inline RO.get; auto.
 - transitivity OLeft_drop_rej_info.sign
@@ -1223,8 +1225,8 @@ proof.
 proc.
 inline RO.init OLeft.init Guess.OLeft.init Reduction(Guess.ORight).distinguish.
 wp; inline OReduction(Guess.ORight).init.
-seq 2 2: (#pre /\ ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1});
-  first by rnd; auto => /> /#.
+seq 4 4: (#pre /\ ={RO.m, pk} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1}).
+- by wp; rnd; auto => /> /#.
 call (_ : ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1}); last by skip => />.
 - by proc; inline RO.get; auto.
 - transitivity ORight_drop_rej_info.sign
@@ -1253,13 +1255,10 @@ call (_ : ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1}); la
   smt(dXYZ_acc_supp_m dXYZ_acc_supp).
 qed.
 
-**)
-
 lemma adv_bound &m :
   `| Pr[Game(Adv, OLeft).main() @ &m : res] -
      Pr[Game(Adv, ORight).main() @ &m : res] | <= qh%r * (kappa * qs)%r * alpha.
 proof.
-(*
 have ->: Pr[Game(Adv, OLeft).main() @ &m : res] =
          Pr[Guess.Game(Guess.OLeft, Reduction).main() @ &m: res].
 - byequiv => //.
@@ -1274,7 +1273,5 @@ apply (Reduction_ll ORej).
 move => ORej.
 conseq (Reduction_bound ORej).
 qed.
-*)
-admitted.
 
 end section Analysis.
