@@ -186,7 +186,7 @@ declare axiom A_bound : forall (O <: Oracle_i{-Adv}),
   hoare [ Adv(Count(O)).distinguish : Count.countS = 0 /\ Count.countH = 0 ==> 
                                       Count.countS <= qs /\ Count.countH <= qh ].
 
-declare axiom A_ll : forall (O <: Oracle),
+declare axiom A_ll : forall (O <: Oracle{-Adv}),
   islossless O.h =>
   islossless O.sign =>
   islossless Adv(O).distinguish.
@@ -1070,7 +1070,7 @@ local module (Reduction : Guess.Adversary) (ORej: Guess.Oracle) = {
   }
 }.
 
-local lemma Reduction_ll : forall (O <: Guess.Oracle),
+local lemma Reduction_ll : forall (O <: Guess.Oracle {-Adv}),
   islossless O.h =>
   islossless O.reprog_acc =>
   islossless O.reprog_rej =>
