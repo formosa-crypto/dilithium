@@ -94,6 +94,9 @@ op verify : PK -> W -> C -> Z -> bool.
 op check_entropy : SK -> bool.
 op gamma, alpha : real.
 
+axiom alpha_gt0 : 0%r < alpha.
+axiom gamma_gt0 : 0%r < alpha.
+
 op valid_sk sk =
   exists pk, (pk, sk) \in keygen.
 
@@ -232,6 +235,40 @@ module CountH (H : Hash) = {
   } 
 }.
 
+(* Oracle with a bad event if the loop bound is reached. 
+   This is out here, because we have no good way of bounding it *)
+
+module (Oracle1b_CMA : Oracle_CMA) (S : Scheme)  = {
+  include var O_CMA_Default(S) [-init,sign]
+  var bad : bool
+
+  proc init(ski: SK) : unit = {
+    sk <- ski;
+    qs <- [];
+    bad <- false;
+  }
+
+  proc sign(m: M) : Sig = {
+    var pstate;
+    var sig: Sig;
+    var k;
+    var c <- witness;
+    var w <- witness;
+    var oz <- None;
+    qs <- rcons qs m;
+
+    k <- 0;
+    while (oz = None /\ k < kappa) { 
+      (w, pstate) <$ commit sk;
+      c <@ RO.get((w,m));
+      oz <- response sk c pstate;
+      k <- k+1;
+    } 
+    bad <- bad \/ oz = None; 
+    return if oz <> None then (w,oget oz) else witness;
+  }
+}.
+
 
 section PROOF. 
 
@@ -239,7 +276,7 @@ section PROOF.
 to the random oracle and at most [qS] queries to the signing
 oracle *)
 
-declare module A <: Adv_EFCMA_RO{-RO,-P,-V,-O_CMA_Default,-ORedKOA,-CountS,-CountH}.
+declare module A <: Adv_EFCMA_RO{-RO,-P,-V,-O_CMA_Default,-ORedKOA,-CountS,-CountH,-Oracle1b_CMA}.
 
 declare axiom A_query_bound &m (SO <: SOracle_CMA{-CountH, -CountS}) (H <: Hash{-CountH,-CountS}) : 
  hoare[ A(CountH(H),CountS(SO)).forge : 
@@ -308,36 +345,7 @@ qed.
 (* Introduce an upper bound on the number of signing attempts            *)
 (* ----------------------------------------------------------------------*)
 
-local module (Oracle1b_CMA : Oracle_CMA) (S : Scheme)  = {
-  include var O_CMA_Default(S) [-init,sign]
-  var bad : bool
 
-  proc init(ski: SK) : unit = {
-    sk <- ski;
-    qs <- [];
-    bad <- false;
-  }
-
-  proc sign(m: M) : Sig = {
-    var pstate;
-    var sig: Sig;
-    var k;
-    var c <- witness;
-    var w <- witness;
-    var oz <- None;
-    qs <- rcons qs m;
-
-    k <- 0;
-    while (oz = None /\ k < kappa) { 
-      (w, pstate) <$ commit sk;
-      c <@ RO.get((w,m));
-      oz <- response sk c pstate;
-      k <- k+1;
-    } 
-    bad <- bad \/ oz = None; 
-    return if oz <> None then (w,oget oz) else witness;
-  }
-}.
 
 (* TOTHINK: Proving termination actually requires us to prove 
 
@@ -1006,20 +1014,16 @@ qed.
 
 import RField.
 
-op X : real.
 op bound1 = (qS * kappa)%r * (qS * kappa + qH)%r * alpha.
 op bound2 = qH%r * (kappa * qS)%r * alpha.
-
 
 lemma FSabort_bound &m : 
    Pr [ EF_CMA_RO(IDS_Sig(P, V), A, RO, O_CMA_Default).main() @ &m : res] 
 <= Pr [ EF_KOA_RO(IDS_Sig(P,V),RedKOA(A,Sim),RO).main() @ &m : res ] 
- + (X + gamma + bound1 + bound2 + gamma).
+ + (Pr [Game0(A,Oracle1b_CMA).main() @ &m : Oracle1b_CMA.bad ] + gamma + bound1 + bound2 + gamma).
 
 rewrite hop1 addrC -!addrA.
-apply: (ler_trans _ _ _ (hop1a &m) _); rewrite addrC.
-apply ler_add.
-+ admit.
+apply: (ler_trans _ _ _ (hop1a &m) _); rewrite addrC ler_add2l.
 apply: (ler_trans _ _ _ (hop0 &m) _); rewrite addrC. rewrite ler_add2l.
 apply: (ler_trans _ _ _ (hop2 &m) _); rewrite addrC.
 apply ler_add. exact bad2_bound.
