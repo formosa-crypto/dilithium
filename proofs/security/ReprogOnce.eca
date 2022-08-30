@@ -191,8 +191,6 @@ declare axiom A_ll : forall (O <: Oracle{-Adv}),
   islossless O.sign =>
   islossless Adv(O).distinguish.
 
-(**
-
 (* -- Ingredients required for cloning ReprogRej -- *)
 
 op dWCoZ_acc sk = 
@@ -606,7 +604,7 @@ local module OLeft_body2 : Oracle_i = {
       RO.set((w, m), c);
       i <- i + 1;
     }
-    return if oz <> None then (w, c, oget oz) else witness;
+    return if oz <> None then Some (w, c, oget oz) else None;
   }
 }.
 
@@ -634,7 +632,7 @@ local module OLeft_body4 : Oracle_i = {
       RO.set((w, m), c);
       i <- i + 1;
     }
-    return if f then (w, c, z) else witness;
+    return if f then Some (w, c, z) else None;
   }
 }.
 
@@ -675,7 +673,7 @@ local module OLeft_cond : Oracle_i = {
       RO.set((w, m), c);
       i <- i + 1;
     }
-    return if f then (w, c, z) else witness;
+    return if f then Some (w, c, z) else None;
   }
 }.
 
@@ -711,7 +709,7 @@ local module OLeft_move_reprog : Oracle_i = {
       }
       i <- i + 1;
     }
-    return if f then (w, c, z) else witness;
+    return if f then Some (w, c, z) else None;
   }
 }.
 
@@ -752,7 +750,7 @@ local module OLeft_drop_rej_info : Oracle_i = {
       }
       i <- i + 1;
     }
-    return if f then (w, c, z) else witness;
+    return if f then Some (w, c, z) else None;
   }
 }.
 
@@ -811,7 +809,7 @@ local module ORight_body2 : Oracle_i = {
     }
     if(oz <> None)
       RO.set((w, m), c);
-    return if oz <> None then (w, c, oget oz) else witness;
+    return if oz <> None then Some (w, c, oget oz) else None;
   }
 }.
 
@@ -840,7 +838,7 @@ local module ORight_body4 : Oracle_i = {
     }
     if(f)
       RO.set((w, m), c);
-    return if f then (w, c, z) else witness;
+    return if f then Some (w, c, z) else None;
   }
 }.
 
@@ -884,7 +882,7 @@ local module ORight_cond : Oracle_i = {
     }
     if(f)
       RO.set((w, m), c);
-    return if f then (w, c, z) else witness;
+    return if f then Some (w, c, z) else None;
   }
 }.
 
@@ -919,7 +917,7 @@ local module ORight_move_reprog : Oracle_i = {
       }
       i <- i + 1;
     }
-    return if f then (w, c, z) else witness;
+    return if f then Some (w, c, z) else None;
   }
 }.
 
@@ -963,7 +961,7 @@ local module ORight_drop_rej_info : Oracle_i = {
       }
       i <- i + 1;
     }
-    return if f then (w, c, z) else witness;
+    return if f then Some (w, c, z) else None;
   }
 }.
 
@@ -1037,7 +1035,7 @@ local module OReduction(O: Guess.Oracle) : Oracle = {
       }
       i <- i + 1;
     }
-    return if f then (w, c, z) else witness;
+    return if f then Some (w, c, z) else None;
   }
 }.
 
@@ -1124,7 +1122,6 @@ local lemma ReductionCount_hop : forall (ORej <: Guess.Oracle{-Adv, -Guess.Count
 proof.
 move => ORej; proc.
 inline OReduction(Guess.Count(ORej)).init.
-
 seq 3 2: (#pre /\ ={pk, OReduction.sk}).
 - inline Count(OReduction(ORej)).init.
   by conseq/>; sim.
@@ -1257,13 +1254,10 @@ call (_ : ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1}); la
   smt(dXYZ_acc_supp_m dXYZ_acc_supp).
 qed.
 
-**)
-
 lemma adv_bound &m :
   `| Pr[Game(Adv, OLeft).main() @ &m : res] -
      Pr[Game(Adv, ORight).main() @ &m : res] | <= qh%r * (kappa * qs)%r * alpha.
 proof.
-(*
 have ->: Pr[Game(Adv, OLeft).main() @ &m : res] =
          Pr[Guess.Game(Guess.OLeft, Reduction).main() @ &m: res].
 - byequiv => //.
@@ -1278,7 +1272,5 @@ apply (Reduction_ll ORej).
 move => ORej.
 conseq (Reduction_bound ORej).
 qed.
-*)
-admitted.
 
 end section Analysis.
