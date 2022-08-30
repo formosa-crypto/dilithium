@@ -81,7 +81,7 @@ proof *.
 
 module type Oracle = {
   proc h(w: W, m: M) : C
-  proc sign(m: M) : W * C * Z
+  proc sign(m: M) : (W * C * Z) option
 }.
 
 module type Oracle_i = {
@@ -134,7 +134,7 @@ module OLeft : Oracle_i = {
       RO.set((w, m), c);
       i <- i + 1;
     }
-    return if oz <> None then (w, c, oget oz) else witness;
+    return if oz <> None then Some (w, c, oget oz) else None;
   }
 }.
 
@@ -159,7 +159,7 @@ module ORight : Oracle_i = {
     }
     if(oz <> None)
       RO.set((w, m), c);
-    return if oz <> None then (w, c, oget oz) else witness;
+    return if oz <> None then Some (w, c, oget oz) else None;
   }
 }.
 
@@ -190,6 +190,8 @@ declare axiom A_ll : forall (O <: Oracle{-Adv}),
   islossless O.h =>
   islossless O.sign =>
   islossless Adv(O).distinguish.
+
+(**
 
 (* -- Ingredients required for cloning ReprogRej -- *)
 
@@ -1255,10 +1257,13 @@ call (_ : ={RO.m} /\ OLeft.sk{1} = OReduction.sk{2} /\ valid_sk OLeft.sk{1}); la
   smt(dXYZ_acc_supp_m dXYZ_acc_supp).
 qed.
 
+**)
+
 lemma adv_bound &m :
   `| Pr[Game(Adv, OLeft).main() @ &m : res] -
      Pr[Game(Adv, ORight).main() @ &m : res] | <= qh%r * (kappa * qs)%r * alpha.
 proof.
+(*
 have ->: Pr[Game(Adv, OLeft).main() @ &m : res] =
          Pr[Guess.Game(Guess.OLeft, Reduction).main() @ &m: res].
 - byequiv => //.
@@ -1273,5 +1278,7 @@ apply (Reduction_ll ORej).
 move => ORej.
 conseq (Reduction_bound ORej).
 qed.
+*)
+admitted.
 
 end section Analysis.
