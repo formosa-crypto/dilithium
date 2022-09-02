@@ -1,0 +1,152 @@
+require import AllCore Int FSet Distr Mu_mem.
+require (*--*) FelTactic.
+(*---*) import StdOrder.RealOrder StdBigop.Bigreal.BRA.
+
+type W,M,SK,St.
+
+op [lossless] d : SK -> (W * St) distr.
+
+module type Oracle = { 
+  proc init () : unit
+  proc put (w : W,m : M) : unit
+  proc sample (sk : SK,m : M) : W * St
+}.
+
+module Count (O : Oracle) = { 
+  var cp,cs : int
+
+  proc init () : unit = { cp <- 0 ; cs <- 0; }
+
+  proc put (w : W,m : M) : unit = { 
+    cp <- cp + 1 ; 
+    O.put(w,m); 
+  } 
+
+  proc sample (sk : SK,m : M) = {
+    var r;
+
+    cs <- cs + 1;
+    r <@ O.sample(sk,m);
+    return r;
+  }
+}.
+
+module (M : Oracle) = { 
+  var s : (W * M) fset
+  var bad : bool
+
+  proc init() = { 
+    bad <- false ; 
+    s <- fset0; 
+  }
+
+  proc put (w,m) = { 
+    s <- s `|` fset1 (w,m); }
+
+  proc sample (sk,m) = { 
+    var w,st;
+  
+    (w,st) <$ d sk;
+    bad <- bad \/ (w,m) \in s;
+    return (w,st);
+  }
+}.
+
+module type Adversary (O : Oracle) = {
+  proc main () : unit { O.put, O.sample }
+}.
+
+module Game (A : Adversary) (O : Oracle) = { 
+  proc main() = {
+    O.init();
+    Count(O).init();
+    A(Count(O)).main();
+  } 
+}.
+
+section PROOF.
+
+declare module A <: Adversary{-M,-Count}.
+
+const qP : int.
+const qS : int.
+const alpha : real.
+
+declare axiom qP_ge0 : 0 <= qP.
+declare axiom qS_ge0 : 0 <= qS.
+declare axiom alphaP : forall z w, mu (dfst (d z)) w <= alpha.
+
+local lemma alpha_ge0 : 0%r <= alpha.
+proof. 
+have ? := alphaP witness witness; smt(mu_bounded).
+qed.
+
+
+local module (Mc : Oracle) = { 
+  import var M
+  var cp : int
+
+  proc init() = { 
+    bad <- false ; 
+    s <- fset0; 
+    cp <- 0;
+  }
+
+  proc put (w,m) = { 
+    if (cp < qP) {
+      s <- s `|` fset1 (w,m); 
+      cp <- cp + 1;
+    }
+  }
+
+  proc sample (sk,m) = { 
+    var w,st;
+  
+    (w,st) <$ d sk;
+    bad <- bad \/ (w,m) \in s;
+    return (w,st);
+  }
+}.
+
+local lemma Mc_alpha &m : 
+  Pr [ Game(A,Mc).main() @ &m : M.bad /\ Mc.cp <= qP /\ Count.cs <= qS ] <= 
+  (qP * qS)%r * alpha.
+proof.
+fel 2 Count.cs (fun _ => qP%r * alpha) qS M.bad [Mc.put : false] 
+      (card M.s <= Mc.cp <= qP); try (by auto); last 2 first.
+- move => c. proc; inline*; auto => />. smt(fcardU1). 
+- move => b n; proc; inline*.  auto => />. smt(fcardU1).
+- rewrite sumri_const ?qS_ge0 RField.intmulr; smt().
+- inline*; auto => />; smt(fcards0 qP_ge0).
+proc; inline*; wp; conseq (:_ ==> (w,m0) \in M.s); 1: smt(). 
+rnd (fun p : W * St => (p.`1,m0) \in M.s).
+auto => /> &1 *. 
+apply (ler_trans (mu (dfst (d sk{1})) (fun w => w \in image fst M.s{1}))).
+- rewrite dmapE /(\o); apply mu_le => -[w st] /= ? Hw.
+  by apply/imageP; exists (w,m{1}). 
+have L := mu_mem_le (image fst M.s{1}) (dfst (d sk{1})) alpha _.
+- smt(alphaP). 
+apply (ler_trans _ _ _ L) => {L}.
+smt(fcard_image_leq alpha_ge0).
+qed.
+
+local lemma M_Mc &m : 
+  Pr [ Game(A,M).main() @ &m : M.bad /\ Count.cp <= qP /\ Count.cs <= qS ] <=
+  Pr [ Game(A,Mc).main() @ &m : M.bad /\ Mc.cp <= qP /\ Count.cs <= qS ].
+proof.
+byequiv (_ : ={glob A} ==> Count.cp{1} <= qP => 
+             ={M.bad,Count.cs,Count.cp} /\ Mc.cp{2} = Count.cp{2}); 2,3: smt().
+proc; inline*. 
+call (: Count.cp{1} <= qP =>
+        ={M.bad, Count.cs, Count.cp, M.s} /\ Mc.cp{2} = Count.cp{2}). 
+- proc; inline*; auto => />. smt().
+- proc; inline*. auto => />. smt().
+auto => />; smt().
+qed.
+
+lemma put_sample_bound &m : 
+  Pr [ Game(A,M).main() @ &m : M.bad /\ Count.cp <= qP /\ Count.cs <= qS ] <= 
+  (qP * qS)%r * alpha.
+proof. apply (ler_trans _ _ _ (M_Mc &m)). exact Mc_alpha. qed.
+
+end section PROOF.
