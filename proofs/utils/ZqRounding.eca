@@ -1,6 +1,7 @@
 require import AllCore List IntDiv.
 require import PolyReduce.
 require Matrix.
+import StdOrder IntOrder.
 
 (* Various rounding operations. Poly and vector versions included.
  * Norm-related operations also live here for now. *)
@@ -53,7 +54,7 @@ op polyveck_weight (v : vector) =
 
 op mod_pm m d =
   let r = m %% d in
-  if r < m %/ 2 then r else r - d.
+  if r <= d %/ 2 then r else r - d.
 
 op power2round (r : Zp) d =
   let r' = asint r in
@@ -78,8 +79,6 @@ op decompose r alpha =
     (0, r0 - 1)
   else
     ((ri - r0) %/ alpha, r0).
-
-print decompose.
 
 op highbits r alpha = (decompose r alpha).`1.
 
@@ -145,37 +144,65 @@ op polyveck_useHint (hv rv :vector) alpha =
 
 (* proofs *)
 
-lemma abs_zp_id (x: Zp) :
-  (asint x <= q %/ 2) => abs_zp x = asint x.
-admitted.
+(* Umm smt too good? *)
+lemma mod_pm_bound x alpha :
+  2 <= alpha =>
+  -alpha %/ 2 <= mod_pm x alpha <= alpha %/ 2.
+proof. smt(). qed.
 
 lemma abs_zp_abs x :
-  -q %/ 2 < x <= q %/ 2 =>
+  2 <= q =>
+  -q %/ 2 <= x <= q %/ 2 =>
   abs_zp (inzmod x) = `|x|.
-admitted.
+proof.
+move => ? [??].
+by rewrite /abs_zp /min inzmodK /#.
+qed.
+
+lemma mod_pm_mod r a :
+  a %| (r - mod_pm r a).
+proof.
+rewrite /(%|) /mod_pm /=.
+case (r %% a <= a %/ 2) => _ /=.
+- by rewrite -modzDm modzNm modzDm.
+- have ->: r - (r %% a - a) = r - r %% a + a by ring.
+  by rewrite modzDr -modzDm modzNm modzDm.
+qed.
 
 lemma decompose_recompose r alpha :
   r = inzmod ((highbits r alpha) * alpha + lowbits r alpha).
-admitted.
+proof.
+rewrite /highbits /lowbits /decompose /=.
+case (asint r - mod_pm (asint r) alpha = q - 1) => ? /=.
+- have ->: mod_pm (asint r) alpha = asint r + 1 - q by smt().
+  have ->: (asint r + 1 - q - 1) = asint r - q by ring.
+  rewrite inzmodB asintK inzmod_mod modzz.
+  by ring.
+- rewrite divzK; first exact mod_pm_mod.
+  have ->: asint r - mod_pm (asint r) alpha + mod_pm (asint r) alpha = asint r.
+  + smt().
+  smt(asintK).
+qed.
 
 lemma lowbits_bound x alpha :
+  2 <= alpha =>
   `|lowbits x alpha| <= alpha.
 proof.
-admitted.
-
-(*
-lemma decomposeE r alpha :
-  decompose r alpha = (highbits r alpha, lowbits r alpha).
-proof.
-smt().
+move => ?; rewrite /lowbits /decompose /=.
+case (asint x - mod_pm (asint x) alpha = q - 1) => _;
+  last by smt(mod_pm_bound).
+apply (ler_trans (`|mod_pm (asint x) alpha| + `|1|)); first exact ler_norm_add.
+smt(mod_pm_bound).
 qed.
-*)
 
 lemma usehint_close h (r : Zp) (alpha : int) :
+  2 <= q =>
+  2 <= alpha =>
+  alpha <= q %/ 2 =>
   let v1 = useHint h r alpha in
   abs_zp (r - inzmod (v1 * alpha)) <= alpha + 1.
 proof.
-rewrite /useHint.
+move => ???; rewrite /useHint.
 have -> /=: decompose r alpha = (highbits r alpha, lowbits r alpha) by smt().
 case h => _ /=.
 - (* h = 1 *)
@@ -185,7 +212,7 @@ case h => _ /=.
   have ->: highbits r alpha * alpha + lowbits r alpha -
     highbits r alpha * alpha = lowbits r alpha.
   + by ring.
-  rewrite abs_zp_abs.
-  - admit.
+  rewrite abs_zp_abs //.
+  - smt(lowbits_bound).
   smt(lowbits_bound).
 qed.
