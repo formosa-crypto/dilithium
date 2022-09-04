@@ -55,13 +55,13 @@ op mod_pm m d =
   let r = m %% d in
   if r < m %/ 2 then r else r - d.
 
-op power2round r d =
-  let r' = r %% q in
+op power2round (r : Zp) d =
+  let r' = asint r in
   let r0 = mod_pm r' (2 ^ d) in
   ((r' - r0) %/ (2 ^ d), r0).
 
 op poly_power2round (p : polyXnD1) (d : int) : polyXnD1 * polyXnD1 =
-  let coeffs = mkseq (fun i => asint p.[i]) n in
+  let coeffs = mkseq (fun i => p.[i]) n in
   let results = map (fun r => power2round r d) coeffs in
   (polyLX (map inzmod (unzip1 results)),
    polyLX (map inzmod (unzip2 results))).
@@ -71,16 +71,21 @@ op polyveck_power2round (v : vector) (d : int) : vector * vector =
    offunv (fun i => (poly_power2round v.[i] d).`2)).
 
 op decompose r alpha =
-  let r' = r %% q in
-  let r0 = mod_pm r' alpha in
-  if (r - r0 = q - 1)
+  let ri = asint r in
+  let r0 = mod_pm ri alpha in
+  if (ri - r0 = q - 1)
   then
     (0, r0 - 1)
   else
-    ((r' - r0) %/ alpha, r0).
+    ((ri - r0) %/ alpha, r0).
+
+print decompose.
 
 op highbits r alpha = (decompose r alpha).`1.
 
+(* TODO Int poly and int polyvec data structures *)
+
+(**
 op poly_highbits (p : polyXnD1) (alpha : int) : polyXnD1 =
   let coeffs = mkseq (fun deg => Zp.asint p.[deg]) n in
   let results = map (fun r => inzmod (highbits r alpha)) coeffs in
@@ -88,9 +93,11 @@ op poly_highbits (p : polyXnD1) (alpha : int) : polyXnD1 =
 
 op polyveck_highbits (v : vector) alpha : vector =
   offunv (fun i => poly_highbits v.[i] alpha).
+**)
 
 op lowbits r alpha = (decompose r alpha).`2.
 
+(**
 op poly_lowbits (p : polyXnD1) (alpha : int) : polyXnD1 =
   let coeffs = mkseq (fun deg => Zp.asint p.[deg]) n in
   let results = map (fun r => inzmod (lowbits r alpha)) coeffs in
@@ -98,12 +105,14 @@ op poly_lowbits (p : polyXnD1) (alpha : int) : polyXnD1 =
 
 op polyveck_lowbits (v : vector) alpha : vector =
   offunv (fun i => poly_lowbits v.[i] alpha).
+**)
 
 op makeHint z r alpha =
   let r1 = highbits r alpha in
   let v1 = highbits (r + z) alpha in
-  b2i (!(r1 = v1)).
+  r1 <> v1.
 
+(**
 op poly_makeHint (z : polyXnD1) (r : polyXnD1) (alpha : int) : polyXnD1 =
   let zcoeffs = mkseq (fun deg => Zp.asint z.[deg]) n in
   let rcoeffs = mkseq (fun deg => Zp.asint r.[deg]) n in
@@ -113,19 +122,70 @@ op poly_makeHint (z : polyXnD1) (r : polyXnD1) (alpha : int) : polyXnD1 =
 
 op polyveck_makeHint (z : vector) (r : vector) (alpha : int) : vector =
   offunv (fun i => poly_makeHint z.[i] r.[i] alpha).
+**)
 
-op useHint h r alpha =
+op useHint (h : bool) r alpha =
   let m = (q - 1) %/ alpha in
   let (r1, r0) = decompose r alpha in
-  if h = 1 && 0 < r0 then
+  if h /\ 0 < r0 then
     (r1 + 1) %% m
-  else if h = 1 && r0 <= 0 then
+  else if h /\ r0 <= 0 then
     (r1 - 1) %% m
   else
     r1.
+
+(**
 
 op poly_useHint (hs rs : R) (alpha : int) =
   polyLX (mkseq (fun i => inzmod (useHint (asint hs.[i]) (asint rs.[i]) alpha)) n).
 
 op polyveck_useHint (hv rv :vector) alpha =
   offunv (fun i => poly_useHint hv.[i] rv.[i] alpha).
+**)
+
+(* proofs *)
+
+lemma abs_zp_id (x: Zp) :
+  (asint x <= q %/ 2) => abs_zp x = asint x.
+admitted.
+
+lemma abs_zp_abs x :
+  -q %/ 2 < x <= q %/ 2 =>
+  abs_zp (inzmod x) = `|x|.
+admitted.
+
+lemma decompose_recompose r alpha :
+  r = inzmod ((highbits r alpha) * alpha + lowbits r alpha).
+admitted.
+
+lemma lowbits_bound x alpha :
+  `|lowbits x alpha| <= alpha.
+proof.
+admitted.
+
+(*
+lemma decomposeE r alpha :
+  decompose r alpha = (highbits r alpha, lowbits r alpha).
+proof.
+smt().
+qed.
+*)
+
+lemma usehint_close h (r : Zp) (alpha : int) :
+  let v1 = useHint h r alpha in
+  abs_zp (r - inzmod (v1 * alpha)) <= alpha + 1.
+proof.
+rewrite /useHint.
+have -> /=: decompose r alpha = (highbits r alpha, lowbits r alpha) by smt().
+case h => _ /=.
+- (* h = 1 *)
+  admit.
+- (* h = 0 *)
+  rewrite {1}(decompose_recompose r alpha) -inzmodB.
+  have ->: highbits r alpha * alpha + lowbits r alpha -
+    highbits r alpha * alpha = lowbits r alpha.
+  + by ring.
+  rewrite abs_zp_abs.
+  - admit.
+  smt(lowbits_bound).
+qed.
