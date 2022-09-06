@@ -1,6 +1,6 @@
 require import AllCore Distr IntDiv ZModP.
 require import PolyReduce.
-require Matrix.
+require NonSquareMatrix.
 require PROM.
 require ZqRounding.
 
@@ -26,11 +26,12 @@ realize ge2_p by smt(prime_q gt1_prime).
 realize gt0_n by exact gt0_n.
 
 (* Again, lots of axioms look like bad news... *)
-clone import Matrix as PolyMatrix with
+clone import NonSquareMatrix as PolyMatrix with
   theory ZR <= PolyReduceZq.ComRing,
-  op size <= k
-proof ge0_size.
-realize ge0_size by smt(gt0_k).
+  op in_size <= l,
+  op out_size <= k
+proof ge0_in_size by smt(gt0_l),
+      ge0_out_size by smt(gt0_k).
 
 clone import ZqRounding as Round with
   op q <= q,
@@ -44,25 +45,27 @@ clone import ZqRounding as Round with
 op [lossless uniform] dC : polyXnD1 distr.
 
 clone import PROM.FullRO as RO with
-  type in_t <- M * vector,
+  type in_t <- M * vec_out,
   type out_t <- polyXnD1,
   op dout <- fun _ => dC
 proof *.
 
 module type AdvRO = {
-  proc get(x: M * vector) : polyXnD1
+  proc get(x: M * vec_out) : polyXnD1
 }.
 
 module type Adversary (O: AdvRO) = {
   (* (mA, t) -> (m, z, c, v) where:
    * (mA, t) = A in the spec,
    * (v, z) = r in the spec. *)
-  proc solve(mA : matrix, t: vector) : M * vector * R * vector
+  proc solve(mA : matrix, t: vec_out) : M * vec_in * R * vec_out
 }.
 
 require import List.
 
 op gamma : int.
+
+import VecOut.
 
 module Game (Adv: Adversary) = {
   proc main() = {
@@ -71,12 +74,12 @@ module Game (Adv: Adversary) = {
     var c';
     RO.init();
     mA <$ dmatrix dpolyXnD1;
-    t <$ dvector dpolyXnD1;
+    t <$ VecOut.dvector dpolyXnD1;
     (m, z, c, v) <@ Adv(RO).solve(mA, t);
     c' <@ RO.get((m, mA *^ z + c ** t + v));
-    return polyvec_max l z <= gamma /\
+    return polyvecl_max z <= gamma /\
       poly_max c <= gamma /\
-      polyvec_max k v <= gamma /\
+      polyveck_max v <= gamma /\
       c = c';
   }
 }.
