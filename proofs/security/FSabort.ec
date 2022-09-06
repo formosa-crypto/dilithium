@@ -10,7 +10,9 @@ require import Int Real List FSet Distr RealExp SmtMap SDist StdOrder.
 require import DistrExtras.
 import RealOrder.
 
-require DigitalSignaturesRO PROM ReprogOnce.
+require FelTactic.
+
+require DigitalSignaturesRO PROM ReprogOnce Collision.
 
 require import IDSabort.
 import IDS.
@@ -95,7 +97,7 @@ op check_entropy : SK -> bool.
 op gamma, alpha : real.
 
 axiom alpha_gt0 : 0%r < alpha.
-axiom gamma_gt0 : 0%r < alpha.
+axiom gamma_gt0 : 0%r < gamma.
 
 op valid_sk sk =
   exists pk, (pk, sk) \in keygen.
@@ -118,6 +120,25 @@ rewrite (mu_eq _ _
   (fun (keys : PK * SK) => let (_, sk) = keys in ! check_entropy sk)).
 - by move => [pk sk] @/predC.
 exact most_keys_high_entropy.
+qed.
+
+const sk0 : SK.
+axiom sk0P : valid_sk sk0 /\ check_entropy sk0.
+
+op commit_good (sk : SK) = 
+  if valid_sk sk /\ check_entropy sk then commit sk else commit sk0.
+
+lemma commit_good_ll sk : is_lossless (commit_good sk).
+proof. smt(commit_ll). qed.
+
+lemma commit_good_entropy sk : 
+  p_max (dfst (commit_good sk)) <= alpha. 
+proof. smt(check_entropy_correct sk0P). qed.
+
+lemma commit_goodE sk : 
+  sk \in dsnd keygen_good => commit_good sk = commit sk.
+proof.
+case/supp_dmap => -[pk sk'] /> /dcond_supp /#.
 qed.
 
 module V = { 
@@ -217,6 +238,8 @@ module (RedKOA (A : Adv_EFCMA_RO) (Sim : HVZK_Sim) : Adv_EFKOA_RO) (H : Hash) = 
 
 module CountS (O : SOracle_CMA) = { 
   var qs : int
+  proc init() = { qs <- 0; }
+
   proc sign (m : M) = { 
     var s;
     qs <- qs + 1;
@@ -227,6 +250,8 @@ module CountS (O : SOracle_CMA) = {
 
 module CountH (H : Hash) = { 
   var qh : int
+  proc init() = { qh <- 0; }
+
   proc get (w,m) = { 
     var c;
     qh <- qh + 1;
@@ -278,7 +303,7 @@ oracle *)
 
 declare module A <: Adv_EFCMA_RO{-RO,-P,-V,-O_CMA_Default,-ORedKOA,-CountS,-CountH,-Oracle1b_CMA}.
 
-declare axiom A_query_bound &m (SO <: SOracle_CMA{-CountH, -CountS}) (H <: Hash{-CountH,-CountS}) : 
+declare axiom A_query_bound (SO <: SOracle_CMA{-CountH, -CountS}) (H <: Hash{-CountH,-CountS}) : 
  hoare[ A(CountH(H),CountS(SO)).forge : 
         CountH.qh = 0 /\ CountS.qs = 0 ==> 
         CountH.qh <= qH /\ CountS.qs <= qS].
@@ -473,8 +498,14 @@ qed.
 (* Second SIGN oracle: First samples challenge, then programs the QRO. This
    handles the reprogramming bound  *)
 local module (Oracle2_CMA : Oracle_CMA) (S : Scheme)  = {
-    include var O_CMA_Default(S) [-sign]
-    var bad2 : bool
+  include var O_CMA_Default(S) [-sign,init]
+  var bad2 : bool
+
+  proc init(ski: SK) : unit = {
+    sk <- ski;
+    qs <- [];
+    bad2 <- false;
+  }
 
     proc sign(m: M) : Sig = {
       var pstate;
@@ -499,15 +530,127 @@ local module (Oracle2_CMA : Oracle_CMA) (S : Scheme)  = {
    }
 }.
 
+print Oracle2_CMA. 
+
+(** Bounding the bad event **)
+
+local clone Collision as C with
+  type W <- W,
+  type M <- M,
+  type SK <- SK,
+  type St <- Pstate,
+  op d <- commit_good,
+  axiom d_ll <- commit_good_ll.
+
+print C.Oracle.
+
+local module Oracle2C (PS : C.Oracle) = {
+  import var O_CMA_Default
+
+  proc init(ski: SK) : unit = {
+    sk <- ski;
+    qs <- [];
+  }
+  
+  proc sign(m: M) : Sig = {
+      var pstate;
+      var sig: Sig;
+      var k;
+      var c <- witness;
+      var w <- witness;
+      var oz <- None;
+      qs <- rcons qs m;
+
+      k <- 0;
+      while (oz = None /\ k < kappa) { 
+        (w, pstate) <@ PS.sample(sk,m);
+        c <$ dC; 
+        RO.set((w,m),c);
+        PS.put(w,m);
+        oz <- response sk c pstate;
+        k <- k+1;
+      } 
+      (* bad <- bad || oz = None;  *)
+      return if oz <> None then (w,oget oz) else witness;
+   }
+}.
+
+local module RedGuess (PS : C.Oracle) = {
+  module H = { 
+    proc get(x) = { 
+      var r;
+      PS.put(x);
+      r <@ RO.get(x);
+      return r;
+    }
+  }
+
+  proc main() : unit = {
+    var pk : PK;
+    var sk : SK;
+    var m : M;
+    var sig : Sig;
+    var nrqs : int;
+    var is_valid : bool;
+    var is_fresh : bool;
+    
+    RO.init();
+    (pk, sk) <$ keygen_good;
+    Oracle2C(PS).init(sk);
+    CountH(H).init();
+    CountS(Oracle2C(PS)).init();
+    A(CountH(H),CountS(Oracle2C(PS))).forge(pk);
+    (* we no longer care about the result *)
+  }
+}.
+
+local lemma red_collision &m : 
+  Pr [Game0k(A,Oracle2_CMA).main() @ &m : Oracle2_CMA.bad2] <=
+  Pr [C.Game(RedGuess,C.M).main() @ &m : C.M.bad ].
+proof.
+byequiv => //; proc. 
+seq 4 3 : (Oracle2_CMA.bad2{1} <=> C.M.bad{2}) ; last by conseq />; inline*; auto.
+inline{2} 3.
+call (: ={RO.m,glob O_CMA_Default}  
+       /\ O_CMA_Default.sk{2} \in dsnd keygen_good
+       /\ (fdom RO.m = C.M.s){2} /\ Oracle2_CMA.bad2{1} = C.M.bad{2}).
+- proc. inline C.Count(C.M).sample Oracle2C(C.Count(C.M)).sign. wp.
+  while (={k,w,oz,RO.m,glob O_CMA_Default} /\ m{1} = m0{2}
+         /\ O_CMA_Default.sk{2} \in dsnd keygen_good
+         /\ Oracle2_CMA.bad2{1} = C.M.bad{2} /\ (fdom RO.m = C.M.s){2}).
+  inline*; auto => />. smt(fdom_set mem_fdom fsetP in_fsetU1 commit_goodE).
+  auto => />. 
+- proc. inline*; auto => /> &1 _. smt(fdom_set mem_fdom fsetP in_fsetU1).
+inline*; auto => />. smt(fdom0 supp_dmap). 
+qed.
+
 local lemma bad2_bound &m : 
   Pr [Game0k(A,Oracle2_CMA).main() @ &m : Oracle2_CMA.bad2] <= 
   (qS * kappa)%r * (qS * kappa + qH)%r * alpha.
-admitted.
-(* Sketch: 
-   - we have (up to) qS*kappa samplings from commit sk
-   - the domain of the RO contains at most (qS * kappa + qH) elements
-   - 
-*)
+proof.
+apply (ler_trans _ _ _ (red_collision &m)). 
+have := C.put_sample_bound RedGuess (qH + kappa * qS) (kappa * qS) alpha _ _ _ _ &m; 
+  1,2,5: smt(qH_ge0 kappa_gt0 qS_ge0).
+- move => sk w. apply: ler_trans (commit_good_entropy sk). 
+  exact: pmax_upper_bound. 
+move => O. proc. 
+conseq (:_ ==> C.Count.cp <= CountH.qh + kappa * CountS.qs /\ 
+               C.Count.cs <= kappa * CountS.qs) 
+       (: _ ==> CountH.qh <= qH /\ CountS.qs <= qS); 
+  1,2: smt(qH_ge0 kappa_gt0 qS_ge0). 
+- call (A_query_bound (<: Oracle2C(C.Count(O))) (<: RedGuess(C.Count(O)).H)).
+  by inline*; auto => />.
+call (:    C.Count.cs <= kappa * CountS.qs 
+        /\ C.Count.cp <= CountH.qh + kappa * CountS.qs).
+- proc; inline 2; swap 1 7; wp. 
+  while (   C.Count.cs <= kappa * CountS.qs + k 
+         /\ C.Count.cp <= CountH.qh + kappa * CountS.qs + k
+         /\ k <= kappa).
+  + by inline*; auto; call(: true); auto; call(: true); auto => /> /#.
+  auto => />. smt(qH_ge0 kappa_gt0 qS_ge0).
+- by proc; inline*; auto; call(: true); auto => /> /#.
+by inline*; auto.
+qed.
 
 local lemma hop2 &m : 
   Pr [Game0k(A,Oracle1b_CMA).main() @ &m : res ] 

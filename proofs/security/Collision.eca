@@ -68,13 +68,13 @@ section PROOF.
 
 declare module A <: Adversary{-M,-Count}.
 
-const qP : int.
-const qS : int.
-const alpha : real.
+declare const qP : int.
+declare const qS : int.
+declare const alpha : real.
 
 declare axiom qP_ge0 : 0 <= qP.
 declare axiom qS_ge0 : 0 <= qS.
-declare axiom alphaP : forall z w, mu (dfst (d z)) w <= alpha.
+declare axiom alphaP : forall z w, mu1 (dfst (d z)) w <= alpha.
 
 local lemma alpha_ge0 : 0%r <= alpha.
 proof. 
@@ -144,9 +144,26 @@ call (: Count.cp{1} <= qP =>
 auto => />; smt().
 qed.
 
-lemma put_sample_bound &m : 
+lemma put_sample &m : 
   Pr [ Game(A,M).main() @ &m : M.bad /\ Count.cp <= qP /\ Count.cs <= qS ] <= 
   (qP * qS)%r * alpha.
 proof. apply (ler_trans _ _ _ (M_Mc &m)). exact Mc_alpha. qed.
+
+(* Variant for Adversaries that are query bounded *)
+
+declare axiom A_bound (O <: Oracle{-A,-Count}) : 
+  hoare [ A(Count(O)).main : 
+          Count.cp = 0 /\ Count.cs = 0 ==> Count.cp <= qP /\ Count.cs <= qS ].
+
+lemma put_sample_bound &m : 
+  Pr [ Game(A,M).main() @ &m : M.bad ] <= (qP * qS)%r * alpha.
+proof.
+apply: ler_trans (put_sample &m). 
+byequiv (_: ={glob A} ==> ={glob M} /\ (Count.cp <= qP /\ Count.cs <= qS){2}) => //.
+proc. 
+conseq (_ : _ ==> ={glob M}) _ (_ : _ ==> Count.cp <= qP /\ Count.cs <= qS).
+- call (A_bound M); inline*; auto.
+by sim.
+qed.
 
 end section PROOF.
