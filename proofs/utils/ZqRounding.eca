@@ -29,6 +29,20 @@ clone import Matrix as PolyMatrix with
 proof ge0_size by smt(gt0_k).
 (* TODO Remaining axioms *)
 
+(* I just want a polynomial with integers...
+ * Is that so difficult? :(
+```
+require import Poly Ring.
+clone import PolyComRing as IntPoly with
+  type coeff <= int,
+  theory Coeff <- IntID.
+```
+=> `unknown symbol: Top.Ring.IntID.t`
+*)
+
+type int_poly = int list.
+type int_polyvec = int_poly list.
+
 op abs_zp xp = let x = asint xp in min x (q - x).
 
 op poly_max (p : polyXnD1) : int =
@@ -80,48 +94,37 @@ op decompose r alpha =
 
 op highbits r alpha = (decompose r alpha).`1.
 
-(* TODO Int poly and int polyvec data structures *)
+op poly_highbits (p : polyXnD1) (alpha : int) : int_poly =
+  mkseq (fun i => highbits p.[i] alpha) n.
 
-(**
-op poly_highbits (p : polyXnD1) (alpha : int) : polyXnD1 =
-  let coeffs = mkseq (fun deg => Zp.asint p.[deg]) n in
-  let results = map (fun r => inzmod (highbits r alpha)) coeffs in
-  polyLX results.
-
-op polyveck_highbits (v : vector) alpha : vector =
-  offunv (fun i => poly_highbits v.[i] alpha).
-**)
+op polyveck_highbits (v : vector) alpha : int_polyvec =
+  mkseq (fun i => poly_highbits v.[i] alpha) k.
 
 op lowbits r alpha = (decompose r alpha).`2.
 
-(**
-op poly_lowbits (p : polyXnD1) (alpha : int) : polyXnD1 =
-  let coeffs = mkseq (fun deg => Zp.asint p.[deg]) n in
-  let results = map (fun r => inzmod (lowbits r alpha)) coeffs in
-  polyLX results.
+op poly_lowbits (p : polyXnD1) (alpha : int) : int_poly =
+  mkseq (fun i => lowbits p.[i] alpha) n.
 
-op polyveck_lowbits (v : vector) alpha : vector =
-  offunv (fun i => poly_lowbits v.[i] alpha).
-**)
+op polyveck_lowbits (v : vector) alpha : int_polyvec =
+  mkseq (fun i => poly_highbits v.[i] alpha) k.
 
 op makeHint z r alpha =
   let r1 = highbits r alpha in
   let v1 = highbits (r + z) alpha in
   r1 <> v1.
 
-(**
-op poly_makeHint (z : polyXnD1) (r : polyXnD1) (alpha : int) : polyXnD1 =
-  let zcoeffs = mkseq (fun deg => Zp.asint z.[deg]) n in
-  let rcoeffs = mkseq (fun deg => Zp.asint r.[deg]) n in
-  let coeffs = zip zcoeffs rcoeffs in
-  polyLX (map (fun (zr : int * int) => inzmod (makeHint zr.`1 zr.`2 alpha))
-      coeffs).
+print makeHint.
 
-op polyveck_makeHint (z : vector) (r : vector) (alpha : int) : vector =
-  offunv (fun i => poly_makeHint z.[i] r.[i] alpha).
-**)
+type bool_poly = bool list.
+type bool_polyvec = bool_poly list.
 
-op useHint (h : bool) r alpha =
+op poly_makeHint (z : polyXnD1) (r : polyXnD1) (alpha : int) : bool_poly =
+  mkseq (fun i => makeHint z.[i] r.[i] alpha) n.
+
+op polyveck_makeHint (z : vector) (r : vector) (alpha : int) : bool_polyvec =
+  mkseq (fun i => poly_makeHint z.[i] r.[i] alpha) k.
+
+op useHint (h : bool) (r: Zp) alpha : int =
   let m = (q - 1) %/ alpha in
   let (r1, r0) = decompose r alpha in
   if h /\ 0 < r0 then
@@ -131,14 +134,11 @@ op useHint (h : bool) r alpha =
   else
     r1.
 
-(**
+op poly_useHint (hs : bool_poly) (rs : R) (alpha : int) : int_poly =
+  mkseq (fun i => useHint (nth witness hs i) (rs.[i]) alpha) n.
 
-op poly_useHint (hs rs : R) (alpha : int) =
-  polyLX (mkseq (fun i => inzmod (useHint (asint hs.[i]) (asint rs.[i]) alpha)) n).
-
-op polyveck_useHint (hv rv :vector) alpha =
-  offunv (fun i => poly_useHint hv.[i] rv.[i] alpha).
-**)
+op polyveck_useHint (hv : bool_polyvec) (rv : vector) alpha : int_polyvec =
+  mkseq (fun i => poly_useHint (nth witness hv i) rv.[i] alpha) k.
 
 (* proofs *)
 
