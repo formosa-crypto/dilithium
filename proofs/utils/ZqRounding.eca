@@ -11,8 +11,8 @@ op n : {int | 0 < n} as gt0_n.
 
 (* A lot of axioms can't be proven... *)
 clone import PolyReduceZp as PolyReduceZq with
-  op p <- q,
-  op n <- n
+  op p <= q,
+  op n <= n
 proof ge2_p by smt(prime_q gt1_prime),
       gt0_n by exact gt0_n.
 
@@ -24,8 +24,8 @@ op l : {int | 0 < l} as gt0_l.
 axiom l_k_le : l <= k.
 
 clone import Matrix as PolyMatrix with
-  theory ZR <- PolyReduceZq.ComRing,
-  op size <- k
+  theory ZR <= PolyReduceZq.ComRing,
+  op size <= k
 proof ge0_size by smt(gt0_k).
 (* TODO Remaining axioms *)
 
