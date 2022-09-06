@@ -182,7 +182,7 @@ section Analysis.
 
 declare module Adv <: Adversary {-Count, -RO, -OLeft}.
 
-declare axiom A_bound : forall (O <: Oracle_i{-Adv}), 
+declare axiom A_bound : forall (O <: Oracle_i{-Adv, -Count}), 
   hoare [ Adv(Count(O)).distinguish : Count.countS = 0 /\ Count.countH = 0 ==> 
                                       Count.countS <= qs /\ Count.countH <= qh ].
 
@@ -1097,7 +1097,7 @@ local module (ReductionCount : Guess.Adversary) (ORej: Guess.Oracle) = {
   }
 }.
 
-local lemma ReductionCount_bound : forall (ORej <: Guess.Oracle{-Adv, -OReduction}),
+local lemma ReductionCount_bound : forall (ORej <: Guess.Oracle{-Adv, -Count, -OReduction}),
   hoare[ ReductionCount(ORej).distinguish :
     Count.countS = 0 /\ Count.countH = 0 ==> 
     Count.countS <= qs /\ Count.countH <= qh ].
