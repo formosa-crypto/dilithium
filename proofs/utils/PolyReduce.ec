@@ -72,13 +72,11 @@ hint exact : idI.
 (* -------------------------------------------------------------------- *)
 type polyXnD1.
 
-clone include RingQuotient
-  with type qT <- polyXnD1, op p <- I
+clone include RingQuotient with
+  type qT <- polyXnD1,
+  op p <- I
 
-  proof IdealAxioms.*
-
-  rename [op] "zeror" as "zeroXnD1"
-  rename [op] "oner"  as "oneXnD1".
+  proof IdealAxioms.*.
 
 realize IdealAxioms.ideal_p by apply/idI.
 
@@ -92,6 +90,9 @@ rewrite degM_proper; 1: by rewrite lc_polyXnDC // mulr1 lc_eq0.
 rewrite deg_polyXnDC // -!addrA /= gtr_eqF //.
 by rewrite (_ : 1 = 1 + 0) 1:// ler_lt_add // deg_ge1.
 qed.
+
+op zeroXnD1 = zeror.
+op oneXnD1 = oner.
 
 (* -------------------------------------------------------------------- *)
 clone BigComRing as BigXnD1 with
