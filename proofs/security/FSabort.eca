@@ -1,0 +1,181 @@
+require import AllCore Distr.
+
+require DigitalSignaturesRO (* PROM ReprogOnce Collision *).
+
+require import IDSabort.
+clone import IDS as ID.
+
+(* *********************************************************************** *)
+(*                Fiat-Shamir with Abort Signatures                        *)
+(* *********************************************************************** *)
+
+type M.                               (* Messages *)
+op [lossless uniform] dC : C distr.   (* Challenge Distribution *)
+
+abstract theory Generic.
+
+type Sig = W*Z.       (* Signatures *)
+
+const qS : int. (* allowed number of sig queries *)
+const qH : int. (* allowed number of ro  queries *)
+axiom qS_ge0 : 0 <= qS.
+axiom qH_ge0 : 0 <= qH.
+
+(* maximal number of iterations allowed for signing *)
+op kappa : { int | 0 < kappa } as kappa_gt0.
+
+(* clone RO signature theory, 
+   setting oracle distribution to uniform challenges *)
+clone import DigitalSignaturesRO as DSS with 
+type DS.pk_t <- PK,
+type DS.sk_t <- SK,
+type DS.msg_t <- M,
+type DS.sig_t <- Sig,
+type PRO.in_t <= W*M,
+type PRO.out_t <= C, 
+op   PRO.dout <= fun _ => dC.
+
+import DSS.PRO.
+import DSS.DS.Stateless.
+
+(* *** Defining the signature scheme (generic FS+abort signature) *********** *)
+
+module (IDS_Sig (P: Prover, V:Verifier) : SchemeRO) (H: Hash) = {
+  proc keygen() : PK*SK = {
+    var sk, pk;
+    (pk,sk) <@ P.keygen();
+    return (pk,sk);
+  }
+  proc sign(sk:SK,m:M) : Sig = {
+    var w  : W <- witness;
+    var c  : C <- witness;
+    var oz : Z option <- None;
+
+    while (oz = None) { 
+      w <@ P.commit(sk);
+      c <@ H.get((w,m));
+      oz <@ P.response(sk,c);
+    }
+    return (w,oget oz);
+  }
+  
+  proc verify(pk:PK, m:M, s:Sig):bool = {
+    var result,c,w,z;
+    (w,z) <- s;
+    c <@ H.get((w,m));
+    result <@ V.verify(pk,w,c,z);
+    return result; 
+  }
+}.
+
+end Generic.
+
+
+(* *********************************************************************** *)
+(*    Fiat-Shamir with Abort Signatures (commitment recoverable)           *)
+(* *********************************************************************** *)
+
+(* Variant for commitment recoverable ID schemes *)
+abstract theory CommRecov.
+
+op recover : PK -> C -> Z -> W.
+
+type Sig = C*Z.       (* Signatures *)
+
+const qS : int. (* allowed number of sig queries *)
+const qH : int. (* allowed number of ro  queries *)
+axiom qS_ge0 : 0 <= qS.
+axiom qH_ge0 : 0 <= qH.
+
+(* maximal number of iterations allowed for signing *)
+op kappa : { int | 0 < kappa } as kappa_gt0.
+
+(* clone RO signature theory, 
+   setting oracle distribution to uniform challenges *)
+clone import DigitalSignaturesRO as DSS with 
+type DS.pk_t <- PK,
+type DS.sk_t <- SK,
+type DS.msg_t <- M,
+type DS.sig_t <- Sig,
+type PRO.in_t <= W*M,
+type PRO.out_t <= C, 
+op   PRO.dout <= fun _ => dC.
+
+import DSS.PRO.
+import DSS.DS.Stateless.
+
+(* *** Defining the signature scheme (commitment recoverable) *********** *)
+
+module (IDS_Sig (P: Prover, V:Verifier) : SchemeRO) (H: Hash) = {
+  proc keygen() : PK*SK = {
+    var sk, pk;
+    (pk,sk) <@ P.keygen();
+    return (pk,sk);
+  }
+  proc sign(sk:SK,m:M) : Sig = {
+    var w  : W <- witness;
+    var c  : C <- witness;
+    var oz : Z option <- None;
+
+    while (oz = None) { 
+      w <@ P.commit(sk);
+      c <@ H.get((w,m));
+      oz <@ P.response(sk,c);
+    }
+    return (c,oget oz);
+  }
+  
+  proc verify(pk:PK, m:M, s:Sig):bool = {
+    var result,c,c',w,z;
+    (c,z) <- s;
+    w <- recover pk c z;
+    c' <@ H.get((w,m));
+    result <@ V.verify(pk,w,c,z);
+    return result; 
+  }
+}.
+
+end CommRecov.
+
+(* Operator-Based instance of ID scheme that is used in the proofs *)
+
+abstract theory OpBased.
+
+op [lossless] keygen : (PK * SK) distr.
+op [lossless] commit : SK -> (W * Pstate) distr.
+op response : SK -> C -> Pstate -> Z option. (* TODO: should be respond *)
+op verify : PK -> W -> C -> Z -> bool.
+
+module V : Verifier = { 
+  proc challenge(w:W, pk:PK): C = { 
+    var c;
+    c <$ dC;
+    return c;
+  }
+
+  proc verify(pk:PK, w:W, c:C, z:Z): bool = {
+    return verify pk w c z;
+  }
+}.
+
+module P : Prover = {
+  var pstate : Pstate
+
+  proc keygen(): PK*SK = { 
+    var ks;
+    ks <$ keygen;
+    return ks;
+  } 
+  
+  proc commit(sk:SK): W = { 
+    var w;
+    (w, pstate) <$ commit sk;
+    return w;
+  }
+    
+  proc response(sk:SK, c:C): Z option = {
+    return response sk c pstate;
+  }
+}.
+
+end OpBased.
