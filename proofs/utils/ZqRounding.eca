@@ -113,8 +113,6 @@ op makeHint z r alpha =
   let v1 = highbits (r + z) alpha in
   r1 <> v1.
 
-print makeHint.
-
 type bool_poly = bool list.
 type bool_polyvec = bool_poly list.
 
