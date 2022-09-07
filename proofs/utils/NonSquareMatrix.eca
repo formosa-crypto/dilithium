@@ -378,10 +378,6 @@ qed.
 lemma offunB (m1 m2 : matrix) i j : (m1 - m2).[i, j] = m1.[i, j] - m2.[i, j].
 proof. done. qed.
 
-print bigi.
-
-(* bigi (P : int -> bool) (F : int -> t) (i j : int) : t *)
-
 op ( *^ ) (m : matrix) (v : vec_in) : vec_out =
   VecOut.offunv (fun i => bigi predT (fun j => m.[i, j] * v.[j]) 0 in_size).
 
