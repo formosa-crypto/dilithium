@@ -67,9 +67,9 @@ axiom dX_pmax k :
   p_max (dfst (dXY_rej k)) <= alpha.
 
  (* max. number of signing queries *)
-op qs : {int | 0 < qs} as qs_gt0.
+op qs : {int | 0 <= qs} as qs_ge0.
 (* max. number of hash queries *)
-op qh : {int | 0 < qh} as qh_gt0.
+op qh : {int | 0 <= qh} as qh_ge0.
 (* max. number of iterations *)
 op kappa : {int | 0 < kappa} as kappa_gt0.
 
@@ -277,8 +277,8 @@ realize dXY_rej_ll by apply dXY_rej_ll.
 realize dY_ll by apply dC_ll.
 realize dY_uni by apply dC_uni.
 realize dX_pmax by apply dX_pmax.
-realize qh_gt0 by apply qh_gt0.
-realize qr_gt0 by smt(kappa_gt0 qs_gt0).
+realize qh_ge0 by apply qh_ge0.
+realize qr_ge0 by smt(kappa_gt0 qs_ge0).
 
 (* Auxiliary lemma *)
 

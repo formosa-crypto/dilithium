@@ -19,8 +19,8 @@ move => z x; apply: ler_trans (d_pmax z).
 exact pmax_upper_bound.
 qed.
 
-op qs : { int | 0 < qs } as qs_gt0.
-op qg : { int | 0 < qg } as qg_gt0.
+op qs : { int | 0 <= qs } as qs_ge0.
+op qg : { int | 0 <= qg } as qg_ge0.
 
 module type SGOracle = { 
   proc sample (z : in_t) : unit
@@ -298,7 +298,7 @@ have ? : 0%r <= alpha.
   suff: mu1 (d witness) witness <= alpha by smt(ge0_mu).
   smt(d_max).
 
-apply (ler_trans ((size B.log{1})%r * (qs%r * alpha))); last smt(qs_gt0 qg_gt0).
+apply (ler_trans ((size B.log{1})%r * (qs%r * alpha))); last smt(qs_ge0 qg_ge0).
 apply mu_has_leM => x x_log. 
 apply (ler_trans _ _ _ (le_djoin_size (map d SOl.log{1}) x alpha _)).
 - smt(mapP d_max).

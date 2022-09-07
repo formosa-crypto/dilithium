@@ -796,9 +796,9 @@ realize dC_uni by apply dC_uni.
 realize all_sk_can_accept by admit.  
 realize all_sk_can_reject by admit.
 realize dX_pmax by admit. (* TODO: this should be phrased in terms of commit, respond, dcond ... *)
-realize qs_gt0 by admit.
-realize qh_gt0 by admit. 
-realize kappa_gt0 by admit.
+realize qs_ge0 by apply qS_ge0.
+realize qh_ge0 by smt(qH_ge0).
+realize kappa_gt0 by apply kappa_gt0.
 
 local module B (O : R1.Oracle) = { 
   module H = { 
