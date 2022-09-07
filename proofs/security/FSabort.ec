@@ -303,7 +303,7 @@ oracle *)
 
 declare module A <: Adv_EFCMA_RO{-RO,-P,-V,-O_CMA_Default,-ORedKOA,-CountS,-CountH,-Oracle1b_CMA}.
 
-declare axiom A_query_bound (SO <: SOracle_CMA{-CountH, -CountS}) (H <: Hash{-CountH,-CountS}) : 
+declare axiom A_query_bound (SO <: SOracle_CMA{-A,-CountH, -CountS}) (H <: Hash{-A,-CountH,-CountS}) : 
  hoare[ A(CountH(H),CountS(SO)).forge : 
         CountH.qh = 0 /\ CountS.qs = 0 ==> 
         CountH.qh <= qH /\ CountS.qs <= qS].
@@ -356,13 +356,13 @@ local lemma hop1 &m :
   Pr [ Game0(A, O_CMA_Default).main() @ &m : res] = 
   Pr [ Game0(A, Oracle1_CMA).main() @ &m : res].
 proof.
-byequiv => //. proc. inline{1} 2; inline {2} 2.
+byequiv (_: ={glob A} ==> ={res}) => //. proc. inline{1} 2; inline {2} 2.
 seq 4 4 : (={glob O_CMA_Default,RO.m, m, sig,pk,sk}); last by sim.
-call (: ={RO.m,glob O_CMA_Default}); [|by sim|by inline*; auto => />].
+call (: ={RO.m,glob O_CMA_Default}); [|by sim|by inline*; auto].
 proc; inline{1} 1; swap{1} 8 -2; wp.
 while (={oz,w,m,glob O_CMA_Default, glob RO} 
        /\ sk{1} = O_CMA_Default.sk{2} 
-       /\ m0{1} = m{2}); by inline*; auto => />.
+       /\ m0{1} = m{2}); by inline*; auto => />. 
 qed.
 
 (* ----------------------------------------------------------------------*)
@@ -781,7 +781,7 @@ local clone ReprogOnce as R1 with
   type C <- C,
   op dC <- dC,
   op qs <- qS,
-  op qh <- qH,
+  op qh <- qH + 1,
   op kappa <- kappa,
   op alpha <- alpha,
   op keygen <- keygen_good,
@@ -795,14 +795,10 @@ realize dC_ll by apply dC_ll.
 realize dC_uni by apply dC_uni.
 realize all_sk_can_accept by admit.  
 realize all_sk_can_reject by admit.
-realize dX_pmax by admit.
+realize dX_pmax by admit. (* TODO: this should be phrased in terms of commit, respond, dcond ... *)
 realize qs_gt0 by admit.
 realize qh_gt0 by admit. 
 realize kappa_gt0 by admit.
-
-print R1.adv_bound.
-
-
 
 local module B (O : R1.Oracle) = { 
   module H = { 
@@ -825,10 +821,13 @@ local module B (O : R1.Oracle) = {
     var nrqs : int;
     var is_valid : bool;
     var is_fresh : bool;
+
     SO.qs <- [];
-    
-    (m, sig) <@ A(H,SO).forge(pk);
-    is_valid <@ IDS_Sig(P,V,H).verify(pk, m, sig);
+    CountH(H).init();
+    CountS(SO).init();
+
+    (m, sig) <@ A(CountH(H),CountS(SO)).forge(pk);
+    is_valid <@ IDS_Sig(P,V,CountH(H)).verify(pk, m, sig);
     is_fresh <- !(m \in SO.qs);
     nrqs <- size SO.qs;    
     return nrqs <= q_efcma /\ is_valid /\ is_fresh;
@@ -837,12 +836,12 @@ local module B (O : R1.Oracle) = {
 
 local lemma hop3 &m : 
      Pr [Game0k(A,Oracle2_CMA).main() @ &m : res ] 
-  <= Pr [Game0k(A,Oracle3_CMA).main() @ &m : res ] +  qH%r * (kappa * qS)%r * alpha.
+  <= Pr [Game0k(A,Oracle3_CMA).main() @ &m : res ] +  (qH + 1)%r * (kappa * qS)%r * alpha.
 proof.
 have -> : Pr[Game0k(A, Oracle2_CMA).main() @ &m : res] = 
           Pr[R1.Game(B,R1.OLeft).main() @ &m : res].
 - byequiv => //. proc. inline{2} 4. 
-  seq 4 6 : (={RO.m,m,sig} /\ pk{1} = pk0{2} 
+  seq 4 8 : (={RO.m,m,sig} /\ pk{1} = pk0{2} 
              /\ O_CMA_Default.qs{1} = B.SO.qs{2}); 
      last by inline*; auto => />.
   call(: ={RO.m}  
@@ -850,8 +849,8 @@ have -> : Pr[Game0k(A, Oracle2_CMA).main() @ &m : res] =
           /\ O_CMA_Default.sk{1} = R1.OLeft.sk{2}); first last.
   + by proc; inline*; auto => /> /#.
   + by inline*; auto => />.
-  proc. inline{2} 2. wp.
-  while (={oz,w,RO.m} /\ k{1} = i{2} /\ m{1} = m0{2}
+  proc. inline{2} 2. inline{2} 4. wp.
+  while (={oz,w,RO.m} /\ k{1} = i{2} /\ m{1} = m1{2}
           /\ O_CMA_Default.qs{1} = B.SO.qs{2}
           /\ O_CMA_Default.sk{1} = R1.OLeft.sk{2}).
   + by inline*; auto.
@@ -859,7 +858,7 @@ have -> : Pr[Game0k(A, Oracle2_CMA).main() @ &m : res] =
 have -> : Pr[Game0k(A, Oracle3_CMA).main() @ &m : res] = 
           Pr[R1.Game(B,R1.ORight).main() @ &m : res].
 - byequiv (_: ={glob A} ==> ={res}) => //. proc. inline{2} 4. 
-  seq 4 6 : (={RO.m,m,sig} /\ pk{1} = pk0{2} 
+  seq 4 8 : (={RO.m,m,sig} /\ pk{1} = pk0{2} 
              /\ O_CMA_Default.qs{1} = B.SO.qs{2}); 
      last by inline*; auto => />.
   call(: ={RO.m}  
@@ -867,20 +866,29 @@ have -> : Pr[Game0k(A, Oracle3_CMA).main() @ &m : res] =
           /\ O_CMA_Default.sk{1} = R1.OLeft.sk{2}); first last.
   + by proc; inline*; auto => /> /#.
   + inline*; auto => />.
-  proc. inline{2} 2. inline RO.set. wp. 
-  while (={oz,w,c,RO.m} /\ k{1} = i{2} /\ m{1} = m0{2}
+  proc. inline{2} 2. inline{2} 4. inline RO.set. wp. 
+  while (={oz,w,c,RO.m} /\ k{1} = i{2} /\ m{1} = m1{2}
           /\ O_CMA_Default.qs{1} = B.SO.qs{2}
           /\ O_CMA_Default.sk{1} = R1.OLeft.sk{2}).
   + by inline*; auto.
   by auto => />. 
 suff : `| Pr[R1.Game(B, R1.OLeft).main() @ &m : res] - 
           Pr[R1.Game(B, R1.ORight).main() @ &m : res] | 
-      <= qH%r * (kappa * qS)%r * alpha by smt().
-print R1.adv_bound. 
-apply (R1.adv_bound B).
-- admit. (* counting *)
+      <= (qH + 1)%r * (kappa * qS)%r * alpha by smt().
+apply (R1.adv_bound B); last first.
 - move => O ? ?; islossless. 
-  by apply (A_ll (<: B(O).H) (<: B(O).SO)) => //; islossless.
+  by apply (A_ll (<: CountH(B(O).H)) (<: CountS(B(O).SO))) => //; islossless.
+move => O; proc. 
+seq 4 : (R1.Count.countS <= qS /\ R1.Count.countH <= qH); 
+  last by inline*; auto; call(: true); auto => /> /#.
+conseq (: _ ==> CountH.qh = R1.Count.countH /\ CountS.qs = R1.Count.countS)
+       (: _ ==> CountH.qh <= qH /\ CountS.qs <= qS); 1,2 : smt().
+- call (A_query_bound (<: B(R1.Count(O)).SO) (<: B(R1.Count(O)).H)). 
+  by inline*; auto => />.
+call (: CountH.qh = R1.Count.countH /\ CountS.qs = R1.Count.countS).
+- proc; inline*; auto; call(: true); auto => />.
+- proc; inline*; auto; call(: true); auto => />.
+by inline*; auto => />.
 qed.
 
 (* This is no longer an Oracle_CMA, because init also takes the public key *)
@@ -1158,7 +1166,7 @@ qed.
 import RField.
 
 op bound1 = (qS * kappa)%r * (qS * kappa + qH)%r * alpha.
-op bound2 = qH%r * (kappa * qS)%r * alpha.
+op bound2 = (qH + 1)%r * (kappa * qS)%r * alpha.
 
 lemma FSabort_bound &m : 
    Pr [ EF_CMA_RO(IDS_Sig(P, V), A, RO, O_CMA_Default).main() @ &m : res] 
