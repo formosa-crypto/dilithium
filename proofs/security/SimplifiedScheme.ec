@@ -59,6 +59,16 @@ clone import DigitalSignaturesRO as DilithiumDS with
   type PRO.out_t <= challenge_t.
 
 import VecOut.
+print VecOut.
+import VecOut.ZModule.
+
+import Zp.
+
+(* TODO move me to PolyReduce *)
+op polyC c = pinject (BasePoly.polyC c).
+
+(* power2round rounding range...? *)
+op d : int.
 
 module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
   proc keygen() : PK * SK = {
@@ -79,6 +89,13 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
   }
 
   proc verify(pk: PK, m : M, sig : SIG) = {
+    var w, w', c, resp, z, h;
+    var mA, t1;
+    (mA, t1) <- pk;
+    (w, resp) <- sig;
+    (z, h) <- resp;
+    c <@ H.get((w, m));
+    w' <- polyveck_useHint h (mA *^ z - polyC (inzmod (2 ^ d)) * c ** t1);
     return false;
   }
 }.
