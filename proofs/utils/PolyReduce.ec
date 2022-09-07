@@ -147,8 +147,9 @@ op ( ** ) (c : coeff) (p : polyXnD1) =
 op pevalX (p : polyXnD1) (c : coeff) =
   peval (repr p) c.
 
-op polyLX (a : coeff list) : polyXnD1 =
-  pi (polyL a).
+op polyLX (a : coeff list) : polyXnD1 = pinject (polyL a).
+
+op polyCX (c : coeff) = pinject (polyC c).
 
 (* -------------------------------------------------------------------- *)
 lemma scale0p (p : polyXnD1) : Coeff.zeror ** p = zeroXnD1.
@@ -546,6 +547,9 @@ import BasePoly.
 (* We already know that polyXnD1 is finite. However, we prove here that *)
 (* we can build the full-uniform distribution over polyXnD1 by sampling *)
 (* uniformly each coefficient in the reduced form representation.       *)
+
+op dpolyX (dcoeff : Zp distr) : polyXnD1 distr =
+  dmap (dpoly n dcoeff) pinject.
 
 op dpolyXnD1 = dmap (dpoly n Zp.DZmodP.dunifin) pinject.
 
