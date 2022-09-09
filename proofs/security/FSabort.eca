@@ -50,13 +50,15 @@ module (IDS_Sig (P: Prover, V:Verifier) : SchemeRO) (H: Hash) = {
     var w  : W <- witness;
     var c  : C <- witness;
     var oz : Z option <- None;
+    var k  : int <- 0;
 
-    while (oz = None) { 
+    while (oz = None /\ k < kappa) { 
       w <@ P.commit(sk);
       c <@ H.get((w,m));
       oz <@ P.response(sk,c);
+      k <- k + 1;
     }
-    return (w,oget oz);
+    return if oz <> None then (w,oget oz) else witness; 
   }
   
   proc verify(pk:PK, m:M, s:Sig):bool = {
@@ -116,13 +118,15 @@ module (IDS_Sig (P: Prover, V:Verifier) : SchemeRO) (H: Hash) = {
     var w  : W <- witness;
     var c  : C <- witness;
     var oz : Z option <- None;
-
-    while (oz = None) { 
+    var k : int <- 0;
+    
+    while (oz = None /\ k < kappa) { 
       w <@ P.commit(sk);
       c <@ H.get((w,m));
       oz <@ P.response(sk,c);
+      k <- k + 1;
     }
-    return (c,oget oz);
+    return if oz <> None then (c,oget oz) else witness;
   }
   
   proc verify(pk:PK, m:M, s:Sig):bool = {

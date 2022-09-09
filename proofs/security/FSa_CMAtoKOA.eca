@@ -43,8 +43,6 @@ clone import OpBased as OP with
   axiom commit_ll <- commit_ll
 proof*.
 
-
-
 (* -- Extra assumptions on the min-entropy of commitments for (good) secret keys -- *)
 
 op check_entropy : SK -> bool.
@@ -185,40 +183,6 @@ module CountH (H : Hash) = {
   } 
 }.
 
-(* Oracle with a bad event if the loop bound is reached. 
-   This is out here, because we have no good way of bounding it *)
-
-module (Oracle1b_CMA : Oracle_CMA) (S : Scheme)  = {
-  include var O_CMA_Default(S) [-init,sign]
-  var bad : bool
-
-  proc init(ski: SK) : unit = {
-    sk <- ski;
-    qs <- [];
-    bad <- false;
-  }
-
-  proc sign(m: M) : Sig = {
-    var pstate;
-    var sig: Sig;
-    var k;
-    var c <- witness;
-    var w <- witness;
-    var oz <- None;
-    qs <- rcons qs m;
-
-    k <- 0;
-    while (oz = None /\ k < kappa) { 
-      (w, pstate) <$ commit sk;
-      c <@ RO.get((w,m));
-      oz <- response sk c pstate;
-      k <- k+1;
-    } 
-    bad <- bad \/ oz = None; 
-    return if oz <> None then (w,oget oz) else witness;
-  }
-}.
-
 
 section PROOF. 
 
@@ -226,7 +190,7 @@ section PROOF.
 to the random oracle and at most [qS] queries to the signing
 oracle *)
 
-declare module A <: Adv_EFCMA_RO{-RO,-P,-V,-O_CMA_Default,-ORedKOA,-CountS,-CountH,-Oracle1b_CMA}.
+declare module A <: Adv_EFCMA_RO{-RO,-P,-V,-O_CMA_Default,-ORedKOA,-CountS,-CountH}.
 
 declare axiom A_query_bound (SO <: SOracle_CMA{-A,-CountH, -CountS}) (H <: Hash{-A,-CountH,-CountS}) : 
  hoare[ A(CountH(H),CountS(SO)).forge : 
@@ -266,13 +230,13 @@ local module (Oracle1_CMA : Oracle_CMA) (S : Scheme)  = {
       qs <- rcons qs m;
 
       k <- 0;
-      while (oz = None) { 
+      while (oz = None /\ k < kappa) { 
         (w, pstate) <$ commit sk;
         c <@ RO.get((w,m));
         oz <- response sk c pstate;
         k <- k + 1;
       } 
-      return (w,oget oz);      
+      return if oz <> None then (w,oget oz) else witness; 
     }
   }.
  
@@ -284,53 +248,10 @@ proof.
 byequiv (_: ={glob A} ==> ={res}) => //. proc. inline{1} 2; inline {2} 2.
 seq 4 4 : (={glob O_CMA_Default,RO.m, m, sig,pk,sk}); last by sim.
 call (: ={RO.m,glob O_CMA_Default}); [|by sim|by inline*; auto].
-proc; inline{1} 1; swap{1} 8 -2; wp.
-while (={oz,w,m,glob O_CMA_Default, glob RO} 
+proc; inline{1} 1; swap{1} 9 -2; wp.
+while (={oz,w,k,m,glob O_CMA_Default, glob RO} 
        /\ sk{1} = O_CMA_Default.sk{2} 
        /\ m0{1} = m{2}); by inline*; auto => />. 
-qed.
-
-(* ----------------------------------------------------------------------*)
-(*                            Second game hop:                           *)
-(* Introduce an upper bound on the number of signing attempts            *)
-(* ----------------------------------------------------------------------*)
-
-
-
-(* TOTHINK: Proving termination actually requires us to prove 
-
-forall sk, sk \in dsnd keygen => 
-  exists w st, (w,st) \in commit sk /\ forall c, respond sk c st <> None
-
-Otherwise, there is a miniscule chance that the (finately many) spaces
-in the random oracle all get filled with c's that do not admit any
-positive response, making it impossible to exit the loop. 
-
-Maybe we should assume the loop to be bounded a priory? *)
-
-local lemma hop1a &m : 
-     Pr [Game0(A,Oracle1_CMA).main()  @ &m : res] 
-  <=   Pr [Game0(A,Oracle1b_CMA).main() @ &m : res ] 
-     + Pr [Game0(A,Oracle1b_CMA).main() @ &m : Oracle1b_CMA.bad ].
-proof.
-byequiv => //. proc. inline{1} 2; inline{2} 2. 
-seq 4 4 : (!Oracle1b_CMA.bad{2} => ={glob O_CMA_Default,RO.m,pk,sk,m,sig}); last first.
-- case (Oracle1b_CMA.bad{2}). 
-  + conseq (:_ ==> true); [smt()| by inline*; auto]. 
-  + conseq (: _ ==> ={r}); [smt() | sim => /#].
-call (: Oracle1b_CMA.bad, ={RO.m, glob O_CMA_Default}).
-- exact A_ll. 
-- proc. wp. conseq />. smt().
-  splitwhile{1} 6 : (k < kappa). 
-  seq 5 5 : (={w,oz,glob O_CMA_Default,RO.m}); first by sim.
-  admit. (* termination *)
-- move => *. islossless.
-  admit. (* termination *)
-- admit. (* preservation of bad *)
-- sim.
-- move => *; islossless.
-- move => *. conseq />. islossless. 
-by inline*; auto => /> /#.
 qed.
 
 
@@ -388,38 +309,36 @@ local module (D (O : Oracle_CMA) : Dist.GenDist.Distinguisher) = {
 }.
 
 local lemma hop0 &m : 
-     Pr [Game0(A,Oracle1b_CMA).main()  @ &m : res ] 
-  <= Pr [Game0k(A,Oracle1b_CMA).main() @ &m : res ] + gamma.
+     Pr [Game0(A,Oracle1_CMA).main()  @ &m : res ] 
+  <= Pr [Game0k(A,Oracle1_CMA).main() @ &m : res ] + gamma.
 proof.
-suff : `| Pr[ Game0(A, Oracle1b_CMA).main() @ &m : res] - 
-          Pr[ Game0k(A, Oracle1b_CMA).main() @ &m : res] | <= gamma; 1: smt().
-have -> : Pr[ Game0(A, Oracle1b_CMA).main() @ &m : res] = 
-          Pr[ Dist.Sample(D(Oracle1b_CMA)).main(keygen) @&m : res].
-- byequiv (_ : ={glob A,glob Oracle1b_CMA,glob RO} /\ d{2} = keygen ==> _) => //. 
+suff : `| Pr[ Game0(A, Oracle1_CMA).main() @ &m : res] - 
+          Pr[ Game0k(A, Oracle1_CMA).main() @ &m : res] | <= gamma; 1: smt().
+have -> : Pr[ Game0(A, Oracle1_CMA).main() @ &m : res] = 
+          Pr[ Dist.Sample(D(Oracle1_CMA)).main(keygen) @&m : res].
+- byequiv (_ : ={glob A,glob Oracle1_CMA,glob RO} /\ d{2} = keygen ==> _) => //. 
   proc; do ! inline{1} 2; inline{2} 2. 
   swap{1} [2..4] -1.
-  seq 3 3 : (={glob A,glob Oracle1b_CMA,RO.m,pk,sk}); last by sim.
+  seq 3 3 : (={glob A,glob Oracle1_CMA,RO.m,pk,sk}); last by sim.
   by auto => /> /#. 
-have -> : Pr[ Game0k(A, Oracle1b_CMA).main() @ &m : res] = 
-          Pr[ Dist.Sample(D(Oracle1b_CMA)).main(keygen_good) @&m : res].
-- byequiv (_ : ={glob A,glob Oracle1b_CMA,glob RO} /\ d{2} = keygen_good ==> _) => //. 
+have -> : Pr[ Game0k(A, Oracle1_CMA).main() @ &m : res] = 
+          Pr[ Dist.Sample(D(Oracle1_CMA)).main(keygen_good) @&m : res].
+- byequiv (_ : ={glob A,glob Oracle1_CMA,glob RO} /\ d{2} = keygen_good ==> _) => //. 
   proc. inline{2} 2. wp. swap{1} 2 -1.
-  seq 1 3 : (={glob A,glob Oracle1b_CMA,RO.m,pk,sk}); last by sim.
+  seq 1 3 : (={glob A,glob Oracle1_CMA,RO.m,pk,sk}); last by sim.
   by auto => /> /#. 
 apply: ler_trans keygen_good_sdist. 
-exact (Dist.adv_sdist (D(Oracle1b_CMA))).
+exact (Dist.adv_sdist (D(Oracle1_CMA))).
 qed.
-
-
 
 (* ----------------------------------------------------------------------*)
 (*                           Second game hop:                            *)
-(* First real modification of oracle: First sample c, then reprgram RO  *)
+(* First real modification of oracle: Sample c, then (re)program RO      *)
 (*                                                                       *)
 (* ----------------------------------------------------------------------*)
 
-(* Second SIGN oracle: First samples challenge, then programs the QRO. This
-   handles the reprogramming bound  *)
+(* Second SIGN oracle: First samples challenge, then programs the RO. *)
+
 local module (Oracle2_CMA : Oracle_CMA) (S : Scheme)  = {
   include var O_CMA_Default(S) [-sign,init]
   var bad2 : bool
@@ -448,7 +367,6 @@ local module (Oracle2_CMA : Oracle_CMA) (S : Scheme)  = {
         oz <- response sk c pstate;
         k <- k+1;
       } 
-      (* bad <- bad || oz = None;  *)
       return if oz <> None then (w,oget oz) else witness;
    }
 }.
@@ -489,7 +407,6 @@ local module Oracle2C (PS : C.Oracle) = {
         oz <- response sk c pstate;
         k <- k+1;
       } 
-      (* bad <- bad || oz = None;  *)
       return if oz <> None then (w,oget oz) else witness;
    }
 }.
@@ -572,7 +489,7 @@ by inline*; auto.
 qed.
 
 local lemma hop2 &m : 
-  Pr [Game0k(A,Oracle1b_CMA).main() @ &m : res ] 
+  Pr [Game0k(A,Oracle1_CMA).main() @ &m : res ] 
   <=   Pr [Game0k(A,Oracle2_CMA).main() @ &m : res ]
      + Pr [Game0k(A,Oracle2_CMA).main() @ &m : Oracle2_CMA.bad2].
 proof.
@@ -638,7 +555,7 @@ transitivity*{2} {
     * move => &h z. by rcondf 1; auto => /> /#. 
   auto => />. smt().
 (* main up-to-bad step *)
-while (={k} /\ (!Oracle2_CMA.bad2{2} => ={RO.m,glob O_CMA_Default,w,oz,m}));
+while (={k} /\ (!Oracle2_CMA.bad2{2} => ={RO.m,glob O_CMA_Default,w,oz,m})); 
   last by auto => /> /#.
 case (Oracle2_CMA.bad2{2}). 
 - conseq (: ={k} ==> ={k}) _ (: Oracle2_CMA.bad2 ==> Oracle2_CMA.bad2); 1,2: smt(); 
@@ -661,7 +578,7 @@ qed.
 
 local module (Oracle3_CMA : Oracle_CMA) (S : Scheme)  = {
     import var O_CMA_Default(S)
-    include var Oracle1b_CMA(S) [-sign]
+    include var Oracle1_CMA(S) [-sign]
     var bad2 : bool
 
     proc sign(m: M) : Sig = {
@@ -1090,18 +1007,16 @@ op bound2 = (qH + 1)%r * (kappa * qS)%r * alpha.
 lemma FSabort_bound &m : 
    Pr [ EF_CMA_RO(IDS_Sig(P, V), A, RO, O_CMA_Default).main() @ &m : res] 
 <= Pr [ EF_KOA_RO(IDS_Sig(P,V),RedKOA(A,Sim),RO).main() @ &m : res ] 
- + (Pr [Game0(A,Oracle1b_CMA).main() @ &m : Oracle1b_CMA.bad ] + gamma + bound1 + bound2 + gamma).
-
-rewrite hop1 addrC -!addrA.
-apply: (ler_trans _ _ _ (hop1a &m) _); rewrite addrC ler_add2l.
-apply: (ler_trans _ _ _ (hop0 &m) _); rewrite addrC. rewrite ler_add2l.
+   + gamma + bound1 + bound2 + gamma.
+proof.
+rewrite hop1 -!addrA addrC -!addrA.  
+apply: (ler_trans _ _ _ (hop0 &m) _); rewrite addrC ler_add2l.
 apply: (ler_trans _ _ _ (hop2 &m) _); rewrite addrC.
-apply ler_add. exact bad2_bound.
-apply: (ler_trans _ _ _ (hop3 &m) _); rewrite addrC. rewrite ler_add2l.
+- apply ler_add; first exact bad2_bound.
+apply: (ler_trans _ _ _ (hop3 &m) _); rewrite addrC ler_add2l.
 rewrite hop4 hop5. 
 apply: (ler_trans _ _ _ (hop6 &m) _); rewrite addrC ler_add2l.
 exact KOA_bound.
 qed.
 
 end section PROOF.
-
