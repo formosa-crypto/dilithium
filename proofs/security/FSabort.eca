@@ -14,7 +14,7 @@ op [lossless uniform] dC : C distr.   (* Challenge Distribution *)
 
 abstract theory Generic.
 
-type Sig = W*Z.       (* Signatures *)
+type Sig = (W*Z) option.       (* Signatures *)
 
 const qS : int. (* allowed number of sig queries *)
 const qH : int. (* allowed number of ro  queries *)
@@ -23,6 +23,8 @@ axiom qH_ge0 : 0 <= qH.
 
 (* maximal number of iterations allowed for signing *)
 op kappa : { int | 0 < kappa } as kappa_gt0.
+(* Signature that is output when loop bound is exceeded *)
+
 
 (* clone RO signature theory, 
    setting oracle distribution to uniform challenges *)
@@ -46,6 +48,7 @@ module (IDS_Sig (P: Prover, V:Verifier) : SchemeRO) (H: Hash) = {
     (pk,sk) <@ P.keygen();
     return (pk,sk);
   }
+
   proc sign(sk:SK,m:M) : Sig = {
     var w  : W <- witness;
     var c  : C <- witness;
@@ -58,14 +61,17 @@ module (IDS_Sig (P: Prover, V:Verifier) : SchemeRO) (H: Hash) = {
       oz <@ P.response(sk,c);
       k <- k + 1;
     }
-    return if oz <> None then (w,oget oz) else witness; 
+    return if oz <> None then Some (w,oget oz) else None; 
   }
   
   proc verify(pk:PK, m:M, s:Sig):bool = {
-    var result,c,w,z;
-    (w,z) <- s;
-    c <@ H.get((w,m));
-    result <@ V.verify(pk,w,c,z);
+    var c,w,z;
+    var result <- false;
+    if (s <> None) { 
+      (w,z) <- oget s;
+      c <@ H.get((w,m));
+      result <@ V.verify(pk,w,c,z);
+    }
     return result; 
   }
 }.
@@ -82,7 +88,7 @@ abstract theory CommRecov.
 
 op recover : PK -> C -> Z -> W.
 
-type Sig = C*Z.       (* Signatures *)
+type Sig = (C*Z) option.       (* Signatures *)
 
 const qS : int. (* allowed number of sig queries *)
 const qH : int. (* allowed number of ro  queries *)
@@ -91,6 +97,8 @@ axiom qH_ge0 : 0 <= qH.
 
 (* maximal number of iterations allowed for signing *)
 op kappa : { int | 0 < kappa } as kappa_gt0.
+(* Signature that is output when loop bound is exceeded *)
+op sig0 : Sig.
 
 (* clone RO signature theory, 
    setting oracle distribution to uniform challenges *)
@@ -126,15 +134,19 @@ module (IDS_Sig (P: Prover, V:Verifier) : SchemeRO) (H: Hash) = {
       oz <@ P.response(sk,c);
       k <- k + 1;
     }
-    return if oz <> None then (c,oget oz) else witness;
+    return if oz <> None then Some (c,oget oz) else None;
   }
   
   proc verify(pk:PK, m:M, s:Sig):bool = {
-    var result,c,c',w,z;
-    (c,z) <- s;
-    w <- recover pk c z;
-    c' <@ H.get((w,m));
-    result <@ V.verify(pk,w,c,z);
+    var c,c',w,z;
+    var result <- false;
+    if (s <> None) { 
+      (c,z) <- oget s;
+      w <- recover pk c z;
+      c' <@ H.get((w,m));
+      if (c = c') 
+        result <@ V.verify(pk,w,c,z);
+    }
     return result; 
   }
 }.

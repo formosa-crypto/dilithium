@@ -129,7 +129,7 @@ module ORedKOA (Sim : HVZK_Sim) : SOracle_CMA = {
     (w, c, z) <- oget ot;
     if (ot <> None) 
       overlay.[(w,m)] <- c;
-    return if (ot <> None) then (w,z) else witness;
+    return if (ot <> None) then Some (w,z) else None;
   }
 }.
 
@@ -236,7 +236,7 @@ local module (Oracle1_CMA : Oracle_CMA) (S : Scheme)  = {
         oz <- response sk c pstate;
         k <- k + 1;
       } 
-      return if oz <> None then (w,oget oz) else witness; 
+      return if oz <> None then Some (w,oget oz) else None; 
     }
   }.
  
@@ -367,7 +367,7 @@ local module (Oracle2_CMA : Oracle_CMA) (S : Scheme)  = {
         oz <- response sk c pstate;
         k <- k+1;
       } 
-      return if oz <> None then (w,oget oz) else witness;
+      return if oz <> None then Some (w,oget oz) else None;
    }
 }.
 
@@ -407,7 +407,7 @@ local module Oracle2C (PS : C.Oracle) = {
         oz <- response sk c pstate;
         k <- k+1;
       } 
-      return if oz <> None then (w,oget oz) else witness;
+      return if oz <> None then Some (w,oget oz) else None;
    }
 }.
 
@@ -445,7 +445,8 @@ local lemma red_collision &m :
   Pr [C.Game(RedGuess,C.M).main() @ &m : C.M.bad ].
 proof.
 byequiv => //; proc. 
-seq 4 3 : (Oracle2_CMA.bad2{1} <=> C.M.bad{2}) ; last by conseq />; inline*; auto.
+seq 4 3 : (Oracle2_CMA.bad2{1} <=> C.M.bad{2}); 
+  last by conseq (:_ ==> true) (:_ ==> true : 1%r) _ => //; islossless.
 inline{2} 3.
 call (: ={RO.m,glob O_CMA_Default}  
        /\ O_CMA_Default.sk{2} \in dsnd keygen_good
@@ -496,7 +497,9 @@ proof.
 byequiv => //; proc. 
 seq 4 4 : (!Oracle2_CMA.bad2{2} => ={glob O_CMA_Default,RO.m,pk,sk,m,sig}); last first.
 - case (Oracle2_CMA.bad2{2}). 
-  + conseq (:_ ==> true); [smt() | by inline*; auto ].
+  + conseq (:_ ==> true); 1: smt(). 
+    seq 3 0 : true; 1: by conseq (: _ ==> true) (: _ ==> true : 1%r) _; islossless. 
+    by conseq (: _ ==> true) _ (: _ ==> true : 1%r); islossless. 
   + conseq (: _ ==> ={nrqs,is_valid,is_fresh}); [smt() | sim => /#].
 call (: Oracle2_CMA.bad2, ={RO.m, glob O_CMA_Default}); last 6 first.
 - move => *. proc. islossless. 
@@ -599,7 +602,7 @@ local module (Oracle3_CMA : Oracle_CMA) (S : Scheme)  = {
       } 
       if (oz <> None) RO.set((w,m),c);
       (* bad <- bad || oz = None;  *)
-      return if oz <> None then (w,oget oz) else witness;
+      return if oz <> None then Some (w,oget oz) else None;
    }
 }.
 
@@ -647,7 +650,7 @@ local module B (O : R1.Oracle) = {
       var ot;
       qs <- rcons qs m;
       ot <@ O.sign(m);
-      return if ot <> None then ((oget ot).`1,(oget ot).`3) else witness;
+      return if ot <> None then Some ((oget ot).`1,(oget ot).`3) else None;
     }
   }
 
@@ -679,7 +682,7 @@ have -> : Pr[Game0k(A, Oracle2_CMA).main() @ &m : res] =
 - byequiv => //. proc. inline{2} 4. 
   seq 4 8 : (={RO.m,m,sig} /\ pk{1} = pk0{2} 
              /\ O_CMA_Default.qs{1} = B.SO.qs{2}); 
-     last by inline*; auto => />.
+     last by inline*; auto; sp; if; auto => />.
   call(: ={RO.m}  
           /\ O_CMA_Default.qs{1} = B.SO.qs{2}
           /\ O_CMA_Default.sk{1} = R1.OLeft.sk{2}); first last.
@@ -696,7 +699,7 @@ have -> : Pr[Game0k(A, Oracle3_CMA).main() @ &m : res] =
 - byequiv (_: ={glob A} ==> ={res}) => //. proc. inline{2} 4. 
   seq 4 8 : (={RO.m,m,sig} /\ pk{1} = pk0{2} 
              /\ O_CMA_Default.qs{1} = B.SO.qs{2}); 
-     last by inline*; auto => />.
+     last by inline*; auto; sp; if; auto => />.
   call(: ={RO.m}  
           /\ O_CMA_Default.qs{1} = B.SO.qs{2}
           /\ O_CMA_Default.sk{1} = R1.OLeft.sk{2}); first last.
@@ -716,7 +719,7 @@ apply (R1.adv_bound B); last first.
   by apply (A_ll (<: CountH(B(O).H)) (<: CountS(B(O).SO))) => //; islossless.
 move => O; proc. 
 seq 4 : (R1.Count.countS <= qS /\ R1.Count.countH <= qH); 
-  last by inline*; auto; call(: true); auto => /> /#.
+  last by inline*; sp; if; auto; (try call(: true)); auto => /> /#.
 conseq (: _ ==> CountH.qh = R1.Count.countH /\ CountS.qs = R1.Count.countS)
        (: _ ==> CountH.qh <= qH /\ CountS.qs <= qS); 1,2 : smt().
 - call (A_query_bound (<: B(R1.Count(O)).SO) (<: B(R1.Count(O)).H)). 
@@ -756,7 +759,7 @@ local module OGame1  = {
     } 
     (w,c,z) <- oget ot;
     if (ot <> None) RO.set((w,m),c);
-    return if ot <> None then (w,z) else witness;      
+    return if ot <> None then Some (w,z) else None;      
    }
 }.
 
@@ -827,7 +830,7 @@ local module OGame2  = {
     } 
     (w,c,z) <- oget ot;
     if (ot <> None) RO.set((w,m),c);
-    return if ot <> None then (w,z) else witness;      
+    return if ot <> None then Some (w,z) else None;      
    }
 }.
 
@@ -987,10 +990,13 @@ seq 4 3 : (={m,sig,pk}
   conseq (:_ ==> is_valid{1} /\ ! (m{1} \in OGame2.qs{1}) => is_valid{2}); 1: smt().
   inline IDS_Sig(P,V,RO).verify.
   case (m{1} \in OGame2.qs{1}). 
-  + by conseq (:_ ==> true);[smt()|inline*; auto].
-  inline*; swap 6 -5.
+  + conseq (: ==> true); 1: smt(). 
+    seq 6 0 : true; 1: by conseq (: _ ==> true) (: _ ==> true : 1%r) _; islossless. 
+    by conseq (: _ ==> true) _ (: _ ==> true : 1%r); islossless. 
+  sp; if; 1,3: by auto. 
+  inline*; swap 3 -2. 
   seq 1 1 : (#pre /\ r{1} = r0{2}); first by auto.
-  sp 5 5. 
+  sp 2 2. 
   if; first by auto => />; smt(mem_union_map). 
   conseq (: _ ==> ={is_valid}); 1: smt().
   - auto => />; smt(set_union_map_r set_union_map_l mem_union_map 
