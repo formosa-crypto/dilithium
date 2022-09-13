@@ -1,6 +1,7 @@
 require import AllCore List IntDiv.
 require import PolyReduce.
 require NonSquareMatrix.
+require ZModFieldExtras.
 import StdOrder IntOrder.
 
 (* Various rounding operations. Poly and vector versions included.
@@ -9,14 +10,22 @@ import StdOrder IntOrder.
 op q : {int | prime q} as prime_q.
 op n : {int | 0 < n} as gt0_n.
 
+(* print ZModFieldExtras. *)
+
+clone import ZModFieldExtras as ZModQ with
+  op p <= q.
+
 (* A lot of axioms can't be proven... *)
 clone import PolyReduceZp as PolyReduceZq with
   op p <= q,
-  op n <= n
+  op n <= n,
+  type Zp <= ZModQ.zmod,
+  theory Zp <= ZModQ
 proof ge2_p by smt(prime_q gt1_prime),
       gt0_n by exact gt0_n.
 
-import Zp.
+(* Why is this necessary... isn't this imported?? *)
+type Zp = PolyReduceZq.Zp.
 
 (* matrix dimensions *)
 op k : {int | 0 < k} as gt0_k.
@@ -123,8 +132,6 @@ op makeHint z r alpha =
   let r1 = highbits r alpha in
   let v1 = highbits (r + z) alpha in
   r1 <> v1.
-
-print makeHint.
 
 type bool_poly = bool list.
 type bool_polyvec = bool_poly list.

@@ -501,8 +501,8 @@ type Zp.
 op p : { int | 2 <= p } as ge2_p.
 
 clone import ZModRing as Zp with
-    type  zmod  <- Zp,
-    op    p     <- p
+    type  zmod  <= Zp,
+    op    p     <= p
     proof ge2_p by exact/ge2_p.
 
 clone include PolyReduce with

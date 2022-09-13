@@ -1,0 +1,10 @@
+require import AllCore IntDiv ZModP.
+
+clone include ZModField.
+
+op abs_zp xp = let x = asint xp in min x (p - x).
+
+lemma abs_zp_abs x :
+  -p %/ 2 <= x <= p %/ 2 =>
+  abs_zp (inzmod x) = `|x|.
+proof. smt(ge2_p inzmodK). qed.
