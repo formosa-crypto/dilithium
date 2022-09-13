@@ -1,0 +1,114 @@
+require import Int Real List FSet Distr RealExp SmtMap SDist StdOrder.
+require import DistrExtras.
+import RealOrder.
+
+require DigitalSignaturesRO PROM ReprogOnce Collision.
+require FSabort.
+
+(* ID scheme types and definitions *)
+clone import FSabort as FSa. 
+import FSa.ID. 
+
+(* Generic FS+abort construction (i.e. Sig = W*Z option *)
+clone FSa.Generic as FSaG.
+
+(* Commitment Recoverable FS+abort construction (i.e. Sig = C*Z option *)
+clone FSa.CommRecov as FSaCR with
+  op DSS.DS.Stateless.q_efcma <- FSaG.DSS.DS.Stateless.q_efcma, 
+  op kappa <- FSaG.kappa.
+
+module (RedFSaG (A : FSaCR.DSS.Adv_EFCMA_RO) : FSaG.DSS.Adv_EFCMA_RO) 
+  (H : FSaG.DSS.Hash)
+  (O : FSaG.DSS.DS.Stateless.SOracle_CMA) = 
+{ 
+  module OCR = { 
+    proc sign(m : M) = { 
+      var w,c,z,osig,sig;
+      osig <@ O.sign(m);
+      if (osig <> None) { 
+        (w,z) <- oget osig;
+        c <@ H.get(w,m); 
+        sig <- Some (c,z);
+      } else { 
+        sig <- None;
+      }  
+      return sig;
+    }
+  }
+
+  proc forge(pk : PK) : M*FSaG.Sig = { 
+    var w,c,z,m,sig,sig';
+    (m,sig) <@ A(H,OCR).forge(pk);
+    if (sig <> None) { 
+      (c,z) <- oget sig;
+      w <- FSaCR.recover pk c z;
+      sig' <- Some (w,z);
+    } else { 
+      sig' <- None;
+    }
+    return (m,sig');
+  }
+}.
+
+section PROOF.
+
+declare module P <: ID.Prover{
+  -FSaG.DSS.DS.Stateless.O_CMA_Default, 
+  -FSaCR.DSS.DS.Stateless.O_CMA_Default,
+  -FSaG.DSS.PRO.RO,
+  -FSaCR.DSS.PRO.RO
+}.
+
+declare module V <: ID.Verifier{-P,
+  -FSaG.DSS.DS.Stateless.O_CMA_Default, 
+  -FSaCR.DSS.DS.Stateless.O_CMA_Default,
+  -FSaG.DSS.PRO.RO,
+  -FSaCR.DSS.PRO.RO
+}.
+
+declare axiom verify_ll : islossless V.verify.
+
+declare module A <: FSaCR.DSS.Adv_EFCMA_RO{
+  -P,-V,
+  -FSaG.DSS.DS.Stateless.O_CMA_Default, 
+  -FSaCR.DSS.DS.Stateless.O_CMA_Default,
+  -FSaG.DSS.PRO.RO,
+  -FSaCR.DSS.PRO.RO
+}.
+
+module FSaCR_O_Default = FSaCR.DSS.DS.Stateless.O_CMA_Default.
+module FSaG_O_Default = FSaG.DSS.DS.Stateless.O_CMA_Default.
+
+lemma FSa_CommRecov_Generic &m : 
+    Pr [ FSaCR.DSS.EF_CMA_RO(FSaCR.IDS_Sig(P,V),A,FSaCR.DSS.PRO.RO,FSaCR_O_Default).main() @ &m : res ] 
+<=  Pr [ FSaG.DSS.EF_CMA_RO(FSaG.IDS_Sig(P,V),RedFSaG(A),FSaG.DSS.PRO.RO,FSaG_O_Default).main() @ &m : res ].
+proof.
+byequiv => //; proc.  
+inline{1} 2; inline{2} 2; inline{2} 4. 
+seq 4 5 : (={glob P,glob V,pk} /\ m{1} = m0{2} /\ sig{1} = sig0{2} /\ pk{1} = pk0{2}
+           /\ ={qs,sk}(FSaCR_O_Default,FSaG_O_Default) 
+           /\ ={m}(FSaCR.DSS.PRO.RO,FSaG.DSS.PRO.RO)
+          ); last first. 
+- inline*. wp. sp 4 0. if; [by auto| | by rcondf{2} 7; auto].
+  rcondt{2} 9; first by auto.
+  seq 6 13 : (w{1} = w0{2} /\ c'{1} = c0{2} /\ pk0{1} = pk1{2} /\ z{1} = z0{2} /\ result{1} = false /\
+             ={glob V,m} /\ ={qs,sk}(FSaCR_O_Default,FSaG_O_Default)); first by auto => />. 
+  if{1}; [call(:true)|]. auto => />. wp. 
+  conseq (:_ ==> true) _ (:_ ==> _ : 1%r). smt(). islossless. apply verify_ll. 
+call(: ={glob P,glob V} 
+       /\ ={qs,sk}(FSaCR_O_Default,FSaG_O_Default) 
+       /\ ={m}(FSaCR.DSS.PRO.RO,FSaG.DSS.PRO.RO)).
+- proc. inline{1} 1. inline{2} 1. inline{2} 2. conseq />.
+  seq 7 8 : (={glob P,oz,k,m} /\ w{1} = w0{2} /\ c{1} = c0{2} /\ (m0 = m /\ m1 = m){2} /\ (m0 = m){1}
+            /\ ={qs,sk}(FSaCR_O_Default,FSaG_O_Default) 
+            /\ ={m}(FSaCR.DSS.PRO.RO,FSaG.DSS.PRO.RO)
+            /\ (oz = None \/ Some c0 = FSaG.DSS.PRO.RO.m.[w0,m1]){2}).
+  + while (#post /\ ={k,sk}); last by auto => />. 
+    inline*; auto; call(: true); auto; call(: true); auto => />. 
+    smt(domE get_set_sameE).
+  inline*. auto. sp. if{2}; last by auto => /> /#. 
+  rcondf{2} 4; first by auto => /> /#.
+  by auto => />; smt(get_set_sameE).
+- by sim.
+by inline*; auto; call(: true); auto => />.
+qed.
