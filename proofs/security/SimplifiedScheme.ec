@@ -15,30 +15,38 @@ op k : {int | 0 < k} as gt0_k.
 op l : {int | 0 < l} as gt0_l.
 axiom l_k_le : l <= k.
 
-(*
-clone PolyReduceZp as PolyReduceZq with
-  op p <- q,
-  op n <- n
+clone import PolyReduceZp as PolyReduceZq with
+  op p <= q,
+  op n <= n
 proof ge2_p, gt0_n.
 realize ge2_p by smt(prime_q gt1_prime).
 realize gt0_n by exact gt0_n.
 
-clone import Matrix as PolyMatrix with
-  theory ZR <- PolyReduceZq.ComRing,
-  op size <- k
-proof ge0_size by smt(gt0_k).
-*)
+clone import NonSquareMatrix as PolyMatrix with
+  theory ZR <= PolyReduceZq.ComRing,
+  op in_size <= l,
+  op out_size <= k
+proof ge0_in_size by smt(gt0_l),
+      ge0_out_size by smt(gt0_k).
+
+print vec_in.
 
 clone import ZqRounding as Round with
-  op q <- q,
-  op n <- n,
-  op l <- l,
-  op k <- k.
+  op q <= q,
+  op n <= n,
+  op l <= l,
+  op k <= k,
+  theory PolyReduceZq <= PolyReduceZq,
+  theory PolyMatrix <= PolyMatrix
+proof *.
+realize prime_q by exact prime_q.
+realize gt0_n by exact gt0_n.
+realize gt0_k by exact gt0_k.
+realize gt0_l by exact gt0_l.
 (* TODO Proof whatever applicable *)
 (* TODO There's an argument to re-instantiate some theories *)
 
-import Round.PolyMatrix.
-import PolyReduceZq.
+import Zp.
 
 type vecl = vec_in.
 type veck = vec_out.
@@ -59,13 +67,7 @@ clone import DigitalSignaturesRO as DilithiumDS with
   type PRO.out_t <= challenge_t.
 
 import VecOut.
-print VecOut.
 import VecOut.ZModule.
-
-import Zp.
-
-(* TODO move me to PolyReduce *)
-op polyC c = pinject (BasePoly.polyC c).
 
 (* power2round rounding range...? *)
 op d : int.
@@ -95,7 +97,7 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
     (w, resp) <- sig;
     (z, h) <- resp;
     c <@ H.get((w, m));
-    w' <- polyveck_useHint h (mA *^ z - polyC (inzmod (2 ^ d)) * c ** t1);
+    w' <- polyveck_useHint h (mA *^ z - polyCX (inzmod (2 ^ d)) * c ** t1);
     return false;
   }
 }.

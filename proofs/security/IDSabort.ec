@@ -1,6 +1,6 @@
 require import AllCore Int Real List FinType DBool.
 
-theory IDS.
+abstract theory IDS.
 (* Generic types for 
    public and secret key, 
    commitment W, challenge C, response Z, 

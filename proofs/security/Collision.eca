@@ -111,7 +111,7 @@ local module (Mc : Oracle) = {
 local lemma Mc_alpha &m : 
   Pr [ Game(A,Mc).main() @ &m : M.bad /\ Mc.cp <= qP /\ Count.cs <= qS ] <= 
   (qP * qS)%r * alpha.
-proof.
+proof. move=> H. byphoare.
 fel 2 Count.cs (fun _ => qP%r * alpha) qS M.bad [Mc.put : false] 
       (card M.s <= Mc.cp <= qP); try (by auto); last 2 first.
 - move => c. proc; inline*; auto => />. smt(fcardU1). 
@@ -119,7 +119,7 @@ fel 2 Count.cs (fun _ => qP%r * alpha) qS M.bad [Mc.put : false]
 - rewrite sumri_const ?qS_ge0 RField.intmulr; smt().
 - inline*; auto => />; smt(fcards0 qP_ge0).
 proc; inline*; wp; conseq (:_ ==> (w,m0) \in M.s); 1: smt(). 
-rnd (fun p : W * St => (p.`1,m0) \in M.s).
+rnd (fun p : W * St => (p.`1,m0) \in M.s). 
 auto => /> &1 *. 
 apply (ler_trans (mu (dfst (d sk{1})) (fun w => w \in image fst M.s{1}))).
 - rewrite dmapE /(\o); apply mu_le => -[w st] /= ? Hw.

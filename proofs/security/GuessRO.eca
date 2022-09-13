@@ -16,8 +16,8 @@ op [lossless] dXY_rej (m : M) : (X * Y) distr.
 op [lossless uniform] dY : Y distr.
 op alpha : real.
 op qh, qr : int.
-axiom qh_gt0 : 0 < qh.
-axiom qr_gt0 : 0 < qr.
+axiom qh_ge0 : 0 <= qh.
+axiom qr_ge0 : 0 <= qr.
 
 op dXr m = dfst (dXY_rej m).
 axiom dX_pmax m :
@@ -106,8 +106,8 @@ local clone Guessing as Guess with
   op alpha <- alpha
 proof *.
 realize d_pmax by apply dX_pmax.
-realize qs_gt0 by apply qr_gt0.
-realize qg_gt0 by apply qh_gt0.
+realize qs_ge0 by apply qr_ge0.
+realize qg_ge0 by apply qh_ge0.
 
 local module ReductionO(O: Guess.SGOracle) : Oracle = {
   proc h(x : X) = {

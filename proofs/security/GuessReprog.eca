@@ -26,8 +26,8 @@ op [lossless uniform] dY : Y distr.
 op alpha : real.
 
 op qh, qr : int.
-axiom qh_gt0 : 0 < qh.
-axiom qr_gt0 : 0 < qr.
+axiom qh_ge0 : 0 <= qh.
+axiom qr_ge0 : 0 <= qr.
 
 op dXr k = dfst (dXY_rej k).
 axiom dX_pmax k :
@@ -212,8 +212,8 @@ proof *.
 realize dXY_rej_ll by apply dXY_rej_ll.
 realize dY_ll by apply dY_ll.
 realize dY_uni by apply dY_uni.
-realize qh_gt0 by apply qh_gt0.
-realize qr_gt0 by apply qr_gt0.
+realize qh_ge0 by apply qh_ge0.
+realize qr_ge0 by apply qr_ge0.
 realize dX_pmax by apply dX_pmax.
 
 local module (ReduceO(O: Guess.Oracle) : Oracle) = {
