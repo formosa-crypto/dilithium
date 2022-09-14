@@ -36,7 +36,6 @@ op n : {int | 0 < n} as gt0_n.
 (* matrix dimensions *)
 op k : {int | 0 < k} as gt0_k.
 op l : {int | 0 < l} as gt0_l.
-axiom l_k_le : l <= k.
 
 clone import ZModFieldExtras as ZModQ with
   op p <= q
@@ -109,12 +108,19 @@ clone import FSabort as OpFSA with
 
 (* -- Procedure-based -- *)
 
-clone import CommRecov.
-(* TODO instantiate a couple things and prove axioms *)
+op recover (pk : PK) (c : challenge_t) (z : response_t) : commit_t =
+  let (mA, t) = pk in
+  polyveck_highbits (mA *^ z - c ** t) (2 * gamma2).
+
+clone import CommRecov with
+  op recover <= recover,
+  op kappa <= kappa.
+(* TODO instantiate a couple more things and prove axioms
+ * TODO at least `recover` has to be defined for things to be provable *)
 import DSS.
 
 (* TODO... should be straightforward to implement.
- * also TODO move this to ZqRounding theory.
+ * also TODO move this somewhere else.
  *)
 op int_poly_max : int_poly -> int.
 op int_polyvec_max : int_polyvec -> int.
@@ -195,8 +201,43 @@ op respond (sk : SK) (c : challenge_t) (y: pstate_t) : response_t option =
     None else
     Some z.
 
-clone OpBased with
+clone import OpBased with
   op keygen <= keygen,
   op commit <= commit,
   op response <= respond.
 (* TODO proof *. *)
+
+(* -- proofs -- *)
+
+module OpBasedSig = IDS_Sig(OpBased.P, OpBased.V).
+
+section OpBasedCorrectness.
+
+declare module H <: Hash {-OpBased.P}.
+
+equiv keygen_opbased_correct :
+  OpBasedSig(H).keygen ~ SimplifiedDilithium(H).keygen :
+  true ==> ={res}.
+proof.
+proc; inline *.
+rnd: *0 *0; skip => />.
+(* terrifying *)
+admitted.
+
+equiv sign_opbased_correct :
+  OpBasedSig(H).sign ~ SimplifiedDilithium(H).sign :
+  ={arg} ==> ={res}.
+proof.
+proc; inline *.
+(* Is it just me or is this not any better than the one before... *)
+admitted.
+
+equiv verify_opbased_correct :
+  OpBasedSig(H).verify ~ SimplifiedDilithium(H).verify :
+  ={arg} ==> ={res}.
+proof.
+proc; inline *.
+(* We'll save this for next time. *)
+admitted.
+
+end section OpBasedCorrectness.
