@@ -167,13 +167,16 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
   proc verify(pk: PK, m : M, sig : Sig) = {
     var w, c, z, c';
     var mA, t1;
-    var good;
+    var result;
     (mA, t1) <- pk;
-    good <- (sig = None);
-    (c, z) <- oget sig;
-    w <- polyveck_highbits (mA *^ z - c ** t1) (2 * gamma2);
-    c' <@ H.get((w, m));
-    return good /\ polyvecl_max z < gamma1 - b /\ c = c';
+    result <- false;
+    if(sig <> None) {
+      (c, z) <- oget sig;
+      w <- polyveck_highbits (mA *^ z - c ** t1) (2 * gamma2);
+      c' <@ H.get((w, m));
+      result <- polyvecl_max z < gamma1 - b /\ c = c';
+    }
+    return result;
   }
 }.
 
@@ -201,10 +204,16 @@ op respond (sk : SK) (c : challenge_t) (y: pstate_t) : response_t option =
     None else
     Some z.
 
+op verify (pk : PK) (w1 : commit_t) (c : challenge_t) (z : response_t) : bool =
+  let (mA, t) = pk in
+  polyvecl_max z < gamma1 - b /\
+  w1 = polyveck_highbits (mA *^ z - c ** t) (2 * gamma2).
+
 clone import OpBased with
   op keygen <= keygen,
   op commit <= commit,
-  op response <= respond.
+  op response <= respond,
+  op verify <= verify.
 (* TODO proof *. *)
 
 (* -- proofs -- *)
