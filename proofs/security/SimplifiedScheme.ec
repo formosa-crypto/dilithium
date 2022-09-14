@@ -1,4 +1,4 @@
-require import AllCore Distr.
+require import AllCore Distr List DistrExtras.
 require DigitalSignaturesRO.
 require NonSquareMatrix.
 require import PolyReduce.
@@ -8,8 +8,29 @@ require ZModFieldExtras.
 
 type M.
 
+(* Dilithium-specific parameters *)
+
+(* secret key range.
+ * Typically "eta" but that's a reserved keyword in EC. *)
+op e : int.
+
+(* Rounding stuff *)
+op gamma1 : int.
+op gamma2 : int.
+(* beta in spec.
+ * beta is again a reserved keyword in EC. *)
+op b : int.
+
+(* challenge weight *)
+op tau : int.
+
+(* upper bound on number of itertions. *)
+op kappa : int.
+
+(* Modulo *)
 op q : {int | prime q} as prime_q.
 
+(* Poly degrees *)
 op n : {int | 0 < n} as gt0_n.
 
 (* matrix dimensions *)
@@ -66,36 +87,33 @@ type SK = matrix * vecl * veck.
 type PK = matrix * veck.
 type commit_t = int_polyvec.
 type response_t = vecl.
-type SIG = (response_t * challenge_t) option.
 
-clone import DigitalSignaturesRO as DilithiumDS with
-  type DS.msg_t <= M,
-  type DS.sig_t <= SIG,
-  type DS.pk_t <= PK,
-  type DS.sk_t <= SK,
-  type PRO.in_t <= commit_t * M,
-  type PRO.out_t <= challenge_t.
+op dC : challenge_t distr = dcond dpolyXnD1 (fun p => poly_weight p = tau).
 
-(* Dilithium-specific parameters *)
-(* power2round rounding range *)
-op d : int.
-(* secret key range.
- * Typically "eta" but that's a reserved keyword in EC. *)
-op e : int.
+(* Just storing `y` should be good here. *)
+type pstate_t = vecl.
 
-(* Rounding stuff *)
-op gamma1 : int.
-op gamma2 : int.
-(* beta in spec.
- * beta is reserved keyword in EC. *)
-op b : int.
+(* Unsure if this is intended usage;
+ * can't recall from the meeting the other day *)
+require FSabort.
+clone import FSabort as OpFSA with
+  type ID.PK <= PK,
+  type ID.SK <= SK,
+  type ID.W <= commit_t,
+  type ID.C <= challenge_t,
+  type ID.Z <= response_t,
+  type ID.Pstate <= pstate_t,
+  type M <= M,
+  op dC <= dC.
+(* TODO proof *. *)
 
-(* upper bound on number of itertions. *)
-op kappa : int.
+(* -- Procedure-based -- *)
 
-require import List.
+clone import CommRecov.
+(* TODO instantiate a couple things and prove axioms *)
+import DSS.
 
-(* TODO... should be straightforward.
+(* TODO... should be straightforward to implement.
  * also TODO move this to ZqRounding theory.
  *)
 op int_poly_max : int_poly -> int.
@@ -113,12 +131,15 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
     return (pk, sk);
   }
 
-  proc sign(sk: SK, m: M) : SIG = {
+  proc sign(sk: SK, m: M) : Sig = {
     var z : vecl option;
     var c : R;
     var ctr : int;
     var y, w, w1;
     var mA, s1, s2;
+    (* silences unused variable warning *)
+    c <- witness;
+
     (mA, s1, s2) <- sk;
     ctr <- 0;
     z <- None;
@@ -134,24 +155,23 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
       }
       ctr <- ctr + 1;
     }
-    return witness;
+    return if z = None then None else Some (c, oget z);
   }
 
-  proc verify(pk: PK, m : M, sig : SIG) = {
+  proc verify(pk: PK, m : M, sig : Sig) = {
     var w, c, z, c';
     var mA, t1;
     var good;
     (mA, t1) <- pk;
-    good <- sig = None;
-    (z, c) <- oget sig;
+    good <- (sig = None);
+    (c, z) <- oget sig;
     w <- polyveck_highbits (mA *^ z - c ** t1) (2 * gamma2);
     c' <@ H.get((w, m));
     return good /\ polyvecl_max z < gamma1 - b /\ c = c';
   }
 }.
 
-(* Just storing `y` should be good here. *)
-type pstate_t = vecl.
+(* -- Operator-based -- *)
 
 op keygen : (PK * SK) distr =
   dlet (dmatrix dpolyXnD1) (fun mA =>
@@ -167,6 +187,16 @@ op commit (sk : SK) : (commit_t * pstate_t) distr =
   let w1 = polyveck_highbits (mA *^ y) (2 * gamma2) in
   (w1, y)).
 
-(* TODO dC *)
+op respond (sk : SK) (c : challenge_t) (y: pstate_t) : response_t option =
+  let (mA, s1, s2) = sk in
+  let z = y + c ** s1 in
+  if gamma1 - b <= polyvecl_max z \/
+     gamma2 - b <= int_polyvec_max (polyveck_lowbits (mA *^ y - c ** s2) (2 * gamma2)) then
+    None else
+    Some z.
 
-(* op respond (sk : SK) : *)
+clone OpBased with
+  op keygen <= keygen,
+  op commit <= commit,
+  op response <= respond.
+(* TODO proof *. *)
