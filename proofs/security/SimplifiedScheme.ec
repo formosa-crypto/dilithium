@@ -259,7 +259,12 @@ equiv verify_opbased_correct :
   ={arg,glob H} ==> ={res,glob H}.
 proof.
 proc; inline *. 
-(* We'll save this for next time. *)
-admitted.
+sp; if; 1,3: by auto => />.
+seq 3 3: (#pre /\ ={c, z, w, c'} /\
+          w{1} = recover pk{1} c{1} z{1}).
+- sp; call (: true); skip => /> ?? H H' ?.
+  by rewrite -H in H'; case H' => ?? /#.
+if{1}; by auto => />.
+qed.
 
 end section OpBasedCorrectness.
