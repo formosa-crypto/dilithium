@@ -182,10 +182,10 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
 op keygen : (PK * SK) distr =
   dlet (dmatrix dpolyXnD1) (fun mA =>
   dlet (VecIn.dvector (dpolyX (dball_zp e))) (fun s1 =>
-  dlet (VecOut.dvector (dpolyX (dball_zp e))) (fun s2 =>
+  dmap (VecOut.dvector (dpolyX (dball_zp e))) (fun s2 =>
   let pk = (mA, mA *^ s1 + s2) in
   let sk = (mA, s1, s2) in
-  dunit (pk, sk)))).
+  (pk, sk)))).
 
 op commit (sk : SK) : (commit_t * pstate_t) distr =
   let (mA, s1, s2) = sk in
@@ -218,25 +218,38 @@ declare module H <: Hash {-OpBased.P}.
 equiv keygen_opbased_correct :
   OpBasedSig(H).keygen ~ SimplifiedDilithium(H).keygen :
   true ==> ={res}.
-proof.
+proof. 
 proc; inline *.
-rnd: *0 *0; skip => />.
-(* terrifying *)
-admitted.
+rnd: *0 *0; skip => />; split => [kp ?|_ [pk sk]].
+- by rewrite dmap_id /keygen &(mu_eq). 
+by rewrite /keygen dmap_id.
+qed.
 
 equiv sign_opbased_correct :
   OpBasedSig(H).sign ~ SimplifiedDilithium(H).sign :
-  ={arg} ==> ={res}.
+  ={arg,glob H} ==> ={res,glob H}.
 proof.
-proc; inline *.
-(* Is it just me or is this not any better than the one before... *)
-admitted.
+proc; inline *. 
+while (oz{1} = z{2} /\ ={c,sk,glob H,m} /\ k{1} = ctr{2} /\ (sk = (mA,s1,s2)){2}); 
+  last by auto => /> /#.
+conseq (: _ ==> ={c, sk, glob H, m} /\ (sk = (mA,s1,s2)){2} 
+                 /\ oz{1} = z{2} /\ k{1} = ctr{2}); 1: smt().
+seq 4 4 : (#pre /\ w{1} = w1{2} /\ P.pstate{1} = y{2}).
+- call(: true). conseq />. 
+  rnd: *0 *0. skip => /> &m ?. split => [[y w1] ?|_]. 
+  + apply/eq_sym. congr. (* symmetry as hack for RHS pattern selection *)
+    by rewrite /commit /= dmap_comp /(\o) /=. 
+  move => ?. by rewrite /commit /= dmap_comp /(\o).
+conseq />. auto => /> &m ?. split => [|pass_chk]. 
++ by rewrite /respond /= => ->.
++ by rewrite /respond /= ifF.
+qed.
 
 equiv verify_opbased_correct :
   OpBasedSig(H).verify ~ SimplifiedDilithium(H).verify :
-  ={arg} ==> ={res}.
+  ={arg,glob H} ==> ={res,glob H}.
 proof.
-proc; inline *.
+proc; inline *. 
 (* We'll save this for next time. *)
 admitted.
 

@@ -118,9 +118,9 @@ import DSS.DS.Stateless.
 
 module (IDS_Sig (P: Prover, V:Verifier) : SchemeRO) (H: Hash) = {
   proc keygen() : PK*SK = {
-    var sk, pk;
-    (pk,sk) <@ P.keygen();
-    return (pk,sk);
+    var kp;
+    kp <@ P.keygen();
+    return kp;
   }
   proc sign(sk:SK,m:M) : Sig = {
     var w  : W <- witness;
