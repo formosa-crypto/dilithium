@@ -79,6 +79,14 @@ qed.
 const sk0 : SK.
 axiom sk0P : valid_sk sk0 /\ check_entropy sk0.
 
+lemma keygen_good_ll : is_lossless keygen_good.
+proof. 
+case: sk0P => valid_sk0 good_sk0.
+have supp_sk0 : sk0 \in dsnd keygen by smt(supp_dmap).
+apply dcond_ll; apply (ltr_le_trans _ _ _ supp_sk0).
+by rewrite dmapE mu_le /#.
+qed.
+
 op commit_good (sk : SK) = 
   if valid_sk sk /\ check_entropy sk then commit sk else commit sk0.
 
@@ -628,13 +636,13 @@ local clone ReprogOnce as R1 with
   op respond <- (fun sk c st => response sk st c),
   theory RO <= PRO
 proof*. 
-realize keygen_ll by admit. 
+realize keygen_ll by apply keygen_good_ll.
 realize commit_ll by apply commit_ll.
 realize dC_ll by apply dC_ll.
 realize dC_uni by apply dC_uni.
-realize all_sk_can_accept by admit.  
-realize all_sk_can_reject by admit.
-realize dX_pmax by admit. (* TODO: this should be phrased in terms of commit, respond, dcond ... *)
+realize all_sk_can_accept by admit.  (* TOTHINK: does this really make sense? *)
+realize prej_lower_bounded by admit.
+realize commit_min_entropy_lower_bounded by admit.
 realize qs_ge0 by apply qS_ge0.
 realize qh_ge0 by smt(qH_ge0).
 realize kappa_gt0 by apply kappa_gt0.
