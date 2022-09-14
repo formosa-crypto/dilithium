@@ -28,14 +28,28 @@ axiom all_sk_can_accept sk :
   c \in dC /\
   respond sk st c <> None.
 
-axiom all_sk_can_reject sk :
+op prej_lower_bound : real.
+
+axiom prej_lower_bounded sk :
+  valid_sk sk =>
+  prej_lower_bound <=
+  mu (commit sk `*` dC) (fun (wstc : ((W * ST) * C)) =>
+    respond sk wstc.`1.`2 wstc.`2 = None).
+
+(* Subsumed by the above.
+ * TODO either prove or remove *)
+lemma all_sk_can_reject sk :
   valid_sk sk =>
   exists w st c,
   (w, st) \in commit sk /\
   c \in dC /\
   respond sk st c = None.
+admitted.
 
 op alpha : real. (* pmax *)
+axiom commit_min_entropy_lower_bounded sk :
+  valid_sk sk =>
+  alpha <= p_max (dfst (commit sk)).
 
 (* CD: dtrans? - with follow up renamings *)
 (* Transcript distribution *)
@@ -63,8 +77,10 @@ op dXY_rej (k: SK * M) : ((W * M) * C) distr =
   dmap (dWC_rej sk) (fun wc =>
     let (w, c) = wc in ((w, m), c)).
 
-axiom dX_pmax k :
+(* TODO *)
+lemma dX_pmax k :
   p_max (dfst (dXY_rej k)) <= alpha.
+admitted.
 
  (* max. number of signing queries *)
 op qs : {int | 0 <= qs} as qs_ge0.
