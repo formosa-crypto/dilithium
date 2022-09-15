@@ -6,6 +6,12 @@ require import IntDiv.
 require ZqRounding.
 require ZModFieldExtras.
 
+require import IDSabort.
+require FSabort.
+require FSa_CMAtoKOA.
+require FSa_CRtoGen.
+
+
 type M.
 
 (* Dilithium-specific parameters *)
@@ -92,9 +98,25 @@ op dC : challenge_t distr = dcond dpolyXnD1 (fun p => poly_weight p = tau).
 (* Just storing `y` should be good here. *)
 type pstate_t = vecl.
 
+
+clone IDS as DID with 
+  type PK <= PK,
+  type SK <= SK,
+  type W <= commit_t,
+  type C <= challenge_t,
+  type Z <= response_t,
+  type Pstate <= pstate_t proof*.
+
+(* Raises "`ID.Imp_Game` is incompatible" error *)
+(*
+clone import FSabort as OpFSA with
+  theory ID <= DID,
+  type M <- M,
+  op dC <- dC.
+*)
+
 (* Unsure if this is intended usage;
  * can't recall from the meeting the other day *)
-require FSabort.
 clone import FSabort as OpFSA with
   type ID.PK <= PK,
   type ID.SK <= SK,
@@ -112,9 +134,9 @@ op recover (pk : PK) (c : challenge_t) (z : response_t) : commit_t =
   let (mA, t) = pk in
   polyveck_highbits (mA *^ z - c ** t) (2 * gamma2).
 
-clone import CommRecov with
+clone import CommRecov as FSaCR with
   op recover <= recover,
-  op kappa <= kappa.
+  op kappa <- kappa.
 (* TODO instantiate a couple more things and prove axioms
  * TODO at least `recover` has to be defined for things to be provable *)
 import DSS.
@@ -268,3 +290,83 @@ if{1}; by auto => />.
 qed.
 
 end section OpBasedCorrectness.
+
+
+
+(* Main Theorem *)
+
+import FSaCR.DSS.
+import FSaCR.DSS.PRO.
+import FSaCR.DSS.DS.Stateless.
+
+(* Distinguisher for (RO) signature schemes *)
+module type SigDist (S : Scheme) (H : Hash_i) = { 
+  proc distinguish() : bool
+}.
+
+equiv eqv_code_op (D <: SigDist{-OpBasedSig}) (H <: Hash_i{-P,-D}) : 
+  D(SimplifiedDilithium(H),H).distinguish ~ D(OpBasedSig(H),H).distinguish : 
+  ={glob D,glob H} ==> ={glob D,glob H,res}.
+proof.
+proc*; call (: ={glob H}); last done.
+- proc true; auto.
+- proc true; auto.
+- by symmetry; conseq (keygen_opbased_correct H) => //.
+- by symmetry; conseq (sign_opbased_correct H) => /#.
+- by symmetry; conseq (verify_opbased_correct H) => /#.
+qed.
+
+section PROOF.
+
+declare module A <: Adv_EFCMA_RO{-O_CMA_Default,-RO,-OpBasedSig}.
+
+op bound : real. (* TODO *)
+
+(*** Step 1 : Replace the code-based scheme with an operator-based one ***)
+
+(* EF_CMA game seen as a distinshuisher for signature schemes *) 
+local module (SD : SigDist) (S : Scheme) (H : Hash_i) = { 
+  proc distinguish() = {
+    var r;
+    H.init();
+    r <@ EF_CMA(S,A(H),O_CMA_Default).main();
+    return r;
+  }
+}.
+
+local lemma pr_code_op &m : 
+  Pr [ EF_CMA_RO(SimplifiedDilithium, A, RO,O_CMA_Default).main() @ &m : res ] = 
+  Pr [ EF_CMA_RO(OpBasedSig, A, RO,O_CMA_Default).main() @ &m : res ].
+proof.
+byequiv (_: ={glob A,glob RO,glob O_CMA_Default} ==> ={res}) => //.
+transitivity SD(SimplifiedDilithium(RO),RO).distinguish 
+   (={glob A,glob RO,glob O_CMA_Default} ==> ={res}) 
+   (={glob A,glob RO,glob O_CMA_Default} ==> ={res}); 
+   [smt()| smt() | by sim |].
+transitivity SD(OpBasedSig(RO),RO).distinguish 
+   (={glob A,glob RO,glob O_CMA_Default} ==> ={res}) 
+   (={glob A,glob RO,glob O_CMA_Default} ==> ={res}); 
+   [smt()| smt() | | by sim].
+by conseq (eqv_code_op SD RO).
+qed.
+
+(*** Step 2 : Reduce to the case for general (i.e., not commitment recoverable schemes) ***)
+
+(* TODO: this should be local, but for this all axioms need to be proved *)
+clone Generic as FSaG with
+  op kappa <- kappa,
+  op qS <- qS,
+  op qH <- qH + qS.
+
+(* clone import FSa_CRtoGen as CG with  *)
+(*   theory FSa <- OpFSA. *)
+(*   theory FSaG <- FSaG. *)
+
+lemma SimplifiedDilithium_secure &m : 
+  Pr [ EF_CMA_RO(SimplifiedDilithium, A, RO,O_CMA_Default).main() @ &m : res ] <= bound.
+proof.
+(* Step 1 *)
+rewrite pr_code_op.
+admitted.
+
+end section PROOF.
