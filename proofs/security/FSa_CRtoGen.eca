@@ -112,3 +112,5 @@ call(: ={glob P,glob V}
 - by sim.
 by inline*; auto; call(: true); auto => />.
 qed.
+
+end section PROOF.
