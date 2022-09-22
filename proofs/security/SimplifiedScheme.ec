@@ -1,16 +1,85 @@
 require import AllCore Distr List DistrExtras.
 require DigitalSignaturesRO.
-require NonSquareMatrix.
+require Mat.
 require import PolyReduce.
 require import IntDiv.
 require ZqRounding.
 require ZModFieldExtras.
+require import Nat.
 
 require import IDSabort.
 require FSabort.
 require FSa_CMAtoKOA.
 require FSa_CRtoGen.
 
+abstract theory DRing.
+
+(* Modulo *)
+op q : {int | prime q} as prime_q. 
+
+(* Poly degrees *)
+op n : {int | 0 < n} as gt0_n.
+
+(* Polynomial ring ℤq[X]/(X^n +1 ) *)
+type Rq.
+
+clone import Ring.ComRing as RqRing with type t <= Rq.
+
+op cnorm : Rq -> int.             (* infinity norm (after centered reduction modulo) *)
+op l1_norm : Rq -> int.           (* sum over absolute values                        *)
+
+(* TOTHINK: If [high = Rq] is a problem, we either need to have a
+ComRing structure on high or use lists rather than vectors to pass
+[w1] around *)
+
+type high = Rq.                   (* type of "rounded" elements *)
+
+op lowBits  : Rq -> int -> Rq.    (* "low-order"  bits *)
+op highBits : Rq -> int -> high.  (* "high-order" bits *)
+op shift    : high -> int -> Rq.  (* adding zeros      *)
+
+op [lossless uniform] dRq : Rq distr. (* TOTHINK: add full? *)
+
+op [lossless uniform] dRq_ : int -> Rq distr.
+axiom supp_dRq x a : x \in dRq_ a <=> cnorm x <= a.
+
+op [lossless uniform] dC  : int -> Rq distr.
+axiom supp_dC c a : c \in dC a <=> cnorm c <= 1 /\ l1_norm c = a.
+
+axiom high_lowP x a : shift (highBits x a) a + lowBits x a = x.
+
+axiom hide_low r s a b : 
+  !odd a => cnorm s <= b => cnorm (lowBits s a) < a %/ 2 - b =>
+  highBits (r + s) = highBits r.
+
+axiom lowbit_small r a :
+  cnorm (lowBits r a) <= a %/ 2. (* TOTHINK: +1 ? *)
+
+end DRing.
+
+clone import DRing as DR. 
+
+clone import Mat as MatRq 
+  with theory ZR <- DR.RqRing.
+
+(* lifting functions to vectors *)
+op mapv (f : Rq -> Rq) (v : vector) : vector = 
+  offunv (fun i => f v.[i], size v).
+
+op (**) (c : Rq) (v : vector) = mulvs v c.
+
+lemma size_mapv f v : size (mapv f v) = size v by [].
+
+op lowBitsV v a = mapv (fun x => lowBits x a) v.
+op highBitsV v a = mapv (fun x => highBits x a) v.
+
+clone import MatRq.NormV as INormV with 
+  type a <- nat,
+  op id <- zero,
+  op (+) <- Nat.max,
+  op norm <- ofint \o cnorm proof* by smt(maxrA maxrC max0r).
+
+op inf_normv = ofnat \o INormV.normv.
 
 type M.
 
@@ -33,71 +102,20 @@ op tau : int.
 (* upper bound on number of itertions. *)
 op kappa : int.
 
-(* Modulo *)
-op q : {int | prime q} as prime_q.
-
-(* Poly degrees *)
-op n : {int | 0 < n} as gt0_n.
-
 (* matrix dimensions *)
 op k : {int | 0 < k} as gt0_k.
 op l : {int | 0 < l} as gt0_l.
 
-clone import ZModFieldExtras as ZModQ with
-  op p <= q
-proof prime_p by exact prime_q.
+type challenge_t = Rq.
+type SK = matrix * vector * vector.
+type PK = matrix * vector.
+type commit_t = vector. 
+type response_t = vector. 
 
-clone import PolyReduceZp as PolyReduceZq with
-  op p <= q,
-  op n <= n,
-  type Zp <= ZModQ.zmod,
-  theory Zp <= ZModQ
-proof ge2_p, gt0_n.
-realize ge2_p by smt(prime_q gt1_prime).
-realize gt0_n by exact gt0_n.
-
-clone import NonSquareMatrix as PolyMatrix with
-  theory ZR <= PolyReduceZq.ComRing,
-  op in_size <= l,
-  op out_size <= k
-proof ge0_in_size by smt(gt0_l),
-      ge0_out_size by smt(gt0_k).
-
-import VecOut.
-import VecOut.ZModule.
-import VecIn.
-
-clone import ZqRounding as Round with
-  op q <= q,
-  op n <= n,
-  op l <= l,
-  op k <= k,
-  theory ZModQ <= ZModQ,
-  theory PolyReduceZq <= PolyReduceZq,
-  theory PolyMatrix <= PolyMatrix
-proof *.
-realize prime_q by exact prime_q.
-realize gt0_n by exact gt0_n.
-realize gt0_k by exact gt0_k.
-realize gt0_l by exact gt0_l.
-(* TODO see if anything else is provable *)
-
-(* This `vec_in` and `vec_out` business is such a mess *)
-type vecl = vec_in.
-type veck = vec_out.
-
-type challenge_t = R.
-
-type SK = matrix * vecl * veck.
-type PK = matrix * veck.
-type commit_t = int_polyvec.
-type response_t = vecl.
-
-op dC : challenge_t distr = dcond dpolyXnD1 (fun p => poly_weight p = tau).
+op dC : challenge_t distr = dC tau. 
 
 (* Just storing `y` should be good here. *)
-type pstate_t = vecl.
-
+type pstate_t = vector. 
 
 clone IDS as DID with 
   type PK <= PK,
@@ -132,7 +150,7 @@ clone import FSabort as OpFSA with
 
 op recover (pk : PK) (c : challenge_t) (z : response_t) : commit_t =
   let (mA, t) = pk in
-  polyveck_highbits (mA *^ z - c ** t) (2 * gamma2).
+  highBitsV (mA *^ z - c ** t) (2 * gamma2).
 
 clone import CommRecov as FSaCR with
   op recover <= recover,
@@ -141,26 +159,20 @@ clone import CommRecov as FSaCR with
  * TODO at least `recover` has to be defined for things to be provable *)
 import DSS.
 
-(* TODO... should be straightforward to implement.
- * also TODO move this somewhere else.
- *)
-op int_poly_max : int_poly -> int.
-op int_polyvec_max : int_polyvec -> int.
-
 module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
   proc keygen() : PK * SK = {
     var pk, sk;
     var mA, s1, s2;
-    mA <$ dmatrix dpolyXnD1;
-    s1 <$ VecIn.dvector (dpolyX (dball_zp e));
-    s2 <$ VecOut.dvector (dpolyX (dball_zp e));
+    mA <$ dmatrix dRq k l;
+    s1 <$ dvector (dRq_ e) l;
+    s2 <$ dvector (dRq_ e) k;
     pk <- (mA, mA *^ s1 + s2);
     sk <- (mA, s1, s2);
     return (pk, sk);
   }
 
   proc sign(sk: SK, m: M) : Sig = {
-    var z : vecl option;
+    var z : vector option;
     var c : R;
     var ctr : int;
     var y, w, w1;
@@ -172,13 +184,13 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
     ctr <- 0;
     z <- None;
     while(ctr < kappa /\ z = None) {
-      y <$ VecIn.dvector (dpolyX (dball_zp (gamma1 - 1)));
+      y <$ dvector (dRq_ (gamma1 - 1)) l;
       w <- mA *^ y;
-      w1 <- polyveck_highbits w (2 * gamma2);
+      w1 <- highBitsV w (2 * gamma2);
       c <@ H.get((w1, m));
       z <- Some (y + c ** s1);
-      if(gamma1 - b <= polyvecl_max (oget z) \/
-         gamma2 - b <= int_polyvec_max (polyveck_lowbits (mA *^ y - c ** s2) (2 * gamma2))) {
+      if(gamma1 - b <= inf_normv (oget z) \/
+         gamma2 - b <= inf_normv (lowBitsV (mA *^ y - c ** s2) (2 * gamma2))) {
         z <- None;
       }
       ctr <- ctr + 1;
@@ -194,9 +206,9 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
     result <- false;
     if(sig <> None) {
       (c, z) <- oget sig;
-      w <- polyveck_highbits (mA *^ z - c ** t1) (2 * gamma2);
+      w <- highBitsV (mA *^ z - c ** t1) (2 * gamma2);
       c' <@ H.get((w, m));
-      result <- polyvecl_max z < gamma1 - b /\ c = c';
+      result <- inf_normv z < gamma1 - b /\ c = c';
     }
     return result;
   }
@@ -205,31 +217,31 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
 (* -- Operator-based -- *)
 
 op keygen : (PK * SK) distr =
-  dlet (dmatrix dpolyXnD1) (fun mA =>
-  dlet (VecIn.dvector (dpolyX (dball_zp e))) (fun s1 =>
-  dmap (VecOut.dvector (dpolyX (dball_zp e))) (fun s2 =>
+  dlet (dmatrix dRq k l) (fun mA =>
+  dlet (dvector (dRq_ e) l) (fun s1 =>
+  dmap (dvector (dRq_ e) k) (fun s2 =>
   let pk = (mA, mA *^ s1 + s2) in
   let sk = (mA, s1, s2) in
   (pk, sk)))).
 
 op commit (sk : SK) : (commit_t * pstate_t) distr =
   let (mA, s1, s2) = sk in
-  dmap (VecIn.dvector (dpolyX (dball_zp (gamma1 - 1)))) (fun y =>
-  let w1 = polyveck_highbits (mA *^ y) (2 * gamma2) in
+  dmap (dvector (dRq_ (gamma1 - 1)) l) (fun y =>
+  let w1 = highBitsV (mA *^ y) (2 * gamma2) in
   (w1, y)).
 
 op respond (sk : SK) (c : challenge_t) (y: pstate_t) : response_t option =
   let (mA, s1, s2) = sk in
   let z = y + c ** s1 in
-  if gamma1 - b <= polyvecl_max z \/
-     gamma2 - b <= int_polyvec_max (polyveck_lowbits (mA *^ y - c ** s2) (2 * gamma2)) then
+  if gamma1 - b <= inf_normv z \/
+     gamma2 - b <= inf_normv (lowBitsV (mA *^ y - c ** s2) (2 * gamma2)) then
     None else
     Some z.
 
 op verify (pk : PK) (w1 : commit_t) (c : challenge_t) (z : response_t) : bool =
   let (mA, t) = pk in
-  polyvecl_max z < gamma1 - b /\
-  w1 = polyveck_highbits (mA *^ z - c ** t) (2 * gamma2).
+  inf_normv z < gamma1 - b /\
+  w1 = highBitsV (mA *^ z - c ** t) (2 * gamma2).
 
 clone import OpBased with
   op keygen <= keygen,
@@ -238,7 +250,20 @@ clone import OpBased with
   op verify <= verify.
 (* TODO proof *. *)
 
-(* -- proofs -- *)
+op locked : 'a -> 'a.
+axiom lock (x : 'a) : x = locked x.
+
+(* Sanity check for matrix/vector dimensions *)
+lemma size_t pk sk : (pk,sk) \in keygen => size pk.`2 = k.
+proof. 
+case/supp_dlet => mA /= [s_mA]. 
+case/supp_dlet => s1 /= [s_s1]. 
+case/supp_dlet => s2 /= [s_s2].
+rewrite /(\o) supp_dunit => -[-> _]. 
+rewrite [Vectors.size]lock /= -lock.
+rewrite size_addv size_mulmxv;
+smt(size_dmatrix size_dvector gt0_k gt0_l).
+qed.
 
 module OpBasedSig = IDS_Sig(OpBased.P, OpBased.V).
 

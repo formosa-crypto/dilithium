@@ -1,6 +1,6 @@
 (* Author  : Oskar Goldhahn
    URL     : https://github.com/oskgo/ec-matrix/blob/main/Mat.eca 
-   License : none - will become MIT with inclusion into EasyCrypt      *)
+   License : MIT *)
 
 (*
 This theory contains a formalization of vectors and matrices with arbitrary 
@@ -370,7 +370,8 @@ hint simplify dotpr0.
 
 (* Vector concatenation *)
 op ( || ) (v1 v2: vector) = 
-  offunv ((fun i => v1.[i] + v2.[i-size v1]), size v1 + size v2).
+  offunv ((fun i => v1.[i] + v2.[i-size v1]), size v1 + size v2)
+axiomatized by offinv_def.
 
 lemma size_concat (v1 v2: vector): size (v1 || v2) = (size v1 + size v2).
 proof.
@@ -513,9 +514,58 @@ rewrite /updv => i_bound.
 by rewrite offunvE.
 qed.
 
+op oflist (s : R list) : vector = offunv (nth witness s,size s).
+
+op tolist (v : vector) : R list = map (fun i => v.[i]) (iota_ 0 (size v)).
+
+lemma getv_concat (v1 v2 : vector) i : 
+  (v1 || v2).[i] = 
+  if 0 <= i < size v1 then v1.[i] else v2.[i - size v1].
+admitted.
+
+lemma tolist_concat (v1 v2 : vector) : 
+  tolist (v1 || v2) = tolist v1 ++ tolist v2.
+proof. 
+rewrite /tolist size_concat iota_add ?size_ge0 /= map_cat.
+congr. apply/eq_in_map => x /mem_iota ?. rewrite getv_concat ifT /#.
+have -> : size v1 = size v1 + 0 by trivial.
+rewrite iota_addl -map_comp /(\o) &(eq_in_map) => x /mem_iota ?. 
+rewrite /= -concatE getv_concat. smt().
+qed.
+
 end Vectors.
 
 export Vectors.
+
+require Bigop.
+
+abstract theory NormV.
+type a.
+op id : a.
+op norm : R -> a.
+op (+) : a -> a -> a.
+op op1 : a -> a.
+
+axiom op2A : associative (+).
+axiom op2C : commutative (+).
+axiom idP  : left_id id (+).
+
+clone include Bigop with 
+  type t <- a,
+  op Support.idm <- id,
+  op Support.(+) <- (+) 
+proof* by smt(op2A op2C idP).
+
+op pnormv v = big predT norm (tolist v).
+op normv v = op1 (pnormv v).
+
+lemma normv_cat (v1 v2 : vector) : normv (v1 || v2) = op1 (pnormv v1 + pnormv v2).
+proof.
+rewrite /normv /pnormv; congr. 
+by rewrite tolist_concat big_cat.
+qed.
+
+end NormV. 
 
 (* -------------------------------------------------------------------- *)
 theory Matrices.
