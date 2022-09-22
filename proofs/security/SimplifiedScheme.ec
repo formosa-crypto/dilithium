@@ -12,6 +12,8 @@ require FSabort.
 require FSa_CMAtoKOA.
 require FSa_CRtoGen.
 
+require MLWE SelfTargetMSIS. 
+
 abstract theory DRing.
 
 (* Modulo *)
@@ -31,6 +33,7 @@ op l1_norm : Rq -> int.           (* sum over absolute values                   
 (* TOTHINK: If [high = Rq] is a problem, we either need to have a
 ComRing structure on high or use lists rather than vectors to pass
 [w1] around *)
+
 
 type high = Rq.                   (* type of "rounded" elements *)
 
@@ -60,7 +63,7 @@ end DRing.
 clone import DRing as DR. 
 
 clone import Mat as MatRq 
-  with theory ZR <- DR.RqRing.
+  with theory ZR <= DR.RqRing.
 
 (* lifting functions to vectors *)
 op mapv (f : Rq -> Rq) (v : vector) : vector = 
@@ -213,6 +216,78 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
     return result;
   }
 }.
+
+(** KOA to MLWE + SelfTargetMSIS *)
+
+clone import MLWE as RqMLWE with 
+  theory M <= MatRq, (* <- raises "Anomaly: removed" - issue #268 *)
+  op dR <- dRq,
+  op dS <- dRq_ e,
+  op k <- k,
+  op l <- l
+proof* by smt(gt0_k gt0_l).
+
+clone import SelfTargetMSIS as RqStMSIS with
+  theory M <= MatRq,
+  type M <- M,
+  op m <- l+1,
+  op n <- k,
+  op dR <- dRq,
+  op dC <- dC,
+  op gamma <- max (gamma1 - b) gamma2.
+
+module G = RqStMSIS.PRO.RO.
+
+module RedMLWE (A : Adv_EFKOA_RO) (H : Hash_i) : RqMLWE.Adversary = { 
+  proc distinguish (mA : matrix, t : vector) = { 
+    var pk,m,sig,r;
+    H.init();
+    pk <- (mA,t);
+    (m,sig) <@ A(H).forge(pk);
+    r <@ SimplifiedDilithium(H).verify(pk,m,sig);
+    return r;
+  }
+}.
+
+section PROOF.
+
+declare module H <: Hash_i.
+
+declare module A <: Adv_EFKOA_RO{-H}.
+
+local module S1 (H : Hash) = { 
+  proc keygen() : PK * SK = {
+    var pk, mA, t;
+    mA <$ dmatrix dRq k l;
+    t  <$ dvector dRq k;
+    pk <- (mA, t);
+    return (pk,witness);
+  }
+  
+  proc sign(sk: SK, m: M) : Sig = { return None; }
+
+  proc verify = SimplifiedDilithium(H).verify
+}.
+
+local lemma hop1 &m : 
+  Pr [EF_KOA_RO(SimplifiedDilithium,A,H).main() @ &m : res ] <=
+  Pr [EF_KOA_RO(S1,A,H).main() @ &m : res] + 
+  `| Pr[ GameL(RedMLWE(A,H)).main() @ &m : res ] - Pr [ GameR(RedMLWE(A,H)).main() @ &m : res ] |.
+proof.
+have -> : Pr [EF_KOA_RO(SimplifiedDilithium,A,H).main() @ &m : res ] = 
+          Pr[ GameL(RedMLWE(A,H)).main() @ &m : res ].
+- byequiv (_: ={glob A,glob H} ==> ={res}) => //; proc. 
+  inline{1} 2; inline{1} 2; inline{2} 4. swap{2} 6 -5.
+  by sim; wp; sim. (* why is the "wp" necessary - is sim this stupid? *)   
+suff -> : Pr [EF_KOA_RO(S1,A,H).main() @ &m : res ] = 
+          Pr[ GameR(RedMLWE(A,H)).main() @ &m : res ] by smt().
+- byequiv (_: ={glob A,glob H} ==> ={res}) => //; proc. 
+  inline{1} 2; inline{1} 2; inline{2} 3. swap{2} 5 -4. 
+  by sim; wp; sim. 
+qed.
+
+end section PROOF.
+
 
 (* -- Operator-based -- *)
 

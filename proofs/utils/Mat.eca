@@ -370,8 +370,7 @@ hint simplify dotpr0.
 
 (* Vector concatenation *)
 op ( || ) (v1 v2: vector) = 
-  offunv ((fun i => v1.[i] + v2.[i-size v1]), size v1 + size v2)
-axiomatized by offinv_def.
+  offunv ((fun i => v1.[i] + v2.[i-size v1]), size v1 + size v2).
 
 lemma size_concat (v1 v2: vector): size (v1 || v2) = (size v1 + size v2).
 proof.
