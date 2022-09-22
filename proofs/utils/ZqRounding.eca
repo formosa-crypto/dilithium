@@ -4,231 +4,90 @@ require NonSquareMatrix.
 require ZModFieldExtras.
 import StdOrder IntOrder.
 
-(* Various rounding operations. Poly and vector versions included.
- * Norm-related operations also live here for now. *)
-
 op q : {int | prime q} as prime_q.
-op n : {int | 0 < n} as gt0_n.
-
-(* print ZModFieldExtras. *)
 
 clone import ZModFieldExtras as ZModQ with
-  op p <= q.
+  op p <= q
+proof prime_p by exact prime_q.
 
-(* A lot of axioms can't be proven... *)
-clone import PolyReduceZp as PolyReduceZq with
-  op p <= q,
-  op n <= n,
-  type Zp <= ZModQ.zmod,
-  theory Zp <= ZModQ
-proof ge2_p by smt(prime_q gt1_prime),
-      gt0_n by exact gt0_n.
+op mod_to_cmod r alpha = if r <= alpha %/ 2 then r else r - alpha.
 
-(* Why is this necessary... isn't this imported?? *)
-type Zp = PolyReduceZq.Zp.
+(* centered modulo.
+ * Similar to `( %% )`, but output in range (-alpha/2, alpha/2].
+ * The open-closed interval is opposite of normal convention. *)
+op cmod x alpha =
+  let r = x %% alpha in mod_to_cmod r alpha.
 
-(* matrix dimensions *)
-op k : {int | 0 < k} as gt0_k.
-op l : {int | 0 < l} as gt0_l.
-(* axiom l_k_le : l <= k. *)
+op lowbits r alpha =
+  if q - alpha %/ 2 <= asint r then r else
+  inzmod (cmod (asint r) alpha).
 
-clone import NonSquareMatrix as PolyMatrix with
-  theory ZR <= PolyReduceZq.ComRing,
-  op in_size <= l,
-  op out_size <= k
-proof ge0_in_size by smt(gt0_l),
-      ge0_out_size by smt(gt0_k).
-(* TODO Remaining axioms *)
-import VecIn.
-import VecOut.
-type vecl = vec_in.
-type veck = vec_out.
+op round r alpha = r - lowbits r alpha.
 
-(* I just want a polynomial with integers...
- * Is that so difficult? :(
-```
-require import Poly Ring.
-clone import PolyComRing as IntPoly with
-  type coeff <= int,
-  theory Coeff <- IntID.
-```
-=> `unknown symbol: Top.Ring.IntID.t`
-*)
+op rightshift r alpha = (asint r) %/ alpha.
 
-type int_poly = int list.
-type int_polyvec = int_poly list.
+op leftshift (r1 : int) alpha = inzmod (r1 * alpha).
 
-op abs_zp xp = let x = asint xp in min x (q - x).
-
-op poly_max (p : polyXnD1) : int =
-  let coeffs = mkseq (fun deg => asint p.[deg]) n in
-  let coeffs' = map (fun x => if q < 2 * x then x - q else x) coeffs in
-  foldr max 0 coeffs'.
-
-op polyvecl_max (v : vecl) =
-  let polys = mkseq (fun i => v.[i]) l in
-  let p_maxs = map poly_max polys in
-  foldr max 0 p_maxs.
-
-op polyveck_max (v : veck) =
-  let polys = mkseq (fun i => v.[i]) k in
-  let p_maxs = map poly_max polys in
-  foldr max 0 p_maxs.
-
-op poly_weight (p : polyXnD1) =
-  let coeffs = mkseq (fun deg => abs_zp p.[deg]) n in
-  foldr (+)%Int 0 coeffs.
-
-op polyveck_weight (v : veck) =
-  let polys = mkseq (fun i => v.[i]) k in
-  let weights = map poly_weight polys in
-  foldr (+)%Int 0 weights.
-
-op mod_pm m d =
-  let r = m %% d in
-  if r <= d %/ 2 then r else r - d.
-
-op power2round (r : Zp) d =
-  let r' = asint r in
-  let r0 = mod_pm r' (2 ^ d) in
-  ((r' - r0) %/ (2 ^ d), r0).
-
-op poly_power2round (p : polyXnD1) (d : int) : polyXnD1 * polyXnD1 =
-  let coeffs = mkseq (fun i => p.[i]) n in
-  let results = map (fun r => power2round r d) coeffs in
-  (polyLX (map inzmod (unzip1 results)),
-   polyLX (map inzmod (unzip2 results))).
-
-op polyveck_power2round (v : vec_out) (d : int) : vec_out * vec_out =
-  (VecOut.offunv (fun i => (poly_power2round v.[i] d).`1),
-   VecOut.offunv (fun i => (poly_power2round v.[i] d).`2)).
-
-op decompose r alpha =
-  let ri = asint r in
-  let r0 = mod_pm ri alpha in
-  if (ri - r0 = q - 1)
-  then
-    (0, r0 - 1)
-  else
-    ((ri - r0) %/ alpha, r0).
-
-op highbits r alpha = (decompose r alpha).`1.
-
-op poly_highbits (p : polyXnD1) (alpha : int) : int_poly =
-  mkseq (fun i => highbits p.[i] alpha) n.
-
-op polyveck_highbits (v : vector) alpha : int_polyvec =
-  mkseq (fun i => poly_highbits v.[i] alpha) k.
-
-op lowbits r alpha = (decompose r alpha).`2.
-
-op poly_lowbits (p : polyXnD1) (alpha : int) : int_poly =
-  mkseq (fun i => lowbits p.[i] alpha) n.
-
-op polyveck_lowbits (v : vector) alpha : int_polyvec =
-  mkseq (fun i => poly_highbits v.[i] alpha) k.
-
-op makeHint z r alpha =
-  let r1 = highbits r alpha in
-  let v1 = highbits (r + z) alpha in
-  r1 <> v1.
-
-type bool_poly = bool list.
-type bool_polyvec = bool_poly list.
-
-op poly_makeHint (z : polyXnD1) (r : polyXnD1) (alpha : int) : bool_poly =
-  mkseq (fun i => makeHint z.[i] r.[i] alpha) n.
-
-op polyveck_makeHint (z : vector) (r : vector) (alpha : int) : bool_polyvec =
-  mkseq (fun i => poly_makeHint z.[i] r.[i] alpha) k.
-
-op useHint (h : bool) (r: Zp) alpha : int =
-  let m = (q - 1) %/ alpha in
-  let (r1, r0) = decompose r alpha in
-  if h /\ 0 < r0 then
-    (r1 + 1) %% m
-  else if h /\ r0 <= 0 then
-    (r1 - 1) %% m
-  else
-    r1.
-
-op poly_useHint (hs : bool_poly) (rs : R) (alpha : int) : int_poly =
-  mkseq (fun i => useHint (nth witness hs i) (rs.[i]) alpha) n.
-
-op polyveck_useHint (hv : bool_polyvec) (rv : vector) alpha : int_polyvec =
-  mkseq (fun i => poly_useHint (nth witness hv i) rv.[i] alpha) k.
+op highbits r alpha = rightshift (round r alpha) alpha.
 
 (* proofs *)
 
-(* Umm smt too good? *)
-lemma mod_pm_bound x alpha :
-  2 <= alpha =>
-  -alpha %/ 2 <= mod_pm x alpha <= alpha %/ 2.
-proof. smt(). qed.
+(* TODO maybe can send PR...? *)
+lemma modzNDmr m n d :
+  (m - n %% d) %% d = (m - n) %% d.
+proof. smt(modzNm modzDmr). qed.
 
-lemma abs_zp_abs x :
-  2 <= q =>
-  -q %/ 2 <= x <= q %/ 2 =>
-  abs_zp (inzmod x) = `|x|.
+lemma leftshift_rightshiftK r alpha :
+  alpha %| asint r =>
+  leftshift (rightshift r alpha) alpha = r.
 proof.
-move => ? [??].
-by rewrite /abs_zp /min inzmodK /#.
+move => ?.
+rewrite /leftshift /rightshift.
+suff: asint r %/ alpha * alpha = asint r by smt(asintK).
+by rewrite {2} (divz_eq (asint r) alpha) /#.
 qed.
 
-lemma mod_pm_mod r a :
-  a %| (r - mod_pm r a).
-proof.
-rewrite /(%|) /mod_pm /=.
-case (r %% a <= a %/ 2) => _ /=.
-- by rewrite -modzDm modzNm modzDm.
-- have ->: r - (r %% a - a) = r - r %% a + a by ring.
-  by rewrite modzDr -modzDm modzNm modzDm.
-qed.
-
-lemma decompose_recompose r alpha :
-  r = inzmod ((highbits r alpha) * alpha + lowbits r alpha).
-proof.
-rewrite /highbits /lowbits /decompose /=.
-case (asint r - mod_pm (asint r) alpha = q - 1) => ? /=.
-- have ->: mod_pm (asint r) alpha = asint r + 1 - q by smt().
-  have ->: (asint r + 1 - q - 1) = asint r - q by ring.
-  rewrite inzmodB asintK inzmod_mod modzz.
-  by ring.
-- rewrite divzK; first exact mod_pm_mod.
-  have ->: asint r - mod_pm (asint r) alpha + mod_pm (asint r) alpha = asint r.
-  + smt().
-  smt(asintK).
-qed.
-
-lemma lowbits_bound x alpha :
-  2 <= alpha =>
-  `|lowbits x alpha| <= alpha.
-proof.
-move => ?; rewrite /lowbits /decompose /=.
-case (asint x - mod_pm (asint x) alpha = q - 1) => _;
-  last by smt(mod_pm_bound).
-apply (ler_trans (`|mod_pm (asint x) alpha| + `|1|)); first exact ler_norm_add.
-smt(mod_pm_bound).
-qed.
-
-lemma usehint_close h (r : Zp) (alpha : int) :
-  2 <= q =>
+lemma round_is_multiple r alpha :
   2 <= alpha =>
   alpha <= q %/ 2 =>
-  let v1 = useHint h r alpha in
-  abs_zp (r - inzmod (v1 * alpha)) <= alpha + 1.
+  alpha %| asint (round r alpha).
 proof.
-move => ???; rewrite /useHint.
-have -> /=: decompose r alpha = (highbits r alpha, lowbits r alpha) by smt().
-case h => _ /=.
-- (* h = 1 *)
-  admit.
-- (* h = 0 *)
-  rewrite {1}(decompose_recompose r alpha) -inzmodB.
-  have ->: highbits r alpha * alpha + lowbits r alpha -
-    highbits r alpha * alpha = lowbits r alpha.
-  + by ring.
-  rewrite abs_zp_abs //.
-  - smt(lowbits_bound).
-  smt(lowbits_bound).
+move => ??.
+rewrite /round /lowbits /=.
+case (q - alpha %/ 2 <= asint r) => ? /=.
+- by rewrite ZModpRing.subrr zeroE; exact (mod0z alpha).
+rewrite /cmod /mod_to_cmod /=.
+case (asint r %% alpha <= alpha %/ 2) => ?.
+- rewrite addE oppE inzmodK modzDmr.
+  have ->: (asint r %% alpha %% q = asint r %% alpha) by smt().
+  rewrite pmod_small; smt(ge0_asint).
+- rewrite addE oppE inzmodK modzDmr modzNDmr.
+  rewrite pmod_small; first by smt(ge0_asint).
+  rewrite {1} (divz_eq (asint r) alpha) /#.
 qed.
+
+lemma high_lowP r alpha :
+  2 <= alpha =>
+  alpha <= q %/ 2 =>
+  r = leftshift (highbits r alpha) alpha + lowbits r alpha.
+proof.
+move => ??.
+rewrite leftshift_rightshiftK; first exact round_is_multiple.
+rewrite /round; by field.
+qed.
+
+lemma cmod_small x alpha :
+  2 <= alpha =>
+  `|cmod x alpha| <= alpha %/ 2.
+proof. smt(modz_ge0 ltz_pmod). qed.
+
+lemma lowbits_small x alpha :
+  2 <= alpha =>
+  alpha <= q %/ 2 =>
+  `|lowbits x alpha| <= alpha %/ 2.
+proof.
+move => ??; rewrite /lowbits /=.
+case (q - alpha %/ 2 <= asint x) => ?; first smt(gtp_asint).
+by rewrite abs_zp_small; smt(cmod_small).
+qed.
+
