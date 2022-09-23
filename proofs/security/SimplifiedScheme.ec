@@ -58,6 +58,8 @@ axiom hide_low r s a b :
 axiom lowbit_small r a :
   cnorm (lowBits r a) <= a %/ 2. (* TOTHINK: +1 ? *)
 
+axiom shift_inj a : injective (fun h => shift h a). 
+
 end DRing.
 
 clone import DRing as DR. 
@@ -68,6 +70,12 @@ clone import Mat as MatRq
 (* lifting functions to vectors *)
 op mapv (f : Rq -> Rq) (v : vector) : vector = 
   offunv (fun i => f v.[i], size v).
+
+op shiftV (w1 : vector) (a : int) = 
+  mapv (fun x => shift x a) w1.
+
+lemma shiftV_inj a : injective (fun v => shiftV v a). 
+admitted.
 
 op (**) (c : Rq) (v : vector) = mulvs v c.
 
@@ -112,7 +120,7 @@ op l : {int | 0 < l} as gt0_l.
 type challenge_t = Rq.
 type SK = matrix * vector * vector.
 type PK = matrix * vector.
-type commit_t = vector. 
+type commit_t = vector. (* should be "high list" ? *) 
 type response_t = vector. 
 
 op dC : challenge_t distr = dC tau. 
@@ -236,6 +244,7 @@ clone import SelfTargetMSIS as RqStMSIS with
   op dC <- dC,
   op gamma <- max (gamma1 - b) gamma2.
 
+module H = DSS.PRO.RO.
 module G = RqStMSIS.PRO.RO.
 
 module RedMLWE (A : Adv_EFKOA_RO) (H : Hash_i) : RqMLWE.Adversary = { 
@@ -249,11 +258,37 @@ module RedMLWE (A : Adv_EFKOA_RO) (H : Hash_i) : RqMLWE.Adversary = {
   }
 }.
 
+module RedMSIS (A : Adv_EFKOA_RO) (H : Hash) = { 
+  proc guess(mB : matrix) : vector * M = { 
+    var mA,tbar,t,mu,sig,c,z,w,e,y;
+    mA <- subm mB 0 k 0 l;
+    tbar <- col mB k;
+    t <- -tbar;
+    (mu,sig) <@ A(H).forge(mA,t);
+    y <- witness;
+    if (sig <> None) {
+      (c,z) <- oget sig;
+      w <- highBitsV (mA *^ z - c ** t) (2 * gamma2);
+      e <- -lowBitsV w (2 * gamma2);
+      y <- e || z || oflist [c];
+    }
+    return (y,mu);
+  }
+}.
+
+module H' : Hash_i = { 
+  proc init = G.init
+
+  proc get(w1,mu) = {
+    var r;
+    r <@ G.get(shiftV w1 (2 * gamma2),mu);
+    return r;
+  }
+}.
+
 section PROOF.
 
-declare module H <: Hash_i.
-
-declare module A <: Adv_EFKOA_RO{-H}.
+declare module A <: Adv_EFKOA_RO{-H,-G}.
 
 local module S1 (H : Hash) = { 
   proc keygen() : PK * SK = {
@@ -269,6 +304,7 @@ local module S1 (H : Hash) = {
   proc verify = SimplifiedDilithium(H).verify
 }.
 
+(* Hop 1 : replace keygen with (completely) random public key *)
 local lemma hop1 &m : 
   Pr [EF_KOA_RO(SimplifiedDilithium,A,H).main() @ &m : res ] <=
   Pr [EF_KOA_RO(S1,A,H).main() @ &m : res] + 
@@ -284,6 +320,46 @@ suff -> : Pr [EF_KOA_RO(S1,A,H).main() @ &m : res ] =
 - byequiv (_: ={glob A,glob H} ==> ={res}) => //; proc. 
   inline{1} 2; inline{1} 2; inline{2} 3. swap{2} 5 -4. 
   by sim; wp; sim. 
+qed.
+
+import SmtMap.
+
+(* Hop2 : replace H with H' (wrapped RO from SelfTargetMSIS *)
+local lemma hop2 &m : 
+  Pr [EF_KOA_RO(S1,A,H).main() @ &m : res] = Pr [EF_KOA_RO(S1,A,H').main() @ &m : res].
+proof.
+byequiv (_ : ={glob A} ==> ={res}) => //; proc. 
+inline{1} 2; inline{2} 2. 
+seq 3 3 : (={m,sig,pk} /\ 
+           forall (w : commit_t) (mu : M), 
+             H.m.[(w,mu)]{1} = G.m.[(shiftV w (2 * gamma2),mu)]{2}). 
+- call (:forall (w : commit_t) (mu : M), 
+         H.m.[(w,mu)]{1} = G.m.[(shiftV w (2 * gamma2),mu)]{2}).
+  + proc; inline*; sp. 
+    seq 1 1 : (#pre /\ r{1} = r0{2}); first by auto.
+    if; 1,3: by auto => /> /#.
+    auto => />. smt(get_setE set_set_sameE shiftV_inj).
+  by inline*; auto => />; smt(emptyE).
+inline*; wp. sp. if; 1,3: by auto. 
+sp 3 4; seq 1 1 : (#pre /\ r0{1} = r1{2}); first by auto.
+if; 2,3: by auto => />; smt(get_set_sameE). (* uff ... *)
+move => /> &1 &2. case: (sig{2}) => // -[c z] /> Hshift.
+pose w1 := highBitsV _ _. smt().
+qed.
+
+import StdOrder.RealOrder.
+
+local lemma hop3 &m : 
+  Pr[EF_KOA_RO(S1, A, H').main() @ &m : res] <= Pr[Game(RedMSIS(A), G).main() @ &m : res].
+admitted.
+
+lemma KOA_bound &m : 
+     Pr [EF_KOA_RO(SimplifiedDilithium,A,H).main() @ &m : res ] 
+  <= `| Pr[ GameL(RedMLWE(A,H)).main() @ &m : res ] - Pr [ GameR(RedMLWE(A,H)).main() @ &m : res ] |
+   + Pr [ Game(RedMSIS(A),G).main() @ &m : res]. 
+proof.
+apply (ler_trans _ _ _ (hop1 &m)); rewrite RField.addrC ler_add2l.
+by rewrite hop2 hop3.
 qed.
 
 end section PROOF.
