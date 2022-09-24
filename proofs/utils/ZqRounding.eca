@@ -32,7 +32,14 @@ op highbits r alpha = rightshift (round r alpha) alpha.
 
 (* proofs *)
 
-(* TODO maybe can send PR...? *)
+(**
+lemma ge0_abs_zp (x : zmod) :
+  0 <= `|x|.
+proof. smt(). qed.
+**)
+
+(* TODO maybe can send PR...?
+ * Unsure of naming convention though. *)
 lemma modzNDmr m n d :
   (m - n %% d) %% d = (m - n) %% d.
 proof. smt(modzNm modzDmr). qed.
@@ -66,6 +73,12 @@ case (asint r %% alpha <= alpha %/ 2) => ?.
   rewrite {1} (divz_eq (asint r) alpha) /#.
 qed.
 
+lemma round_lowP r alpha :
+  r = round r alpha + lowbits r alpha.
+proof.
+rewrite /round; by field.
+qed.
+
 lemma high_lowP r alpha :
   2 <= alpha =>
   alpha <= q %/ 2 =>
@@ -73,7 +86,7 @@ lemma high_lowP r alpha :
 proof.
 move => ??.
 rewrite leftshift_rightshiftK; first exact round_is_multiple.
-rewrite /round; by field.
+exact round_lowP.
 qed.
 
 lemma cmod_small x alpha :
@@ -91,3 +104,310 @@ case (q - alpha %/ 2 <= asint x) => ?; first smt(gtp_asint).
 by rewrite abs_zp_small; smt(cmod_small).
 qed.
 
+lemma inzmodK_centered x :
+  - q %/ 2 <= x =>
+  x < q %/ 2 =>
+  crepr (inzmod x) = x.
+proof.
+smt(rg_asint inzmodK).
+qed.
+
+lemma crepr_eq x y :
+  crepr x = crepr y <=> x = y.
+proof.
+(* split; last by trivial. *)
+smt(rg_asint asint_eq).
+qed.
+
+lemma lowbits_id (x : zmod) alpha :
+  2 <= alpha =>
+  alpha <= q %/ 2 =>
+  `|x| <= alpha %/ 2 =>
+  lowbits x alpha = x.
+proof.
+move => ???.
+rewrite /lowbits.
+case (q - alpha %/ 2 <= asint x) => [|?]; first by trivial.
+apply crepr_eq.
+rewrite inzmodK_centered; smt(rg_asint).
+qed.
+
+op cmod_to_mod r alpha =
+  if r < 0 then r + alpha else r.
+
+lemma mod_to_cmodK x d :
+  0 <= x =>
+  x < d =>
+  cmod_to_mod (mod_to_cmod x d) d = x.
+proof. smt(). qed.
+
+lemma cmod_to_mod_injective x y d :
+  -d %/ 2 < x =>
+  x <= d %/ 2 =>
+  -d %/ 2 < y =>
+  y <= d %/ 2 =>
+  cmod_to_mod x d = cmod_to_mod y d => x = y.
+proof. smt(). qed.
+
+(*
+lemma cmod_to_mod_lower_bound x d :
+  -d %/ 2 < x =>
+  0 <= cmod_to_mod x d.
+proof. smt(). qed.
+
+lemma cmod_to_mod_upper_bound x d :
+  0 < d =>
+  x <= d %/ 2 =>
+  cmod_to_mod x d < d.
+proof. smt(). qed.
+*)
+
+lemma dvdz_modzD m n d :
+  d %| m =>
+  d %| n =>
+  d %| (m + n).
+proof. smt(dvdz_modzDr). qed.
+
+lemma cmod_to_mod_correct x d :
+  0 < d =>
+  d %| (x - cmod_to_mod x d).
+proof. smt(). qed.
+
+(* Generalization of the `euclideUl` lemma to centered modulo.
+ * Representative chosen from (-d %/ 2, d %/ 2]
+ *)
+lemma euclideUl_centered (x x0 d : int) :
+  0 < d =>
+  d %| (x - x0) =>
+  -d %/ 2 < x0 =>
+  x0 <= d %/ 2 =>
+  x0 = cmod x d.
+proof.
+move => *.
+rewrite /cmod /=.
+apply (cmod_to_mod_injective _ _ d) => //; 1, 2: smt().
+rewrite mod_to_cmodK; 1, 2: smt().
+(* Fixing interface to euclideUl *)
+suff: (x - (cmod_to_mod x0 d)) %/ d = x %/ d /\ (cmod_to_mod x0 d) = x %% d by smt().
+apply euclideUl; last by smt().
+rewrite -divz_eq.
+rewrite divzK; last by smt().
+have ->: x - cmod_to_mod x0 d = (x - x0) + (x0 - cmod_to_mod x0 d) by smt().
+apply dvdz_modzD => //.
+exact cmod_to_mod_correct.
+qed.
+
+(*
+(* Currently unused *)
+lemma lowbits_normal_lower_bound (x : zmod) (alpha : int) :
+  2 <= alpha =>
+  alpha <= q %/ 2 =>
+  2 %| alpha =>
+  asint x < q - alpha =>
+  -alpha %/ 2 < crepr (lowbits x alpha).
+proof.
+admitted.
+
+lemma lowbits_upper_bound (x : zmod) (alpha : int) :
+  2 <= alpha =>
+  alpha <= q %/ 2 =>
+  2 %| alpha =>
+  asint x < q - alpha =>
+  crepr (lowbits x alpha) <= alpha %/ 2.
+proof.
+admitted.
+*)
+
+lemma cmod_lower_bound x alpha :
+  2 <= alpha =>
+  2 %| alpha =>
+  -alpha %/ 2 < cmod x alpha.
+proof.
+smt(modz_ge0 ltz_pmod).
+qed.
+
+(*
+(* currently unused *)
+lemma cmod_upper_bound x alpha :
+  2 <= alpha =>
+  cmod x alpha <= alpha %/ 2.
+proof.
+print cmod.
+print mod_to_cmod.
+admitted.
+*)
+
+lemma asint_crepr x :
+  asint x = (crepr x) %% q.
+proof.
+rewrite /crepr /=.
+case (q %/ 2 <= asint x) => _; last by smt(modz_small rg_asint).
+rewrite -modzDr.
+have ->: asint x - q + q = asint x by ring.
+smt(modz_small rg_asint).
+qed.
+
+(* Maybe can PR?
+ * Don't know naming convention though. *)
+lemma positive_multiples_lower_bound d x :
+  0 < x =>
+  0 < d =>
+  d %| x =>
+  d <= x.
+proof.
+smt(dvdz_eq).
+qed.  
+
+(* Normal case only; no corner case *)
+lemma lowbits_unique_aux (x r x0 : zmod) (alpha : int) :
+  2 <= alpha =>
+  alpha <= q %/ 2 =>
+  asint x < q - alpha %/ 2 =>
+  2 %| alpha =>
+  x = r + x0 =>
+  alpha %| asint r =>
+  asint r <= q - alpha - 1 =>
+  - alpha %/ 2 < crepr x0 =>
+  crepr x0 <= alpha %/ 2 =>
+  lowbits x alpha = x0.
+proof.
+move => ?????????. (* You hate to see it *)
+rewrite /lowbits.
+have -> /=: q - alpha %/ 2 <= asint x = false by smt().
+apply crepr_eq.
+rewrite inzmodK_centered; 1, 2: smt(rg_asint).
+apply eq_sym.
+apply euclideUl_centered => //; first by smt().
+suff: asint x - crepr x0 = asint r by smt().
+subst.
+rewrite addE.
+have ->: asint x0 = crepr x0 %% q by exact asint_crepr.
+rewrite modzDmr.
+rewrite modz_small; last by ring.
+split; last by smt().
+case (r = zero) => ?; first by smt(rg_asint ZModpRing.add0r).
+suff: alpha <= asint r by smt().
+apply positive_multiples_lower_bound => //; last by smt().
+smt(rg_asint asint_eq zeroE).
+qed.
+
+lemma lowbits_unique (x r x0 : zmod) (alpha : int) :
+  2 <= alpha =>
+  alpha <= q %/ 2 =>
+  2 %| alpha =>
+  x = r + x0 =>
+  alpha %| asint r =>
+  asint r <= q - alpha - 1 =>
+  (- alpha %/ 2 < crepr x0 \/ (crepr x0 = -alpha %/ 2 /\ r = zero))=>
+  crepr x0 <= alpha %/ 2 =>
+  lowbits x alpha = x0.
+proof.
+move => ?????? x0_range ?.
+case (asint x < q - alpha %/ 2) => normal_case.
+- apply (lowbits_unique_aux x r x0 alpha) => //.
+  smt(rg_asint ZModpRing.add0r).
+(* corner case *)
+rewrite /lowbits.
+have -> /=: q - alpha %/ 2 <= asint x = true by smt().
+(* suppose for the sake of contradiction that r <> 0.
+ * We then have alpha <= r <= q - alpha - 1.
+ * Notice we have x0 in [-alpha / 2, alpha / 2].
+ * We therefore have alpha / 2 <= r + x0 <= q - alpha / 2 - 1.
+ *
+ * We however have x = r + x0 in [-alpha/2, 0],
+ * which is disjoint from the interval above.
+ *)
+suff: r = zero by smt(ZModpRing.add0r).
+apply contraT => ne0_r.
+have ?: alpha <= asint r.
+- apply positive_multiples_lower_bound; smt(rg_asint asint_eq zeroE).
+have ?: asint x = asint r + crepr x0.
+- subst.
+  rewrite addE.
+  have ->: asint x0 = crepr x0 %% q by exact asint_crepr.
+  rewrite modzDmr.
+  rewrite modz_small => /#.
+smt().
+qed.
+
+lemma round_unique (x r x0 : zmod) (alpha : int) :
+  2 <= alpha =>
+  alpha <= q %/ 2 =>
+  2 %| alpha =>
+  x = r + x0 =>
+  alpha %| asint r =>
+  asint r <= q - alpha - 1 =>
+  (- alpha %/ 2 < crepr x0 \/ (crepr x0 = -alpha %/ 2 /\ r = zero))=>
+  crepr x0 <= alpha %/ 2 =>
+  round x alpha = r.
+proof.
+move => *.
+rewrite /round.
+suff: lowbits x alpha = x - r.
+- move => H; rewrite H; by field.
+apply (lowbits_unique x r (x - r) alpha) => //.
+- by field.
+- suff: x - r = x0 by trivial.
+  subst; by field.
+- subst.
+  by have -> //: r + x0 - r = x0 by field.
+qed.
+
+(* TODO move me *)
+lemma abs_zp_triangle (x y : zmod) :
+  (* can probably be weakened to `<=`? *)
+  `|x| + `|y| < q %/ 2 =>
+  `|x + y| <= `|x| + `|y|.
+proof.
+smt(ge0_asint gtp_asint addE ltr0_norm).
+qed.
+
+lemma round_upper_bound x alpha :
+  2 <= alpha =>
+  2 %| alpha =>
+  alpha <= q %/ 2 =>
+  alpha %| (q - 1) =>  
+  asint (round x alpha) <= q - alpha - 1.
+proof.
+move => *.
+suff: asint (round x alpha) < q - 1.
+- rewrite -(divzK alpha (asint (round x alpha))).
+  + exact round_is_multiple.
+  rewrite -(divzK alpha (q - 1)) //.
+  rewrite -(divzK alpha (q - alpha - 1)); smt(modzDr).
+suff: asint (round x alpha) <> q - 1 by smt(rg_asint).
+rewrite /round /lowbits /=.
+case (q - alpha %/ 2 <= asint x) => ?.
+- (* corner case always rounds to 0 *)
+  have ->: x - x = zero by field.
+  rewrite zeroE /#.
+(* normal x's won't reach; lowbits too small and whatnot. *)
+(* x < q - alpha %/ 2, and x0 <= alpha %/ 2 *)
+rewrite addE oppE inzmodK.
+rewrite modzDmr modzNDmr.
+by rewrite modz_small; smt(rg_asint cmod_lower_bound).
+qed.
+
+lemma hide_low (x y : zmod) alpha b1 b2 :
+  2 <= alpha =>
+  alpha <= q %/ 2 =>
+  2 %| alpha =>
+  alpha %| (q - 1) =>
+  `|lowbits x alpha| <= b1 =>
+  `|y| <= b2 =>
+  b1 + b2 < alpha %/ 2 =>
+  highbits (x + y) alpha = highbits x alpha.
+proof.
+move => *.
+rewrite /highbits; congr.
+rewrite (round_unique (x + y) (round x alpha) (lowbits x alpha + lowbits y alpha) alpha) //.
+- rewrite {1} (round_lowP _ alpha).
+  have {1} ->: y = lowbits y alpha by smt(lowbits_id).
+  by field.
+- exact round_is_multiple.
+- exact round_upper_bound.
+- by left; smt(lowbits_id abs_zp_triangle).
+- smt(lowbits_id abs_zp_triangle).
+qed.
+
+(* TODO leftshift injective? *)
