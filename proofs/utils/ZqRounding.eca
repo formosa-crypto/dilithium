@@ -410,4 +410,45 @@ rewrite (round_unique (x + y) (round x alpha) (lowbits x alpha + lowbits y alpha
 - smt(lowbits_id abs_zp_triangle).
 qed.
 
-(* TODO leftshift injective? *)
+lemma highbits_lower_bound x alpha :
+  2 <= alpha =>
+  0 <= highbits x alpha.
+proof. smt(rg_asint). qed.
+
+lemma highbits_upper_bound x alpha :
+  2 <= alpha =>
+  2 %| alpha =>
+  alpha <= q %/ 2 =>
+  alpha %| (q - 1) =>
+  highbits x alpha <= (q - alpha - 1) %/ alpha.
+proof.
+move => *.
+rewrite /highbits /rightshift.
+suff: asint (round x alpha) <= (q - alpha - 1) by smt().
+exact round_upper_bound.
+qed.
+
+(* to use this lemma, the two other lemmas above would be useful *)
+lemma leftshift_injective (x y alpha : int) :
+  2 <= alpha =>
+  alpha <= q %/ 2 =>
+  2 %| alpha =>
+  alpha %| (q - 1) =>
+  0 <= x =>
+  x <= (q - alpha - 1) %/ alpha =>
+  0 <= y =>
+  y <= (q - alpha - 1) %/ alpha =>
+  leftshift x alpha = leftshift y alpha =>
+  x = y.
+proof.
+move => ???????? H.
+rewrite /leftshift in H.
+have H': asint (inzmod (x * alpha)) = asint (inzmod (y * alpha)) by smt().
+rewrite inzmodK modz_small in H'.
+- split => [|?]; first by smt().
+  apply (ler_lt_trans ((q - alpha - 1) %/ alpha * alpha)) => /#.
+rewrite inzmodK modz_small in H'.
+- split => [|?]; first by smt().
+  apply (ler_lt_trans ((q - alpha - 1) %/ alpha * alpha)) => /#.
+smt().
+qed.
