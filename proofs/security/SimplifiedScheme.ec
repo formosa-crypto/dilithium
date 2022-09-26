@@ -92,6 +92,9 @@ clone import MatRq.NormV as INormV with
 
 op inf_normv = ofnat \o INormV.normv.
 
+lemma high_lowPv x a : shiftV (highBitsV x a) a + lowBitsV x a = x.
+admitted.
+
 type M.
 
 (* Dilithium-specific parameters *)
@@ -219,7 +222,7 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
       (c, z) <- oget sig;
       w <- highBitsV (mA *^ z - c ** t1) (2 * gamma2);
       c' <@ H.get((w, m));
-      result <- inf_normv z < gamma1 - b /\ c = c';
+      result <- size z = l /\ inf_normv z < gamma1 - b /\ c = c';
     }
     return result;
   }
@@ -238,8 +241,8 @@ proof* by smt(gt0_k gt0_l).
 clone import SelfTargetMSIS as RqStMSIS with
   theory M <= MatRq,
   type M <- M,
-  op m <- l+1,
-  op n <- k,
+  op m <- k,
+  op n <- l+1,
   op dR <- dRq,
   op dC <- dC,
   op gamma <- max (gamma1 - b) gamma2.
@@ -258,24 +261,6 @@ module RedMLWE (A : Adv_EFKOA_RO) (H : Hash_i) : RqMLWE.Adversary = {
   }
 }.
 
-module RedMSIS (A : Adv_EFKOA_RO) (H : Hash) = { 
-  proc guess(mB : matrix) : vector * M = { 
-    var mA,tbar,t,mu,sig,c,z,w,e,y;
-    mA <- subm mB 0 k 0 l;
-    tbar <- col mB k;
-    t <- -tbar;
-    (mu,sig) <@ A(H).forge(mA,t);
-    y <- witness;
-    if (sig <> None) {
-      (c,z) <- oget sig;
-      w <- highBitsV (mA *^ z - c ** t) (2 * gamma2);
-      e <- -lowBitsV w (2 * gamma2);
-      y <- e || z || oflist [c];
-    }
-    return (y,mu);
-  }
-}.
-
 module H' : Hash_i = { 
   proc init = G.init
 
@@ -285,6 +270,26 @@ module H' : Hash_i = {
     return r;
   }
 }.
+
+module RedMSIS (A : Adv_EFKOA_RO) (H : Hash) = { 
+  proc guess(mB : matrix) : vector * M = { 
+    var mA,tbar,t,mu,sig,c,z,w,e,y;
+    mA <- subm mB 0 k 0 l;
+    tbar <- col mB k;
+    t <- -tbar;
+    (mu,sig) <@ A(H').forge(mA,t); (* discard H, use H' *)
+    y <- witness;
+    if (sig <> None) {
+      (c,z) <- oget sig;
+      w <- (mA *^ z - c ** t);
+      e <- -lowBitsV w (2 * gamma2);
+      y <- e || z || oflist [c];
+    }
+    return (y,mu);
+  }
+}.
+
+
 
 section PROOF.
 
@@ -349,9 +354,79 @@ qed.
 
 import StdOrder.RealOrder.
 
+(* BEGIN MOVE ELSEWHERE *)
+
+op locked (x : 'a) = x axiomatized by unlock.
+lemma lock (x : 'a) : x = locked x by rewrite unlock.
+
+lemma mulmxv_cat (m1 m2 : matrix) (v1 v2 : vector) : 
+  cols m1 = size v1 => cols m2 = size v2 => rows m1 = rows m2 => 
+  (m1 || m2) *^ (v1 || v2) = (m1 *^ v1) + (m2 *^ v2).
+proof. 
+move => m1_v1 m2_v2 eq_r; apply/eq_vectorP.
+have -> : size ((m1 || m2) *^ (v1 || v2)) = rows m1. 
+- rewrite size_mulmxv ?cols_concat_side // ?size_concat 1:/#.
+  by rewrite rows_concat_side.
+split => [|i Hi]; first by rewrite size_addv !size_mulmxv /#.
+rewrite mulmxvE getvD ?size_mulmxv //. 
+by rewrite row_concat_side // dotp_concat // !mulmxvE.
+qed.
+
+lemma size_oflist s : size (oflist s) = size s. 
+proof. by rewrite /oflist /=; smt(List.size_ge0). qed.
+
+lemma size_lowBitsV (v : vector) a : size (lowBitsV v a) = size v by [].
+lemma size_highBitsV (v : vector) a : size (highBitsV v a) = size v by [].
+
+lemma subr_eq (x y z : vector) : x - z = y <=> x = y + z.
+admitted.
+
+(* END MOVE ELSEWHERE *)
+
 local lemma hop3 &m : 
   Pr[EF_KOA_RO(S1, A, H').main() @ &m : res] <= Pr[Game(RedMSIS(A), G).main() @ &m : res].
-admitted.
+proof.
+byequiv (_ : ={glob A} ==> res{1} => res{2}) => //; proc. 
+inline{1} 2; inline{1} 1. inline{1} 2; inline{2} 3. 
+seq 6 7 : (={sig,PRO.RO.m} /\ m{1} = mu0{2} /\ pk{1} = (mA0,t){2} /\ 
+            (mA = (mA0 || - colmx t) /\ size mA0 = (k,l) /\ size t = k){2}).
+- (* merge [dmatrix/dvector] sampling on LHS *)
+  seq 3 2 : (={glob A,PRO.RO.m} /\ size mA{1} = (k,l) /\ size t{1} = k /\
+            (mA || - colmx t){1} = mA{2}). 
+  + inline*; sp 1 1; conseq />. 
+    rnd (fun mAt : matrix * vector => (mAt.`1 || -colmx mAt.`2))  
+        (fun mAt : matrix => (subm mAt 0 k 0 l,- col mAt l)) : *0 *0.
+    skip => /= &1 &2 _. admit. (* moderately scary ... *) 
+  conseq />. admit. (* also moderately scary ... *) 
+inline S1(H').verify. sp 5 1. 
+if; 1,3: by (try inline*); auto.
+inline H'.get. wp. sp 1 1. 
+(* need [size z{1} = l] to prove equality of the RO argument *)
+case (size z{1} = l /\ inf_normv z{1} < gamma1 - b);
+  last by conseq (:_ ==> true); [ smt() | inline*; auto].
+call(: ={glob G}); first by sim. 
+wp; skip => &1 &2. case: (sig0{1}) => // -[? ?]. 
+move => />. case. move => />. (* why is case needed? *)
+(* recover names / definitions *)
+move: (mA0{2}) (t{2}) (z{1}) (c{1}) => A t z c.
+pose w := (_ - _ ** _).  
+pose w1 := highBitsV _ _. 
+pose e := - lowBitsV _ _.
+move => r_mA c_mA size_t size_z normv_z. 
+have size_w : size w = k by rewrite size_addv size_mulmxv ?sizeN ?size_mulvs /#. 
+have size_e : size e = k by rewrite sizeN size_lowBitsV.
+split => [|?]; last split.
+- rewrite mulmxv_cat.
+  + smt(gt0_k). 
+  + rewrite cols_concat_side /=; smt(size_oflist). 
+  + rewrite rows_concat_side /=; smt(). 
+  rewrite -size_e mulmx1v mulmxv_cat 1:/# /= 1?size_oflist; 1,2: smt().
+  have -> : (- colmx t) *^ oflist [c] = - c ** t. admit. (* easy? *)
+  rewrite addvC -subr_eq oppvK. 
+  by rewrite /w1 high_lowPv. 
+- admit. (* everyting is small *)
+- admit. (* size nonsense - fix Mat first *)
+qed.
 
 lemma KOA_bound &m : 
      Pr [EF_KOA_RO(SimplifiedDilithium,A,H).main() @ &m : res ] 
@@ -391,6 +466,7 @@ op respond (sk : SK) (c : challenge_t) (y: pstate_t) : response_t option =
 
 op verify (pk : PK) (w1 : commit_t) (c : challenge_t) (z : response_t) : bool =
   let (mA, t) = pk in
+  size z = l /\ 
   inf_normv z < gamma1 - b /\
   w1 = highBitsV (mA *^ z - c ** t) (2 * gamma2).
 
@@ -401,9 +477,6 @@ clone import OpBased with
   op verify <= verify.
 (* TODO proof *. *)
 
-op locked : 'a -> 'a.
-axiom lock (x : 'a) : x = locked x.
-
 (* Sanity check for matrix/vector dimensions *)
 lemma size_t pk sk : (pk,sk) \in keygen => size pk.`2 = k.
 proof. 
@@ -413,7 +486,7 @@ case/supp_dlet => s2 /= [s_s2].
 rewrite /(\o) supp_dunit => -[-> _]. 
 rewrite [Vectors.size]lock /= -lock.
 rewrite size_addv size_mulmxv;
-smt(size_dmatrix size_dvector gt0_k gt0_l).
+smt(size_dmatrix size_dvector Top.gt0_k Top.gt0_l).
 qed.
 
 module OpBasedSig = IDS_Sig(OpBased.P, OpBased.V).
