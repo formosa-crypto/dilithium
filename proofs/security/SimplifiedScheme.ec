@@ -41,7 +41,9 @@ op lowBits  : Rq -> int -> Rq.    (* "low-order"  bits *)
 op highBits : Rq -> int -> high.  (* "high-order" bits *)
 op shift    : high -> int -> Rq.  (* adding zeros      *)
 
-op [lossless uniform] dRq : Rq distr. (* TOTHINK: add full? *)
+op [lossless full uniform] dRq : Rq distr. (* TOTHINK: add full? *)
+
+lemma dRq_funi : is_funiform dRq by smt(dRq_fu dRq_uni).
 
 op [lossless uniform] dRq_ : int -> Rq distr.
 axiom supp_dRq x a : x \in dRq_ a <=> cnorm x <= a.
@@ -60,9 +62,12 @@ axiom lowbit_small r a :
 
 axiom shift_inj a : injective (fun h => shift h a). 
 
+axiom cnormN (r : Rq) : cnorm (-r) = cnorm r.
+
 end DRing.
 
 clone import DRing as DR. 
+import RqRing.
 
 clone import Mat as MatRq 
   with theory ZR <= DR.RqRing.
@@ -88,12 +93,31 @@ clone import MatRq.NormV as INormV with
   type a <- nat,
   op id <- zero,
   op (+) <- Nat.max,
-  op norm <- ofint \o cnorm proof* by smt(maxrA maxrC max0r).
+  op norm <- Nat.ofint \o cnorm proof* by smt(maxrA maxrC max0r).
 
 op inf_normv = ofnat \o INormV.normv.
 
 lemma high_lowPv x a : shiftV (highBitsV x a) a + lowBitsV x a = x.
 admitted.
+
+lemma inf_normv_cat (v1 v2 : vector) : 
+   inf_normv (v1 || v2) = max (inf_normv v1) (inf_normv v2).
+admitted.
+
+lemma inf_normvN (v : vector) : inf_normv (-v) = inf_normv v.
+admitted.
+
+lemma inf_normv_low v a : inf_normv (lowBitsV v a) <= a %/ a.
+admitted.
+
+lemma inf_normv_vectc n c : 
+  inf_normv (vectc n c) = cnorm c.
+admitted.
+
+lemma cnorm_dC c tau : c \in dC tau => cnorm c <= 1.
+admitted.
+
+
 
 type M.
 
@@ -105,7 +129,7 @@ op e : int.
 
 (* Rounding stuff *)
 op gamma1 : int.
-op gamma2 : int.
+op gamma2 : { int | 2 <= gamma2 } as ge2_gamma2.
 (* beta in spec.
  * beta is again a reserved keyword in EC. *)
 op b : int.
@@ -127,6 +151,8 @@ type commit_t = vector. (* should be "high list" ? *)
 type response_t = vector. 
 
 op dC : challenge_t distr = dC tau. 
+
+
 
 (* Just storing `y` should be good here. *)
 type pstate_t = vector. 
@@ -245,6 +271,7 @@ clone import SelfTargetMSIS as RqStMSIS with
   op n <- l+1,
   op dR <- dRq,
   op dC <- dC,
+  op inf_norm <- inf_normv,
   op gamma <- max (gamma1 - b) gamma2.
 
 module H = DSS.PRO.RO.
@@ -275,7 +302,7 @@ module RedMSIS (A : Adv_EFKOA_RO) (H : Hash) = {
   proc guess(mB : matrix) : vector * M = { 
     var mA,tbar,t,mu,sig,c,z,w,e,y;
     mA <- subm mB 0 k 0 l;
-    tbar <- col mB k;
+    tbar <- col mB l;
     t <- -tbar;
     (mu,sig) <@ A(H').forge(mA,t); (* discard H, use H' *)
     y <- witness;
@@ -283,13 +310,14 @@ module RedMSIS (A : Adv_EFKOA_RO) (H : Hash) = {
       (c,z) <- oget sig;
       w <- (mA *^ z - c ** t);
       e <- -lowBitsV w (2 * gamma2);
-      y <- e || z || oflist [c];
+      y <- e || z || vectc 1 c;
     }
     return (y,mu);
   }
 }.
 
-
+op locked (x : 'a) = x axiomatized by unlock.
+lemma lock (x : 'a) : x = locked x by rewrite unlock.
 
 section PROOF.
 
@@ -356,8 +384,6 @@ import StdOrder.RealOrder.
 
 (* BEGIN MOVE ELSEWHERE *)
 
-op locked (x : 'a) = x axiomatized by unlock.
-lemma lock (x : 'a) : x = locked x by rewrite unlock.
 
 lemma mulmxv_cat (m1 m2 : matrix) (v1 v2 : vector) : 
   cols m1 = size v1 => cols m2 = size v2 => rows m1 = rows m2 => 
@@ -381,32 +407,129 @@ lemma size_highBitsV (v : vector) a : size (highBitsV v a) = size v by [].
 lemma subr_eq (x y z : vector) : x - z = y <=> x = y + z.
 admitted.
 
+lemma offunvN (f : int -> Rq) k : - offunv (f, k) = offunv (fun x => - f x, k).
+proof. by apply eq_vectorP => //= i Hi; rewrite !offunvE /#. qed.
+ 
+lemma colN (m : matrix) i : - (col m i) = col (-m) i. 
+proof. rewrite /col /=. exact offunvN. qed.
+
+lemma colmxN (v : vector) : - (colmx v) = colmx (-v).
+admitted.
+
+lemma subm_colmx (A : matrix) l : 
+  cols A = l + 1 => A = (subm A 0 (rows A) 0 l || colmx (col A l)).
+admitted.
+
+lemma supp_dmatrix_full m d r c : is_full d => 
+  is_full d => m \in dmatrix d r c <=> size m = (r,c).
+admitted.
+
+lemma dvector_rnd_funi (d : R distr) (v1 v2 : vector) l :
+  is_funiform d => size v1 = size v2 => 
+  mu1 (dvector d l) v1 = mu1 (dvector d l) v2.
+admitted.
+
+lemma dmatrix_subCm1 (A : matrix) k l : 
+  A \in dmatrix dRq k (l + 1) =>
+  mu1 (dmatrix dRq k (l + 1)) A =
+  mu1 (dmatrix dRq k l `*` dvector dRq k) (subm A 0 k 0 l, col A l).
+admitted.
+
+lemma supp_dmatrix d m r c : 
+  0 <= r => 0 <= c => 
+  (m \in dmatrix d r c) <=> 
+  size m = (r,c) /\ forall i j, mrange m i j => m.[i,j] \in d.
+admitted.
+
+lemma supp_dvector d v k : 
+  0 <= k =>
+  (v \in dvector d k) <=> 
+  size v = k /\ forall i, 0 <= i < k => v.[i] \in d.
+admitted.
+
+lemma supp_dmatrix_catmh d (m1 m2 : matrix) r c1 c2 : 
+  m1 \in dmatrix d r c1 => m2 \in dmatrix d r c2 => 
+  (m1 || m2) \in dmatrix d r (c1 + c2).
+admitted.
+
+lemma oppvN c (v : vector) : c ** -v = - (c ** v).
+admitted.
+
+lemma oppNv (c : Rq) (v : vector) : (- c) ** v = - (c ** v).
+admitted.
+
+(* TOTHINK: this proof seems very low-level *)
+lemma colmxc v c : (colmx v) *^ vectc 1 c = c ** v. 
+proof. 
+apply eq_vectorP; rewrite /= rows_mulmx //= size_mulvs /= => i Hi.
+rewrite mulvsE // mulmxE /dotp /= lez_maxr //=.
+by rewrite (M.Big.BAdd.big_int1 0) /= matrixcE.  
+qed.
+
+lemma max_ltrP (i j k : int) : i < max j k <=> i < j \/ i < k by smt().
+
 (* END MOVE ELSEWHERE *)
+
+local lemma supp_dmatrix_Rqkl m : 
+  (m \in dmatrix dRq k l) <=> 
+  size m = (k,l) /\ forall i j, mrange m i j => m.[i,j] \in dRq.
+proof. smt(supp_dmatrix Top.gt0_k Top.gt0_l). qed.
+
+local lemma supp_dvector_Rqk v : 
+  (v \in dvector dRq k) <=> 
+  size v = k /\ forall i, 0 <= i < k => v.[i] \in dRq.
+proof. smt(supp_dvector Top.gt0_k Top.gt0_l). qed.
 
 local lemma hop3 &m : 
   Pr[EF_KOA_RO(S1, A, H').main() @ &m : res] <= Pr[Game(RedMSIS(A), G).main() @ &m : res].
 proof.
 byequiv (_ : ={glob A} ==> res{1} => res{2}) => //; proc. 
 inline{1} 2; inline{1} 1. inline{1} 2; inline{2} 3. 
-seq 6 7 : (={sig,PRO.RO.m} /\ m{1} = mu0{2} /\ pk{1} = (mA0,t){2} /\ 
-            (mA = (mA0 || - colmx t) /\ size mA0 = (k,l) /\ size t = k){2}).
+seq 6 7 : (={sig,PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in dC){1}
+           /\ m{1} = mu0{2} /\ pk{1} = (mA0,t){2} /\ 
+           (mA = (mA0 || - colmx t) /\ size mA0 = (k,l) /\ size t = k){2}).
 - (* merge [dmatrix/dvector] sampling on LHS *)
-  seq 3 2 : (={glob A,PRO.RO.m} /\ size mA{1} = (k,l) /\ size t{1} = k /\
+  seq 3 2 : (={glob A,PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in dC){1}
+            /\ size mA{1} = (k,l) /\ size t{1} = k /\
             (mA || - colmx t){1} = mA{2}). 
-  + inline*; sp 1 1; conseq />. 
+  + inline*; sp 1 1. 
+    conseq (:_ ==> size mA{1} = (k,l) /\ size t{1} = k /\ (mA || - colmx t){1} = mA{2}).
+    * smt(emptyE).
     rnd (fun mAt : matrix * vector => (mAt.`1 || -colmx mAt.`2))  
         (fun mAt : matrix => (subm mAt 0 k 0 l,- col mAt l)) : *0 *0.
-    skip => /= &1 &2 _. admit. (* moderately scary ... *) 
-  conseq />. admit. (* also moderately scary ... *) 
+    skip => /= &1 &2 _. split => [A|?]; last split => [A|?].
+    * rewrite dmap_id => /size_dmatrix /(_ _ _) /=; 1,2: smt(Top.gt0_k Top.gt0_l).
+      rewrite colmxN oppvK => -[<-]. exact subm_colmx. 
+    * rewrite -(dmap_dprodE _ _ (fun x => x)) !dmap_id.
+      rewrite dprod1E (@dvector_rnd_funi _ _ (col A l)) ?dRq_funi // -dprod1E.
+      exact dmatrix_subCm1.
+    case => A t /=; rewrite -(dmap_dprodE _ _ (fun x => x)) !dmap_id supp_dprod /=.
+    case => supp_A supp_t. 
+    move: (supp_A) => /size_dmatrix /(_ _ _) /=; 1,2: smt(Top.gt0_k Top.gt0_l).
+    move: (supp_t) => /size_dvector. rewrite lez_maxr; 1:smt(Top.gt0_k). move => s_t [r_A c_A].
+    (* case => /supp_dmatrix_Rqkl /= [[r_A c_A] Rq_A] /supp_dvector_Rqk [s_t Rq_t]. *)
+    rewrite r_A c_A s_t /= -{2}r_A -{2}c_A subm_concat_sideCl /= 1:/#.
+    rewrite col_concat_sideR /= ?r_A ?c_A ?s_t // subrr. 
+    rewrite colN oppmK colK /=; apply supp_dmatrix_catmh => //.
+    by rewrite supp_dmatrix_full ?dRq_fu.    
+  call (: ={PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in dC){1}).
+    proc; inline*; auto => />; smt(get_setE get_set_sameE).
+  auto => /> &1 &2 RO_dC r_mA c_mA s_t. split => [|E1 E2]. 
+  + rewrite -r_mA -c_mA subm_concat_sideCl /= 1:/#. 
+    rewrite col_concat_sideR //= 1:/#. 
+    by rewrite colN oppmK colK. 
+  move => _ _.     
+  by rewrite -E1 -E2 /= rows_concat_side //=; smt(Top.gt0_k Top.gt0_l).
 inline S1(H').verify. sp 5 1. 
 if; 1,3: by (try inline*); auto.
 inline H'.get. wp. sp 1 1. 
 (* need [size z{1} = l] to prove equality of the RO argument *)
 case (size z{1} = l /\ inf_normv z{1} < gamma1 - b);
   last by conseq (:_ ==> true); [ smt() | inline*; auto].
-call(: ={glob G}); first by sim. 
+call(: ={arg,glob G} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in dC){1} ==> ={res} /\ res{1} \in dC).
+  proc; inline*; auto => />.  smt(get_set_sameE).
 wp; skip => &1 &2. case: (sig0{1}) => // -[? ?]. 
-move => />. case. move => />. (* why is case needed? *)
+move => />. case. move => /> _. (* why is case needed? *)
 (* recover names / definitions *)
 move: (mA0{2}) (t{2}) (z{1}) (c{1}) => A t z c.
 pose w := (_ - _ ** _).  
@@ -415,16 +538,19 @@ pose e := - lowBitsV _ _.
 move => r_mA c_mA size_t size_z normv_z. 
 have size_w : size w = k by rewrite size_addv size_mulmxv ?sizeN ?size_mulvs /#. 
 have size_e : size e = k by rewrite sizeN size_lowBitsV.
-split => [|?]; last split.
+split => [|? c_dC]; last split.
 - rewrite mulmxv_cat.
   + smt(gt0_k). 
   + rewrite cols_concat_side /=; smt(size_oflist). 
   + rewrite rows_concat_side /=; smt(). 
-  rewrite -size_e mulmx1v mulmxv_cat 1:/# /= 1?size_oflist; 1,2: smt().
-  have -> : (- colmx t) *^ oflist [c] = - c ** t. admit. (* easy? *)
+  rewrite -size_e mulmx1v mulmxv_cat;  1..3: smt().
+  rewrite colmxN colmxc oppvN.  
   rewrite addvC -subr_eq oppvK. 
   by rewrite /w1 high_lowPv. 
-- admit. (* everyting is small *)
+- rewrite 2!inf_normv_cat !StdOrder.IntOrder.ltr_maxrP !max_ltrP.
+  rewrite normv_z /= 1!inf_normv_vectc.
+  have -> /= : cnorm c < gamma2 by smt(cnorm_dC ge2_gamma2).
+  right. rewrite /e inf_normvN. smt(inf_normv_low ge2_gamma2).
 - admit. (* size nonsense - fix Mat first *)
 qed.
 
