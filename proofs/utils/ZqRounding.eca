@@ -30,19 +30,142 @@ op leftshift (r1 : int) alpha = inzmod (r1 * alpha).
 
 op highbits r alpha = rightshift (round r alpha) alpha.
 
-(* proofs *)
+(* -- PROOFS -- *)
 
-(**
-lemma ge0_abs_zp (x : zmod) :
-  0 <= `|x|.
-proof. smt(). qed.
-**)
+(* -- Auxiliary lemma that have nothing to do with this file -- *)
+
+lemma abs_zp_triangle (x y : zmod) :
+  (* can probably be weakened to `<=`? *)
+  `|x| + `|y| < q %/ 2 =>
+  `|x + y| <= `|x| + `|y|.
+proof.
+smt(ge0_asint gtp_asint addE ltr0_norm).
+qed.
+
+lemma crepr_eq x y :
+  crepr x = crepr y <=> x = y.
+proof.
+smt(rg_asint asint_eq).
+qed.
+
+lemma dvdz_modzD m n d :
+  d %| m =>
+  d %| n =>
+  d %| (m + n).
+proof. smt(dvdz_modzDr). qed.
 
 (* TODO maybe can send PR...?
  * Unsure of naming convention though. *)
 lemma modzNDmr m n d :
   (m - n %% d) %% d = (m - n) %% d.
 proof. smt(modzNm modzDmr). qed.
+
+lemma asint_crepr x :
+  asint x = (crepr x) %% q.
+proof.
+rewrite /crepr /=.
+case (q %/ 2 <= asint x) => _; last by smt(modz_small rg_asint).
+rewrite -modzDr.
+have ->: asint x - q + q = asint x by ring.
+smt(modz_small rg_asint).
+qed.
+
+(* Maybe can PR?
+ * Don't know naming convention though. *)
+lemma positive_multiples_lower_bound d x :
+  0 < x =>
+  0 < d =>
+  d %| x =>
+  d <= x.
+proof.
+smt(dvdz_eq).
+qed.
+
+(* -- Facts about centered modulo -- *)
+
+lemma cmod_small x alpha :
+  2 <= alpha =>
+  `|cmod x alpha| <= alpha %/ 2.
+proof. smt(modz_ge0 ltz_pmod). qed.
+
+op cmod_to_mod r alpha =
+  if r < 0 then r + alpha else r.
+
+lemma mod_to_cmodK x d :
+  0 <= x =>
+  x < d =>
+  cmod_to_mod (mod_to_cmod x d) d = x.
+proof. smt(). qed.
+
+lemma cmod_to_mod_injective x y d :
+  -d %/ 2 < x =>
+  x <= d %/ 2 =>
+  -d %/ 2 < y =>
+  y <= d %/ 2 =>
+  cmod_to_mod x d = cmod_to_mod y d => x = y.
+proof. smt(). qed.
+
+lemma cmod_to_mod_correct x d :
+  0 < d =>
+  d %| (x - cmod_to_mod x d).
+proof. smt(). qed.
+
+(* Generalization of the `euclideUl` lemma to centered modulo.
+ * Representative chosen from (-d %/ 2, d %/ 2] *)
+lemma euclideUl_centered (x x0 d : int) :
+  0 < d =>
+  d %| (x - x0) =>
+  -d %/ 2 < x0 =>
+  x0 <= d %/ 2 =>
+  x0 = cmod x d.
+proof.
+move => *.
+rewrite /cmod /=.
+apply (cmod_to_mod_injective _ _ d) => //; 1, 2: smt().
+rewrite mod_to_cmodK; 1, 2: smt().
+(* Fixing interface to euclideUl *)
+suff: (x - (cmod_to_mod x0 d)) %/ d = x %/ d /\ (cmod_to_mod x0 d) = x %% d by smt().
+apply euclideUl; last by smt().
+rewrite -divz_eq.
+rewrite divzK; last by smt().
+have ->: x - cmod_to_mod x0 d = (x - x0) + (x0 - cmod_to_mod x0 d) by smt().
+apply dvdz_modzD => //.
+exact cmod_to_mod_correct.
+qed.
+
+lemma cmod_lower_bound x alpha :
+  2 <= alpha =>
+  2 %| alpha =>
+  -alpha %/ 2 < cmod x alpha.
+proof.
+smt(modz_ge0 ltz_pmod).
+qed.
+
+(*
+(* currently unused *)
+lemma cmod_upper_bound x alpha :
+  2 <= alpha =>
+  cmod x alpha <= alpha %/ 2.
+proof.
+print cmod.
+print mod_to_cmod.
+admitted.
+*)
+
+(*
+lemma cmod_to_mod_lower_bound x d :
+  -d %/ 2 < x =>
+  0 <= cmod_to_mod x d.
+proof. smt(). qed.
+
+lemma cmod_to_mod_upper_bound x d :
+  0 < d =>
+  x <= d %/ 2 =>
+  cmod_to_mod x d < d.
+proof. smt(). qed.
+*)
+
+(* -- Actual high-low bits rounding facts -- *)
 
 lemma leftshift_rightshiftK r alpha :
   alpha %| asint r =>
@@ -89,11 +212,6 @@ rewrite leftshift_rightshiftK; first exact round_is_multiple.
 exact round_lowP.
 qed.
 
-lemma cmod_small x alpha :
-  2 <= alpha =>
-  `|cmod x alpha| <= alpha %/ 2.
-proof. smt(modz_ge0 ltz_pmod). qed.
-
 lemma lowbits_small x alpha :
   2 <= alpha =>
   alpha <= q %/ 2 =>
@@ -112,13 +230,6 @@ proof.
 smt(rg_asint inzmodK).
 qed.
 
-lemma crepr_eq x y :
-  crepr x = crepr y <=> x = y.
-proof.
-(* split; last by trivial. *)
-smt(rg_asint asint_eq).
-qed.
-
 lemma lowbits_id (x : zmod) alpha :
   2 <= alpha =>
   alpha <= q %/ 2 =>
@@ -130,71 +241,6 @@ rewrite /lowbits.
 case (q - alpha %/ 2 <= asint x) => [|?]; first by trivial.
 apply crepr_eq.
 rewrite inzmodK_centered; smt(rg_asint).
-qed.
-
-op cmod_to_mod r alpha =
-  if r < 0 then r + alpha else r.
-
-lemma mod_to_cmodK x d :
-  0 <= x =>
-  x < d =>
-  cmod_to_mod (mod_to_cmod x d) d = x.
-proof. smt(). qed.
-
-lemma cmod_to_mod_injective x y d :
-  -d %/ 2 < x =>
-  x <= d %/ 2 =>
-  -d %/ 2 < y =>
-  y <= d %/ 2 =>
-  cmod_to_mod x d = cmod_to_mod y d => x = y.
-proof. smt(). qed.
-
-(*
-lemma cmod_to_mod_lower_bound x d :
-  -d %/ 2 < x =>
-  0 <= cmod_to_mod x d.
-proof. smt(). qed.
-
-lemma cmod_to_mod_upper_bound x d :
-  0 < d =>
-  x <= d %/ 2 =>
-  cmod_to_mod x d < d.
-proof. smt(). qed.
-*)
-
-lemma dvdz_modzD m n d :
-  d %| m =>
-  d %| n =>
-  d %| (m + n).
-proof. smt(dvdz_modzDr). qed.
-
-lemma cmod_to_mod_correct x d :
-  0 < d =>
-  d %| (x - cmod_to_mod x d).
-proof. smt(). qed.
-
-(* Generalization of the `euclideUl` lemma to centered modulo.
- * Representative chosen from (-d %/ 2, d %/ 2]
- *)
-lemma euclideUl_centered (x x0 d : int) :
-  0 < d =>
-  d %| (x - x0) =>
-  -d %/ 2 < x0 =>
-  x0 <= d %/ 2 =>
-  x0 = cmod x d.
-proof.
-move => *.
-rewrite /cmod /=.
-apply (cmod_to_mod_injective _ _ d) => //; 1, 2: smt().
-rewrite mod_to_cmodK; 1, 2: smt().
-(* Fixing interface to euclideUl *)
-suff: (x - (cmod_to_mod x0 d)) %/ d = x %/ d /\ (cmod_to_mod x0 d) = x %% d by smt().
-apply euclideUl; last by smt().
-rewrite -divz_eq.
-rewrite divzK; last by smt().
-have ->: x - cmod_to_mod x0 d = (x - x0) + (x0 - cmod_to_mod x0 d) by smt().
-apply dvdz_modzD => //.
-exact cmod_to_mod_correct.
 qed.
 
 (*
@@ -218,46 +264,6 @@ proof.
 admitted.
 *)
 
-lemma cmod_lower_bound x alpha :
-  2 <= alpha =>
-  2 %| alpha =>
-  -alpha %/ 2 < cmod x alpha.
-proof.
-smt(modz_ge0 ltz_pmod).
-qed.
-
-(*
-(* currently unused *)
-lemma cmod_upper_bound x alpha :
-  2 <= alpha =>
-  cmod x alpha <= alpha %/ 2.
-proof.
-print cmod.
-print mod_to_cmod.
-admitted.
-*)
-
-lemma asint_crepr x :
-  asint x = (crepr x) %% q.
-proof.
-rewrite /crepr /=.
-case (q %/ 2 <= asint x) => _; last by smt(modz_small rg_asint).
-rewrite -modzDr.
-have ->: asint x - q + q = asint x by ring.
-smt(modz_small rg_asint).
-qed.
-
-(* Maybe can PR?
- * Don't know naming convention though. *)
-lemma positive_multiples_lower_bound d x :
-  0 < x =>
-  0 < d =>
-  d %| x =>
-  d <= x.
-proof.
-smt(dvdz_eq).
-qed.  
-
 (* Normal case only; no corner case *)
 lemma lowbits_unique_aux (x r x0 : zmod) (alpha : int) :
   2 <= alpha =>
@@ -271,8 +277,7 @@ lemma lowbits_unique_aux (x r x0 : zmod) (alpha : int) :
   crepr x0 <= alpha %/ 2 =>
   lowbits x alpha = x0.
 proof.
-move => ?????????. (* You hate to see it *)
-rewrite /lowbits.
+move => *; rewrite /lowbits.
 have -> /=: q - alpha %/ 2 <= asint x = false by smt().
 apply crepr_eq.
 rewrite inzmodK_centered; 1, 2: smt(rg_asint).
@@ -302,8 +307,9 @@ lemma lowbits_unique (x r x0 : zmod) (alpha : int) :
   crepr x0 <= alpha %/ 2 =>
   lowbits x alpha = x0.
 proof.
-move => ?????? x0_range ?.
-case (asint x < q - alpha %/ 2) => normal_case.
+move => *.
+(* non-corner case *)
+case (asint x < q - alpha %/ 2) => ?.
 - apply (lowbits_unique_aux x r x0 alpha) => //.
   smt(rg_asint ZModpRing.add0r).
 (* corner case *)
@@ -321,13 +327,11 @@ suff: r = zero by smt(ZModpRing.add0r).
 apply contraT => ne0_r.
 have ?: alpha <= asint r.
 - apply positive_multiples_lower_bound; smt(rg_asint asint_eq zeroE).
-have ?: asint x = asint r + crepr x0.
-- subst.
-  rewrite addE.
-  have ->: asint x0 = crepr x0 %% q by exact asint_crepr.
-  rewrite modzDmr.
-  rewrite modz_small => /#.
-smt().
+suff: asint x = asint r + crepr x0 by smt().
+subst.
+rewrite addE.
+have ->: asint x0 = crepr x0 %% q by exact asint_crepr.
+by rewrite modzDmr modz_small => /#.
 qed.
 
 lemma round_unique (x r x0 : zmod) (alpha : int) :
@@ -351,15 +355,6 @@ apply (lowbits_unique x r (x - r) alpha) => //.
   subst; by field.
 - subst.
   by have -> //: r + x0 - r = x0 by field.
-qed.
-
-(* TODO move me *)
-lemma abs_zp_triangle (x y : zmod) :
-  (* can probably be weakened to `<=`? *)
-  `|x| + `|y| < q %/ 2 =>
-  `|x + y| <= `|x| + `|y|.
-proof.
-smt(ge0_asint gtp_asint addE ltr0_norm).
 qed.
 
 lemma round_upper_bound x alpha :
@@ -447,8 +442,7 @@ have H': asint (inzmod (x * alpha)) = asint (inzmod (y * alpha)) by smt().
 rewrite inzmodK modz_small in H'.
 - split => [|?]; first by smt().
   apply (ler_lt_trans ((q - alpha - 1) %/ alpha * alpha)) => /#.
-rewrite inzmodK modz_small in H'.
-- split => [|?]; first by smt().
-  apply (ler_lt_trans ((q - alpha - 1) %/ alpha * alpha)) => /#.
-smt().
+rewrite inzmodK modz_small in H'; last by smt().
+split => [|?]; first by smt().
+by apply (ler_lt_trans ((q - alpha - 1) %/ alpha * alpha)) => /#.
 qed.
