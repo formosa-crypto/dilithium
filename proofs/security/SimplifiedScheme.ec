@@ -1,10 +1,10 @@
 require import AllCore Distr List DistrExtras.
 require DigitalSignaturesRO.
-require Mat.
-require import PolyReduce.
+require MatPlus.
+(* require import PolyReduce. *)
 require import IntDiv.
-require ZqRounding.
-require ZModFieldExtras.
+(* require ZqRounding. *)
+(* require ZModFieldExtras. *)
 require import Nat.
 
 require import IDSabort.
@@ -69,7 +69,7 @@ end DRing.
 clone import DRing as DR. 
 import RqRing.
 
-clone import Mat as MatRq 
+clone import MatPlus as MatRq 
   with theory ZR <= DR.RqRing.
 
 (* lifting functions to vectors *)
@@ -81,8 +81,6 @@ op shiftV (w1 : vector) (a : int) =
 
 lemma shiftV_inj a : injective (fun v => shiftV v a). 
 admitted.
-
-op (**) (c : Rq) (v : vector) = mulvs v c.
 
 lemma size_mapv f v : size (mapv f v) = size v by [].
 
@@ -116,8 +114,6 @@ admitted.
 
 lemma cnorm_dC c tau : c \in dC tau => cnorm c <= 1.
 admitted.
-
-
 
 type M.
 
@@ -384,87 +380,9 @@ import StdOrder.RealOrder.
 
 (* BEGIN MOVE ELSEWHERE *)
 
-
-lemma mulmxv_cat (m1 m2 : matrix) (v1 v2 : vector) : 
-  cols m1 = size v1 => cols m2 = size v2 => rows m1 = rows m2 => 
-  (m1 || m2) *^ (v1 || v2) = (m1 *^ v1) + (m2 *^ v2).
-proof. 
-move => m1_v1 m2_v2 eq_r; apply/eq_vectorP.
-have -> : size ((m1 || m2) *^ (v1 || v2)) = rows m1. 
-- rewrite size_mulmxv ?cols_concat_side // ?size_concat 1:/#.
-  by rewrite rows_concat_side.
-split => [|i Hi]; first by rewrite size_addv !size_mulmxv /#.
-rewrite mulmxvE getvD ?size_mulmxv //. 
-by rewrite row_concat_side // dotp_concat // !mulmxvE.
-qed.
-
-lemma size_oflist s : size (oflist s) = size s. 
-proof. by rewrite /oflist /=; smt(List.size_ge0). qed.
-
 lemma size_lowBitsV (v : vector) a : size (lowBitsV v a) = size v by [].
 lemma size_highBitsV (v : vector) a : size (highBitsV v a) = size v by [].
 
-lemma subr_eq (x y z : vector) : x - z = y <=> x = y + z.
-admitted.
-
-lemma offunvN (f : int -> Rq) k : - offunv (f, k) = offunv (fun x => - f x, k).
-proof. by apply eq_vectorP => //= i Hi; rewrite !offunvE /#. qed.
- 
-lemma colN (m : matrix) i : - (col m i) = col (-m) i. 
-proof. rewrite /col /=. exact offunvN. qed.
-
-lemma colmxN (v : vector) : - (colmx v) = colmx (-v).
-admitted.
-
-lemma subm_colmx (A : matrix) l : 
-  cols A = l + 1 => A = (subm A 0 (rows A) 0 l || colmx (col A l)).
-admitted.
-
-lemma supp_dmatrix_full m d r c : is_full d => 
-  is_full d => m \in dmatrix d r c <=> size m = (r,c).
-admitted.
-
-lemma dvector_rnd_funi (d : R distr) (v1 v2 : vector) l :
-  is_funiform d => size v1 = size v2 => 
-  mu1 (dvector d l) v1 = mu1 (dvector d l) v2.
-admitted.
-
-lemma dmatrix_subCm1 (A : matrix) k l : 
-  A \in dmatrix dRq k (l + 1) =>
-  mu1 (dmatrix dRq k (l + 1)) A =
-  mu1 (dmatrix dRq k l `*` dvector dRq k) (subm A 0 k 0 l, col A l).
-admitted.
-
-lemma supp_dmatrix d m r c : 
-  0 <= r => 0 <= c => 
-  (m \in dmatrix d r c) <=> 
-  size m = (r,c) /\ forall i j, mrange m i j => m.[i,j] \in d.
-admitted.
-
-lemma supp_dvector d v k : 
-  0 <= k =>
-  (v \in dvector d k) <=> 
-  size v = k /\ forall i, 0 <= i < k => v.[i] \in d.
-admitted.
-
-lemma supp_dmatrix_catmh d (m1 m2 : matrix) r c1 c2 : 
-  m1 \in dmatrix d r c1 => m2 \in dmatrix d r c2 => 
-  (m1 || m2) \in dmatrix d r (c1 + c2).
-admitted.
-
-lemma oppvN c (v : vector) : c ** -v = - (c ** v).
-admitted.
-
-lemma oppNv (c : Rq) (v : vector) : (- c) ** v = - (c ** v).
-admitted.
-
-(* TOTHINK: this proof seems very low-level *)
-lemma colmxc v c : (colmx v) *^ vectc 1 c = c ** v. 
-proof. 
-apply eq_vectorP; rewrite /= rows_mulmx //= size_mulvs /= => i Hi.
-rewrite mulvsE // mulmxE /dotp /= lez_maxr //=.
-by rewrite (M.Big.BAdd.big_int1 0) /= matrixcE.  
-qed.
 
 lemma max_ltrP (i j k : int) : i < max j k <=> i < j \/ i < k by smt().
 
@@ -532,7 +450,7 @@ wp; skip => &1 &2. case: (sig0{1}) => // -[? ?].
 move => />. case. move => /> _. (* why is case needed? *)
 (* recover names / definitions *)
 move: (mA0{2}) (t{2}) (z{1}) (c{1}) => A t z c.
-pose w := (_ - _ ** _).  
+pose w := (_ - MatRq.(**) _ _). (* FIXME: why is XInt.(**) in scope? *)
 pose w1 := highBitsV _ _. 
 pose e := - lowBitsV _ _.
 move => r_mA c_mA size_t size_z normv_z. 
@@ -541,7 +459,7 @@ have size_e : size e = k by rewrite sizeN size_lowBitsV.
 split => [|? c_dC]; last split.
 - rewrite mulmxv_cat.
   + smt(gt0_k). 
-  + rewrite cols_concat_side /=; smt(size_oflist). 
+  + rewrite cols_concat_side /= 1:/# size_concat /=. smt().
   + rewrite rows_concat_side /=; smt(). 
   rewrite -size_e mulmx1v mulmxv_cat;  1..3: smt().
   rewrite colmxN colmxc oppvN.  
@@ -551,7 +469,9 @@ split => [|? c_dC]; last split.
   rewrite normv_z /= 1!inf_normv_vectc.
   have -> /= : cnorm c < gamma2 by smt(cnorm_dC ge2_gamma2).
   right. rewrite /e inf_normvN. smt(inf_normv_low ge2_gamma2).
-- admit. (* size nonsense - fix Mat first *)
+- rewrite catvA get_catv_r ?size_concat 1:/#. 
+  have -> : k + (l + 1) - 1 - (size e + size z) = 0 by smt().
+  by rewrite vectcE.
 qed.
 
 lemma KOA_bound &m : 

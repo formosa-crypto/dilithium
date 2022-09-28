@@ -1,0 +1,129 @@
+require import AllCore List Distr DBool DList.
+import StdBigop.Bigreal StdOrder.IntOrder.
+
+require Mat.
+
+clone include Mat.
+import ZR.
+
+
+lemma tolist_catv (v1 v2 : vector) : 
+  tolist (v1 || v2) = (tolist v1) ++ (tolist v2).
+admitted.
+
+lemma size_oflist s : size (oflist s) = size s. 
+proof. by rewrite /oflist /=; smt(List.size_ge0). qed.
+
+lemma mulmxv_cat (m1 m2 : matrix) (v1 v2 : vector) : 
+  cols m1 = size v1 => cols m2 = size v2 => rows m1 = rows m2 => 
+  (m1 || m2) *^ (v1 || v2) = (m1 *^ v1) + (m2 *^ v2).
+proof. 
+move => m1_v1 m2_v2 eq_r; apply/eq_vectorP.
+have -> : size ((m1 || m2) *^ (v1 || v2)) = rows m1. 
+- rewrite size_mulmxv ?cols_concat_side // ?size_concat 1:/#.
+  by rewrite rows_concat_side.
+split => [|i Hi]; first by rewrite size_addv !size_mulmxv /#.
+rewrite mulmxvE getvD ?size_mulmxv //. 
+by rewrite row_concat_side // dotp_concat // !mulmxvE.
+qed.
+
+
+lemma subr_eq (x y z : vector) : x - z = y <=> x = y + z.
+admitted.
+
+lemma offunvN (f : int -> R) k : - offunv (f, k) = offunv (fun x => - f x, k).
+proof. by apply eq_vectorP => //= i Hi; rewrite !offunvE /#. qed.
+ 
+lemma colN (m : matrix) i : - (col m i) = col (-m) i. 
+proof. rewrite /col /=. exact offunvN. qed.
+
+lemma colmxN (v : vector) : - (colmx v) = colmx (-v).
+admitted.
+
+lemma subm_colmx (A : matrix) l : 
+  cols A = l + 1 => A = (subm A 0 (rows A) 0 l || colmx (col A l)).
+admitted.
+
+lemma supp_dmatrix_full m d r c : is_full d => 
+  is_full d => m \in dmatrix d r c <=> size m = (r,c).
+admitted.
+
+lemma dvector_rnd_funi (d : R distr) (v1 v2 : vector) l :
+  is_funiform d => size v1 = size v2 => 
+  mu1 (dvector d l) v1 = mu1 (dvector d l) v2.
+admitted.
+
+lemma dmatrix_subCm1 d (A : matrix) k l : 
+  A \in dmatrix d k (l + 1) =>
+  mu1 (dmatrix d k (l + 1)) A =
+  mu1 (dmatrix d k l `*` dvector d k) (subm A 0 k 0 l, col A l).
+admitted.
+
+lemma supp_dmatrix d m r c : 
+  0 <= r => 0 <= c => 
+  (m \in dmatrix d r c) <=> 
+  size m = (r,c) /\ forall i j, mrange m i j => m.[i,j] \in d.
+admitted.
+
+lemma supp_dvector d v k : 
+  0 <= k =>
+  (v \in dvector d k) <=> 
+  size v = k /\ forall i, 0 <= i < k => v.[i] \in d.
+admitted.
+
+lemma supp_dmatrix_catmh d (m1 m2 : matrix) r c1 c2 : 
+  m1 \in dmatrix d r c1 => m2 \in dmatrix d r c2 => 
+  (m1 || m2) \in dmatrix d r (c1 + c2).
+admitted.
+
+op (**) (c : R) (v : vector) = mulvs v c.
+
+lemma oppvN c (v : vector) : c ** -v = - (c ** v).
+admitted.
+
+lemma oppNv (c : R) (v : vector) : (- c) ** v = - (c ** v).
+admitted.
+
+lemma catvA : associative Vectors.(||).
+admitted.
+
+(* TOTHINK: this proof seems very low-level *)
+lemma colmxc v c : (colmx v) *^ vectc 1 c = c ** v. 
+proof. 
+apply eq_vectorP; rewrite /= rows_mulmx //= size_mulvs /= => i Hi.
+rewrite mulvsE // mulmxE /dotp /= lez_maxr //=.
+by rewrite (Big.BAdd.big_int1 0) /= matrixcE.  
+qed.
+
+
+
+
+require Bigop.
+
+abstract theory NormV.
+type a.
+op id : a.
+op norm : R -> a.
+op (+) : a -> a -> a.
+op op1 : a -> a.
+
+axiom op2A : associative (+).
+axiom op2C : commutative (+).
+axiom idP  : left_id id (+).
+
+clone include Bigop with 
+  type t <- a,
+  op Support.idm <- id,
+  op Support.(+) <- (+) 
+proof* by smt(op2A op2C idP).
+
+op pnormv v = big predT norm (tolist v).
+op normv v = op1 (pnormv v).
+
+lemma normv_cat (v1 v2 : vector) : normv (v1 || v2) = op1 (pnormv v1 + pnormv v2).
+proof.
+rewrite /normv /pnormv; congr. 
+by rewrite tolist_catv big_cat.
+qed.
+
+end NormV. 
