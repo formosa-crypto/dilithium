@@ -1,17 +1,37 @@
 require import AllCore IntDiv ZModP.
 require import Distr DInterval.
+import StdOrder IntOrder.
 
 clone include ZModField.
 
-(* Centered representative *)
+(* Centered representative.
+ * "Halfway" is rounded down. *)
 op crepr x = let y = asint x in
-  if p %/ 2 <= y then y - p else y.
+  if (p + 1) %/ 2 <= y then y - p else y.
 
 op "`|_|" x = `|crepr x|.
 
 lemma abs_zp_small (x: int) :
   `|x| < p %/ 2 => `|inzmod x| = `|x|.
 proof. smt(inzmodK). qed.
+
+lemma abs_zp_triangle (x y : zmod) :
+  (* can probably be weakened to `<=`? *)
+  `|x| + `|y| < p %/ 2 =>
+  `|x + y| <= `|x| + `|y|.
+proof.
+smt(rg_asint addE ltr0_norm).
+qed.
+
+lemma abs_zpN (x : zmod) :
+  `|x| = `|-x|.
+proof.
+rewrite /"`|_|" /crepr /=.
+case (x = zero) => ?; first by smt(ZModpRing.oppr0).
+suff: asint (-x) = p - asint x by smt().
+rewrite oppE -modzDl.
+by rewrite modz_small; smt(rg_asint asint_inj zeroE).
+qed.
 
 (* Keeping inputs as `int` to allow ranges that go across 0 *)
 op dinter_zp i j = dmap (dinter i j) inzmod.

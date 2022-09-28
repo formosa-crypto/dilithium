@@ -34,14 +34,6 @@ op highbits r alpha = rightshift (round r alpha) alpha.
 
 (* -- Auxiliary lemma that have nothing to do with this file -- *)
 
-lemma abs_zp_triangle (x y : zmod) :
-  (* can probably be weakened to `<=`? *)
-  `|x| + `|y| < q %/ 2 =>
-  `|x + y| <= `|x| + `|y|.
-proof.
-smt(ge0_asint gtp_asint addE ltr0_norm).
-qed.
-
 lemma crepr_eq x y :
   crepr x = crepr y <=> x = y.
 proof.
@@ -66,7 +58,6 @@ proof.
 rewrite /crepr /=.
 case (q %/ 2 <= asint x) => _; last by smt(modz_small rg_asint).
 rewrite -modzDr.
-have ->: asint x - q + q = asint x by ring.
 smt(modz_small rg_asint).
 qed.
 
@@ -446,3 +437,4 @@ rewrite inzmodK modz_small in H'; last by smt().
 split => [|?]; first by smt().
 by apply (ler_lt_trans ((q - alpha - 1) %/ alpha * alpha)) => /#.
 qed.
+
