@@ -388,6 +388,7 @@ lemma max_ltrP (i j k : int) : i < max j k <=> i < j \/ i < k by smt().
 
 (* END MOVE ELSEWHERE *)
 
+(*
 local lemma supp_dmatrix_Rqkl m : 
   (m \in dmatrix dRq k l) <=> 
   size m = (k,l) /\ forall i j, mrange m i j => m.[i,j] \in dRq.
@@ -397,6 +398,7 @@ local lemma supp_dvector_Rqk v :
   (v \in dvector dRq k) <=> 
   size v = k /\ forall i, 0 <= i < k => v.[i] \in dRq.
 proof. smt(supp_dvector Top.gt0_k Top.gt0_l). qed.
+*)
 
 local lemma hop3 &m : 
   Pr[EF_KOA_RO(S1, A, H').main() @ &m : res] <= Pr[Game(RedMSIS(A), G).main() @ &m : res].
@@ -427,18 +429,18 @@ seq 6 7 : (={sig,PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in
     move: (supp_A) => /size_dmatrix /(_ _ _) /=; 1,2: smt(Top.gt0_k Top.gt0_l).
     move: (supp_t) => /size_dvector. rewrite lez_maxr; 1:smt(Top.gt0_k). move => s_t [r_A c_A].
     (* case => /supp_dmatrix_Rqkl /= [[r_A c_A] Rq_A] /supp_dvector_Rqk [s_t Rq_t]. *)
-    rewrite r_A c_A s_t /= -{2}r_A -{2}c_A subm_concat_sideCl /= 1:/#.
-    rewrite col_concat_sideR /= ?r_A ?c_A ?s_t // subrr. 
-    rewrite colN oppmK colK /=; apply supp_dmatrix_catmh => //.
+    rewrite r_A c_A s_t /= -{2}r_A -{2}c_A subm_catmcCl /= 1:/#.
+    rewrite col_catmcR /= ?r_A ?c_A ?s_t // subrr. 
+    rewrite colN oppmK colK /=; apply supp_dmatrix_catmc => //;1,2: smt(Top.gt0_k Top.gt0_l).
     by rewrite supp_dmatrix_full ?dRq_fu.    
   call (: ={PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in dC){1}).
     proc; inline*; auto => />; smt(get_setE get_set_sameE).
   auto => /> &1 &2 RO_dC r_mA c_mA s_t. split => [|E1 E2]. 
-  + rewrite -r_mA -c_mA subm_concat_sideCl /= 1:/#. 
-    rewrite col_concat_sideR //= 1:/#. 
+  + rewrite -r_mA -c_mA subm_catmcCl /= 1:/#. 
+    rewrite col_catmcR //= 1:/#. 
     by rewrite colN oppmK colK. 
   move => _ _.     
-  by rewrite -E1 -E2 /= rows_concat_side //=; smt(Top.gt0_k Top.gt0_l).
+  by rewrite -E1 -E2 /= rows_catmc //=; smt(Top.gt0_k Top.gt0_l).
 inline S1(H').verify. sp 5 1. 
 if; 1,3: by (try inline*); auto.
 inline H'.get. wp. sp 1 1. 
@@ -455,13 +457,13 @@ pose w := (_ - MatRq.(**) _ _). (* FIXME: why is XInt.(**) in scope? *)
 pose w1 := highBitsV _ _. 
 pose e := - lowBitsV _ _.
 move => r_mA c_mA size_t size_z normv_z. 
-have size_w : size w = k by rewrite size_addv size_mulmxv ?sizeN ?size_mulvs /#. 
-have size_e : size e = k by rewrite sizeN size_lowBitsV.
+have size_w : size w = k by rewrite size_addv size_mulmxv ?size_oppv ?size_mulvs /#. 
+have size_e : size e = k by rewrite size_oppv size_lowBitsV.
 split => [|? c_dC]; last split.
 - rewrite mulmxv_cat.
   + smt(gt0_k). 
-  + rewrite cols_concat_side /= 1:/# size_concat /=. smt().
-  + rewrite rows_concat_side /=; smt(). 
+  + rewrite cols_catmc /= 1:/# size_catv /=. smt().
+  + rewrite rows_catmc /=; smt(). 
   rewrite -size_e mulmx1v mulmxv_cat;  1..3: smt().
   rewrite colmxN colmxc oppvN.  
   rewrite addvC -subr_eq oppvK. 
@@ -470,9 +472,9 @@ split => [|? c_dC]; last split.
   rewrite normv_z /= 1!inf_normv_vectc.
   have -> /= : cnorm c < gamma2 by smt(cnorm_dC ge2_gamma2).
   right. rewrite /e inf_normvN. smt(inf_normv_low ge2_gamma2).
-- rewrite catvA get_catv_r ?size_concat 1:/#. 
+- rewrite catvA get_catv_r ?size_catv 1:/#. 
   have -> : k + (l + 1) - 1 - (size e + size z) = 0 by smt().
-  by rewrite vectcE.
+  by rewrite get_vectc.
 qed.
 
 lemma KOA_bound &m : 
