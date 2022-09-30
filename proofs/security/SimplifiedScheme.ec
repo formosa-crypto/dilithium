@@ -34,13 +34,7 @@ op l1_norm : Rq -> int.           (* sum over absolute values                   
 ComRing structure on high or use lists rather than vectors to pass
 [w1] around *)
 
-type high.                        (* type of "rounded" elements *)
-
-op lowBits  : Rq -> int -> Rq.    (* "low-order"  bits *)
-op highBits : Rq -> int -> high.  (* "high-order" bits *)
-op shift    : high -> int -> Rq.  (* adding zeros      *)
-
-op [lossless full uniform] dRq : Rq distr. (* TOTHINK: add full? *)
+op [lossless full uniform] dRq : Rq distr. 
 
 lemma dRq_funi : is_funiform dRq by smt(dRq_fu dRq_uni).
 
@@ -50,23 +44,43 @@ axiom supp_dRq x a : x \in dRq_ a <=> cnorm x <= a.
 op [lossless uniform] dC  : int -> Rq distr.
 axiom supp_dC c a : c \in dC a <=> cnorm c <= 1 /\ l1_norm c = a.
 
-axiom high_lowP x a : shift (highBits x a) a + lowBits x a = x.
-
-axiom hide_low r s a b : 
-  !odd a => cnorm s <= b => cnorm (lowBits s a) < a %/ 2 - b =>
-  highBits (r + s) = highBits r.
-
-axiom lowbit_small r a :
-  cnorm (lowBits r a) <= a %/ 2. (* TOTHINK: +1 ? *)
-
-axiom shift_inj a : injective (fun h => shift h a). 
-
 axiom cnormN (r : Rq) : cnorm (-r) = cnorm r.
 
+abstract theory HighLow.
+op alpha : int.            (* modulus for high/low-bits operations *)
+
+type high.                 (* type of "rounded" elements *)
+
+op lowBits  : Rq -> Rq.    (* "low-order"  bits *)
+op highBits : Rq -> high.  (* "high-order" bits *)
+op shift    : high -> Rq.  (* adding zeros      *)
+
+axiom high_lowP x : shift (highBits x) + lowBits x = x.
+
+axiom hide_low r s b : 
+  cnorm s <= b => cnorm (lowBits s) < alpha %/ 2 - b =>
+  highBits (r + s) = highBits r.
+
+axiom lowbit_small r :
+  cnorm (lowBits r) <= alpha %/ 2. (* TOTHINK: +1 ? *)
+
+axiom shift_inj : injective shift. 
+
+end HighLow.
 end DRing.
+
+(* Rounding stuff *)
+op gamma1 : int.
+op gamma2 : { int | 2 <= gamma2 } as ge2_gamma2.
+(* beta in spec.
+ * beta is again a reserved keyword in EC. *)
+op b : int.
 
 clone import DRing as DR. 
 import RqRing.
+clone import HighLow as HL2 with 
+  op alpha <- 2*gamma2.
+
 
 clone import MatPlus as MatRq 
   with theory ZR <= DR.RqRing.
@@ -75,20 +89,18 @@ clone import MatPlus as MatRq
 op mapv (f : Rq -> Rq) (v : vector) : vector = 
   offunv (fun i => f v.[i], size v).
 
-op shiftV (w1 : high list) (a : int) = 
-  oflist (map (fun x => shift x a) w1).
+op shiftV (w1 : high list) = oflist (map (fun x => shift x) w1).
 
-lemma size_shiftV (w1 : high list) (a : int) :  
-  size (shiftV w1 a) = size w1.
+lemma size_shiftV (w1 : high list) : size (shiftV w1) = size w1.
 proof. by rewrite size_oflist size_map. qed.
 
-lemma shiftV_inj a : injective (fun v => shiftV v a). 
+lemma shiftV_inj : injective shiftV. 
 admitted.
 
 lemma size_mapv f v : size (mapv f v) = size v by [].
 
-op lowBitsV v a = mapv (fun x => lowBits x a) v.
-op highBitsV v a = map (fun s => highBits s a) (tolist v).
+op lowBitsV v = mapv lowBits v.
+op highBitsV v = map highBits (tolist v).
 
 clone import MatRq.NormV as INormV with 
   type a <- nat,
@@ -98,7 +110,7 @@ clone import MatRq.NormV as INormV with
 
 op inf_normv = ofnat \o INormV.normv.
 
-lemma high_lowPv x a : shiftV (highBitsV x a) a + lowBitsV x a = x.
+lemma high_lowPv x : shiftV (highBitsV x) + lowBitsV x = x.
 admitted.
 
 lemma inf_normv_cat (v1 v2 : vector) : 
@@ -108,7 +120,7 @@ admitted.
 lemma inf_normvN (v : vector) : inf_normv (-v) = inf_normv v.
 admitted.
 
-lemma inf_normv_low v a : inf_normv (lowBitsV v a) <= a %/ a.
+lemma inf_normv_low v : inf_normv (lowBitsV v) <= gamma2.
 admitted.
 
 lemma inf_normv_vectc n c : 
@@ -126,12 +138,6 @@ type M.
  * Typically "eta" but that's a reserved keyword in EC. *)
 op e : int.
 
-(* Rounding stuff *)
-op gamma1 : int.
-op gamma2 : { int | 2 <= gamma2 } as ge2_gamma2.
-(* beta in spec.
- * beta is again a reserved keyword in EC. *)
-op b : int.
 
 (* challenge weight *)
 op tau : int.
@@ -189,7 +195,7 @@ clone import FSabort as OpFSA with
 
 op recover (pk : PK) (c : challenge_t) (z : response_t) : commit_t =
   let (mA, t) = pk in
-  highBitsV (mA *^ z - c ** t) (2 * gamma2).
+  highBitsV (mA *^ z - c ** t).
 
 clone import CommRecov as FSaCR with
   op recover <= recover,
@@ -225,11 +231,11 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
     while(ctr < kappa /\ z = None) {
       y <$ dvector (dRq_ (gamma1 - 1)) l;
       w <- mA *^ y;
-      w1 <- highBitsV w (2 * gamma2);
+      w1 <- highBitsV w;
       c <@ H.get((w1, m));
       z <- Some (y + c ** s1);
       if(gamma1 - b <= inf_normv (oget z) \/
-         gamma2 - b <= inf_normv (lowBitsV (mA *^ y - c ** s2) (2 * gamma2))) {
+         gamma2 - b <= inf_normv (lowBitsV (mA *^ y - c ** s2))) {
         z <- None;
       }
       ctr <- ctr + 1;
@@ -245,7 +251,7 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
     result <- false;
     if(sig <> None) {
       (c, z) <- oget sig;
-      w <- highBitsV (mA *^ z - c ** t1) (2 * gamma2);
+      w <- highBitsV (mA *^ z - c ** t1);
       c' <@ H.get((w, m));
       result <- size z = l /\ inf_normv z < gamma1 - b /\ c = c';
     }
@@ -271,7 +277,7 @@ clone import SelfTargetMSIS as RqStMSIS with
   op dR <- dRq,
   op dC <- dC,
   op inf_norm <- inf_normv,
-  op gamma <- max (gamma1 - b) gamma2.
+  op gamma <- max (gamma1 - b) (gamma2+1).
 
 module H = DSS.PRO.RO.
 module G = RqStMSIS.PRO.RO.
@@ -292,7 +298,7 @@ module H' : Hash_i = {
 
   proc get(w1,mu) = {
     var r;
-    r <@ G.get(shiftV w1 (2 * gamma2),mu);
+    r <@ G.get(shiftV w1,mu);
     return r;
   }
 }.
@@ -308,7 +314,7 @@ module RedMSIS (A : Adv_EFKOA_RO) (H : RqStMSIS.PRO.RO) = {
     if (sig <> None) {
       (c,z) <- oget sig;
       w <- (mA *^ z - c ** t);
-      e <- -lowBitsV w (2 * gamma2);
+      e <- -lowBitsV w;
       y <- e || z || vectc 1 c;
     }
     return (y,mu);
@@ -364,9 +370,9 @@ byequiv (_ : ={glob A} ==> ={res}) => //; proc.
 inline{1} 2; inline{2} 2. 
 seq 3 3 : (={m,sig,pk} /\ 
            forall (w : commit_t) (mu : M), 
-             H.m.[(w,mu)]{1} = G.m.[(shiftV w (2 * gamma2),mu)]{2}). 
+             H.m.[(w,mu)]{1} = G.m.[(shiftV w,mu)]{2}). 
 - call (:forall (w : commit_t) (mu : M), 
-         H.m.[(w,mu)]{1} = G.m.[(shiftV w (2 * gamma2),mu)]{2}).
+         H.m.[(w,mu)]{1} = G.m.[(shiftV w,mu)]{2}).
   + proc; inline*; sp. 
     seq 1 1 : (#pre /\ r{1} = r0{2}); first by auto.
     if; 1,3: by auto => /> /#.
@@ -376,15 +382,15 @@ inline*; wp. sp. if; 1,3: by auto.
 sp 3 4; seq 1 1 : (#pre /\ r0{1} = r1{2}); first by auto.
 if; 2,3: by auto => />; smt(get_set_sameE). (* uff ... *)
 move => /> &1 &2. case: (sig{2}) => // -[c z] /> Hshift.
-pose w1 := highBitsV _ _. smt().
+pose w1 := highBitsV _. smt().
 qed.
 
 import StdOrder.RealOrder.
 
 (* BEGIN MOVE ELSEWHERE *)
 
-lemma size_lowBitsV (v : vector) a : size (lowBitsV v a) = size v by [].
-lemma size_highBitsV (v : vector) a : size (highBitsV v a) = size v.
+lemma size_lowBitsV (v : vector) : size (lowBitsV v) = size v by [].
+lemma size_highBitsV (v : vector) : size (highBitsV v) = size v.
 proof. by rewrite /highBitsV size_map size_tolist. qed.
 
 
@@ -458,8 +464,8 @@ move => />. case. move => /> _. (* why is case needed? *)
 (* recover names / definitions *)
 move: (mA0{2}) (t{2}) (z{1}) (c{1}) => A t z c.
 pose w := (_ - MatRq.(**) _ _). (* FIXME: why is XInt.(**) in scope? *)
-pose w1 := highBitsV _ _. 
-pose e := - lowBitsV _ _.
+pose w1 := highBitsV _. 
+pose e := - lowBitsV _.
 move => r_mA c_mA size_t size_z normv_z. 
 have size_w : size w = k. rewrite size_addv /= size_scalarv /= rows_mulmx /= /#.
 have size_e : size e = k by rewrite size_oppv size_lowBitsV.
@@ -474,7 +480,7 @@ split => [|? c_dC]; last split.
   by rewrite /w1 /e oppvK high_lowPv. 
 - rewrite 2!inf_normv_cat !StdOrder.IntOrder.ltr_maxrP !max_ltrP.
   rewrite normv_z /= 1!inf_normv_vectc.
-  have -> /= : cnorm c < gamma2 by smt(cnorm_dC ge2_gamma2).
+  have -> /= : cnorm c < gamma2+1 by smt(cnorm_dC ge2_gamma2).
   right. rewrite /e inf_normvN. smt(inf_normv_low ge2_gamma2).
 - rewrite catvA get_catv_r ?size_catv 1:/#. 
   have -> : k + (l + 1) - 1 - (size e + size z) = 0 by smt().
@@ -506,14 +512,14 @@ op keygen : (PK * SK) distr =
 op commit (sk : SK) : (commit_t * pstate_t) distr =
   let (mA, s1, s2) = sk in
   dmap (dvector (dRq_ (gamma1 - 1)) l) (fun y =>
-  let w1 = highBitsV (mA *^ y) (2 * gamma2) in
+  let w1 = highBitsV (mA *^ y) in
   (w1, y)).
 
 op respond (sk : SK) (c : challenge_t) (y: pstate_t) : response_t option =
   let (mA, s1, s2) = sk in
   let z = y + c ** s1 in
   if gamma1 - b <= inf_normv z \/
-     gamma2 - b <= inf_normv (lowBitsV (mA *^ y - c ** s2) (2 * gamma2)) then
+     gamma2 - b <= inf_normv (lowBitsV (mA *^ y - c ** s2) ) then
     None else
     Some z.
 
@@ -521,7 +527,7 @@ op verify (pk : PK) (w1 : commit_t) (c : challenge_t) (z : response_t) : bool =
   let (mA, t) = pk in
   size z = l /\ 
   inf_normv z < gamma1 - b /\
-  w1 = highBitsV (mA *^ z - c ** t) (2 * gamma2).
+  w1 = highBitsV (mA *^ z - c ** t).
 
 clone import OpBased with
   op keygen <= keygen,
