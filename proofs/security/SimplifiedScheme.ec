@@ -419,7 +419,7 @@ seq 6 7 : (={sig,PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in
         (fun mAt : matrix => (subm mAt 0 k 0 l,- col mAt l)) : *0 *0.
     skip => /= &1 &2 _. split => [A|?]; last split => [A|?].
     * rewrite dmap_id => /size_dmatrix /(_ _ _) /=; 1,2: smt(Top.gt0_k Top.gt0_l).
-      rewrite colmxN oppvK => -[<-]. exact subm_colmx. 
+      rewrite colmxN oppvK => -[<-]. apply subm_colmx; smt(Top.gt0_k Top.gt0_l).
     * rewrite -(dmap_dprodE _ _ (fun x => x)) !dmap_id.
       rewrite dprod1E (@dvector_rnd_funi _ _ (col A l)) ?dRq_funi // -dprod1E.
       move/size_dmatrix => /(_ _ _); 1,2: smt(Top.gt0_k Top.gt0_l).
@@ -432,7 +432,7 @@ seq 6 7 : (={sig,PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in
     rewrite r_A c_A s_t /= -{2}r_A -{2}c_A subm_catmcCl /= 1:/#.
     rewrite col_catmcR /= ?r_A ?c_A ?s_t // subrr. 
     rewrite colN oppmK colK /=; apply supp_dmatrix_catmc => //;1,2: smt(Top.gt0_k Top.gt0_l).
-    by rewrite supp_dmatrix_full ?dRq_fu.    
+    rewrite supp_dmatrix_full ?dRq_fu //; smt(Top.gt0_k Top.gt0_l). 
   call (: ={PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in dC){1}).
     proc; inline*; auto => />; smt(get_setE get_set_sameE).
   auto => /> &1 &2 RO_dC r_mA c_mA s_t. split => [|E1 E2]. 
@@ -457,7 +457,7 @@ pose w := (_ - MatRq.(**) _ _). (* FIXME: why is XInt.(**) in scope? *)
 pose w1 := highBitsV _ _. 
 pose e := - lowBitsV _ _.
 move => r_mA c_mA size_t size_z normv_z. 
-have size_w : size w = k by rewrite size_addv size_mulmxv ?size_oppv ?size_mulvs /#. 
+have size_w : size w = k. rewrite size_addv /= size_scalarv /= rows_mulmx /= /#.
 have size_e : size e = k by rewrite size_oppv size_lowBitsV.
 split => [|? c_dC]; last split.
 - rewrite mulmxv_cat.
@@ -465,9 +465,9 @@ split => [|? c_dC]; last split.
   + rewrite cols_catmc /= 1:/# size_catv /=. smt().
   + rewrite rows_catmc /=; smt(). 
   rewrite -size_e mulmx1v mulmxv_cat;  1..3: smt().
-  rewrite colmxN colmxc oppvN.  
-  rewrite addvC -subr_eq oppvK. 
-  by rewrite /w1 high_lowPv. 
+  rewrite colmxN colmxc scalarvN.  
+  rewrite addvC -subv_eq //. 
+  by rewrite /w1 /e oppvK high_lowPv. 
 - rewrite 2!inf_normv_cat !StdOrder.IntOrder.ltr_maxrP !max_ltrP.
   rewrite normv_z /= 1!inf_normv_vectc.
   have -> /= : cnorm c < gamma2 by smt(cnorm_dC ge2_gamma2).

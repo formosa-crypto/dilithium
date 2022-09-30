@@ -21,14 +21,6 @@ rewrite -(nth_index x _ _ x_v) nth_tolist.
 by rewrite supp_v index_ge0 -s_v -size_tolist index_mem.
 qed.
 
-lemma supp_dmatrix d m r c : 
-  0 <= r => 0 <= c => 
-  (m \in dmatrix d r c) <=> 
-  size m = (r,c) /\ forall i j, mrange m i j => m.[i,j] \in d.
-proof.
-move => r_ge0 c_ge0. 
-abort.
-
 
 lemma tolist_catv (v1 v2 : vector) : 
   tolist (v1 || v2) = (tolist v1) ++ (tolist v2).
@@ -62,30 +54,30 @@ move => v1 v2 v3; have <- := tolistK (v1 || v2 || v3).
 by rewrite !tolist_catv catA -!tolist_catv tolistK.
 qed.
 
-lemma subr_eq (x y z : vector) : x - z = y <=> x = y + z.
-admitted.
+lemma subv_eq (x y z : vector) : 
+  size x = size z => size y = size z => 
+  x - z = y <=> x = y + z.
+proof. smt(addvA addvC addvN addv0). qed.
 
 lemma offunvN (f : int -> R) k : - offunv (f, k) = offunv (fun x => - f x, k).
 proof. by apply eq_vectorP => //= i Hi; rewrite !get_offunv /#. qed.
+
+lemma offunmN (f : int -> int -> R) r c : 
+  - offunm (f, r, c) = offunm (fun i j => - f i j, r, c).
+proof. by apply eq_matrixP => //= i j Hi; rewrite !get_offunm /#. qed.
  
 lemma colN (m : matrix) i : - (col m i) = col (-m) i. 
-proof. rewrite /col /=. exact offunvN. qed.
+proof. by rewrite /col offunvN. qed.
 
 lemma colmxN (v : vector) : - (colmx v) = colmx (-v).
-admitted.
+proof. by rewrite /colmx /= offunmN. qed.
 
 lemma subm_colmx (A : matrix) l : 
-  cols A = l + 1 => A = (subm A 0 (rows A) 0 l || colmx (col A l)).
-admitted.
-
-lemma supp_dmatrix_full m d r c : is_full d => 
-  is_full d => m \in dmatrix d r c <=> size m = (r,c).
-admitted.
-
-lemma dvector_rnd_funi (d : R distr) (v1 v2 : vector) l :
-  is_funiform d => size v1 = size v2 => 
-  mu1 (dvector d l) v1 = mu1 (dvector d l) v2.
-admitted.
+  0 <= l => cols A = l + 1 => 
+  A = (subm A 0 (rows A) 0 l || colmx (col A l)).
+proof.
+by move => l_ge0 c_A; rewrite colmx_col_eq_subm -c_A catmc_subm /#.
+qed.
 
 lemma dmatrix1r d k : 0 <= k => 
   dmatrix d k 1 = dmap (dvector d k) colmx. 
@@ -118,6 +110,38 @@ case (j < size vs1) => j_vs1.
   by rewrite addr0.
 - rewrite offunm0E. smt(List.size_ge0). rewrite get_offunm. smt(List.size_ge0). 
   by rewrite /= s_vs1 add0r.
+qed.
+
+lemma gt0_prodr_seq (P : 'a -> bool) (F : 'a -> real) (s : 'a list) : 
+  (forall (a : 'a), a \in s => P a => 0%r <= F a) => 
+  0%r < BRM.big P F s => 
+  (forall (a : 'a), a \in s => P a => 0%r < F a).
+proof.
+elim: s => // x s IHs F_ge0; rewrite BRM.big_cons. 
+have {IHs} IHs := IHs _; first by smt().
+case: (P x) => [Px F_big_gt0 a [->|a_s] Pa | nPx /IHs]; smt().
+qed.
+
+lemma supp_dmatrix d m r c : 
+  0 <= r => 0 <= c => 
+  (m \in dmatrix d r c) <=> 
+  size m = (r,c) /\ forall i j, mrange m i j => m.[i,j] \in d.
+proof.
+move => r_ge0 c_ge0; split => [m_supp|]; last first.
+- case => -[r_m c_m] m_d; rewrite /support -r_m -c_m dmatrix1E.
+  apply prodr_gt0_seq => i i_row _ /=.
+  by apply prodr_gt0_seq => j j_col _ /=; apply m_d; smt(mem_iota).
+have [r_m c_m] : size m = (r,c) by smt(size_dmatrix). 
+split => [//|i j range_ij]; move: m_supp. 
+rewrite -r_m -c_m /support dmatrix1E => gt0_big.
+pose G i0 := (fun (j0 : int) => mu1 d m.[i0, j0]).
+pose F := fun i0 : int => BRM.bigi predT (G i0) 0 (cols m).
+have /(_ i _ _) := gt0_prodr_seq predT F (range 0 (rows m)) _ gt0_big => //.
+- by move => a _ _; apply prodr_ge0.
+- smt(mem_iota).
+move => gt0_F.
+have /(_ j _ _) := gt0_prodr_seq predT (G i) (range 0 (cols m)) _ gt0_F => //.
+smt(mem_iota). 
 qed.
 
 lemma dmatrix_add_r d k l1 l2 : 0 <= k => 0 <= l1 => 0 <= l2 =>
@@ -162,6 +186,20 @@ rewrite -r_B -c_B subm_catmcCl /= 1:/#.
 by rewrite col_catmcR //= /#.
 qed.
 
+lemma supp_dmatrix_full m d r c : 
+  0 <= r => 0 <= c =>
+  is_full d => m \in dmatrix d r c <=> size m = (r,c).
+proof. smt(supp_dmatrix). qed.
+
+lemma dvector_rnd_funi (d : R distr) (v1 v2 : vector) l :
+  is_funiform d => size v1 = size v2 => 
+  mu1 (dvector d l) v1 = mu1 (dvector d l) v2.
+proof. 
+move=> d_funi s_v1_v2; case (l = size v1) => [->|?]. 
+- by rewrite mu1_dvector_fu // s_v1_v2 mu1_dvector_fu.
+smt(get_dvector0E emptyv_unique).
+qed.
+
 lemma supp_dmatrix_catmc d (m1 m2 : matrix) r c1 c2 : 
   0 <= r => 0 <= c1 => 0 <= c2 =>
   m1 \in dmatrix d r c1 => m2 \in dmatrix d r c2 => 
@@ -176,14 +214,24 @@ apply (StdOrder.RealOrder.ltr_le_trans
 - by apply mu_le => /#.
 qed.
 
-op (**) (c : R) (v : vector) = mulvs v c.
+op scalarv a (v : vector) = offunv (fun i => a * v.[i], size v).
+abbrev (**) = scalarv.
 
-lemma oppvN c (v : vector) : c ** -v = - (c ** v).
-admitted.
+(* op (**) (c : R) (v : vector) = mulvs v c. *)
 
-lemma oppNv (c : R) (v : vector) : (- c) ** v = - (c ** v).
-admitted.
+lemma size_scalarv a v : size (a ** v) = size v by [].
 
+lemma scalarvN a (v : vector) : a ** -v = - (a ** v).
+proof. 
+rewrite /scalarv offunvN /=; do ! congr.
+apply/fun_ext => i; by rewrite mulrN.
+qed.
+
+lemma scalarNv (a : R) (v : vector) : (-a) ** v = - (a ** v).
+proof.
+rewrite /scalarv offunvN /=; do ! congr.
+apply/fun_ext => i; by rewrite mulNr.
+qed.
 
 (* TOTHINK: this proof seems very low-level *)
 lemma colmxc v c : (colmx v) *^ vectc 1 c = c ** v. 
