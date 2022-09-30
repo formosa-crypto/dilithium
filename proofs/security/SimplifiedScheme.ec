@@ -34,8 +34,7 @@ op l1_norm : Rq -> int.           (* sum over absolute values                   
 ComRing structure on high or use lists rather than vectors to pass
 [w1] around *)
 
-
-type high = Rq.                   (* type of "rounded" elements *)
+type high.                        (* type of "rounded" elements *)
 
 op lowBits  : Rq -> int -> Rq.    (* "low-order"  bits *)
 op highBits : Rq -> int -> high.  (* "high-order" bits *)
@@ -76,8 +75,12 @@ clone import MatPlus as MatRq
 op mapv (f : Rq -> Rq) (v : vector) : vector = 
   offunv (fun i => f v.[i], size v).
 
-op shiftV (w1 : vector) (a : int) = 
-  mapv (fun x => shift x a) w1.
+op shiftV (w1 : high list) (a : int) = 
+  oflist (map (fun x => shift x a) w1).
+
+lemma size_shiftV (w1 : high list) (a : int) :  
+  size (shiftV w1 a) = size w1.
+proof. by rewrite size_oflist size_map. qed.
 
 lemma shiftV_inj a : injective (fun v => shiftV v a). 
 admitted.
@@ -85,7 +88,7 @@ admitted.
 lemma size_mapv f v : size (mapv f v) = size v by [].
 
 op lowBitsV v a = mapv (fun x => lowBits x a) v.
-op highBitsV v a = mapv (fun x => highBits x a) v.
+op highBitsV v a = map (fun s => highBits s a) (tolist v).
 
 clone import MatRq.NormV as INormV with 
   type a <- nat,
@@ -143,7 +146,7 @@ op l : {int | 0 < l} as gt0_l.
 type challenge_t = Rq.
 type SK = matrix * vector * vector.
 type PK = matrix * vector.
-type commit_t = vector. (* should be "high list" ? *) 
+type commit_t = high list.
 type response_t = vector. 
 
 op dC : challenge_t distr = dC tau. 
@@ -294,7 +297,7 @@ module H' : Hash_i = {
   }
 }.
 
-module RedMSIS (A : Adv_EFKOA_RO) (H : Hash) = { 
+module RedMSIS (A : Adv_EFKOA_RO) (H : RqStMSIS.PRO.RO) = { 
   proc guess(mB : matrix) : vector * M = { 
     var mA,tbar,t,mu,sig,c,z,w,e,y;
     mA <- subm mB 0 k 0 l;
@@ -381,7 +384,8 @@ import StdOrder.RealOrder.
 (* BEGIN MOVE ELSEWHERE *)
 
 lemma size_lowBitsV (v : vector) a : size (lowBitsV v a) = size v by [].
-lemma size_highBitsV (v : vector) a : size (highBitsV v a) = size v by [].
+lemma size_highBitsV (v : vector) a : size (highBitsV v a) = size v.
+proof. by rewrite /highBitsV size_map size_tolist. qed.
 
 
 lemma max_ltrP (i j k : int) : i < max j k <=> i < j \/ i < k by smt().
@@ -466,7 +470,7 @@ split => [|? c_dC]; last split.
   + rewrite rows_catmc /=; smt(). 
   rewrite -size_e mulmx1v mulmxv_cat;  1..3: smt().
   rewrite colmxN colmxc scalarvN.  
-  rewrite addvC -subv_eq //. 
+  rewrite addvC -subv_eq 2://; 1: by rewrite size_shiftV size_highBitsV /#.
   by rewrite /w1 /e oppvK high_lowPv. 
 - rewrite 2!inf_normv_cat !StdOrder.IntOrder.ltr_maxrP !max_ltrP.
   rewrite normv_z /= 1!inf_normv_vectc.
