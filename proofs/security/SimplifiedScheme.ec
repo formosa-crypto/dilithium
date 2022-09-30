@@ -12,62 +12,24 @@ require FSabort.
 require FSa_CMAtoKOA.
 require FSa_CRtoGen.
 
-require MLWE SelfTargetMSIS. 
+require DRing MLWE SelfTargetMSIS. 
 
-abstract theory DRing.
 
-(* Modulo *)
-op q : {int | prime q} as prime_q. 
+(* Dilithium-specific parameters *)
 
-(* Poly degrees *)
-op n : {int | 0 < n} as gt0_n.
+(* secret key range.
+ * Typically "eta" but that's a reserved keyword in EC. *)
+op e : int.
 
-(* Polynomial ring ℤq[X]/(X^n +1 ) *)
-type Rq.
+(* challenge weight *)
+op tau : int.
 
-clone import Ring.ComRing as RqRing with type t <= Rq.
+(* upper bound on number of itertions. *)
+op kappa : int.
 
-op cnorm : Rq -> int.             (* infinity norm (after centered reduction modulo) *)
-op l1_norm : Rq -> int.           (* sum over absolute values                        *)
-
-(* TOTHINK: If [high = Rq] is a problem, we either need to have a
-ComRing structure on high or use lists rather than vectors to pass
-[w1] around *)
-
-op [lossless full uniform] dRq : Rq distr. 
-
-lemma dRq_funi : is_funiform dRq by smt(dRq_fu dRq_uni).
-
-op [lossless uniform] dRq_ : int -> Rq distr.
-axiom supp_dRq x a : x \in dRq_ a <=> cnorm x <= a.
-
-op [lossless uniform] dC  : int -> Rq distr.
-axiom supp_dC c a : c \in dC a <=> cnorm c <= 1 /\ l1_norm c = a.
-
-axiom cnormN (r : Rq) : cnorm (-r) = cnorm r.
-
-abstract theory HighLow.
-op alpha : int.            (* modulus for high/low-bits operations *)
-
-type high.                 (* type of "rounded" elements *)
-
-op lowBits  : Rq -> Rq.    (* "low-order"  bits *)
-op highBits : Rq -> high.  (* "high-order" bits *)
-op shift    : high -> Rq.  (* adding zeros      *)
-
-axiom high_lowP x : shift (highBits x) + lowBits x = x.
-
-axiom hide_low r s b : 
-  cnorm s <= b => cnorm (lowBits s) < alpha %/ 2 - b =>
-  highBits (r + s) = highBits r.
-
-axiom lowbit_small r :
-  cnorm (lowBits r) <= alpha %/ 2. (* TOTHINK: +1 ? *)
-
-axiom shift_inj : injective shift. 
-
-end HighLow.
-end DRing.
+(* matrix dimensions *)
+op k : {int | 0 < k} as gt0_k.
+op l : {int | 0 < l} as gt0_l.
 
 (* Rounding stuff *)
 op gamma1 : int.
@@ -80,7 +42,6 @@ clone import DRing as DR.
 import RqRing.
 clone import HighLow as HL2 with 
   op alpha <- 2*gamma2.
-
 
 clone import MatPlus as MatRq 
   with theory ZR <= DR.RqRing.
@@ -132,22 +93,6 @@ admitted.
 
 type M.
 
-(* Dilithium-specific parameters *)
-
-(* secret key range.
- * Typically "eta" but that's a reserved keyword in EC. *)
-op e : int.
-
-
-(* challenge weight *)
-op tau : int.
-
-(* upper bound on number of itertions. *)
-op kappa : int.
-
-(* matrix dimensions *)
-op k : {int | 0 < k} as gt0_k.
-op l : {int | 0 < l} as gt0_l.
 
 type challenge_t = Rq.
 type SK = matrix * vector * vector.
