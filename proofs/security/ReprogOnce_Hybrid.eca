@@ -114,7 +114,7 @@ module Count (O: Oracle_i) : Oracle = {
   var countS : int
   var countH : int
 
-  proc init = O.init
+  proc init = O.init 
 
   proc h(w: W, m : M) : C = {
     var y;
@@ -127,6 +127,36 @@ module Count (O: Oracle_i) : Oracle = {
     var y;
     countS <- countS + 1;
     y <@ O.sign(x);
+    return y;
+  }
+}.
+
+module CountBound (O: Oracle_i) : Oracle = {
+  import var Count
+
+  proc init (sk : SK) = {
+    O.init(sk);
+    countS <- 0;
+    countH <- 0;
+  }
+  
+  proc h(w : W, m : M) : C = {
+    var y;
+    y <- witness;
+    if (countH < qh) { 
+      y <@ O.h((w, m));
+      countH <- countH + 1;
+    }
+    return y;
+  }
+
+  proc sign(x) = {
+    var y;
+    y <- witness;
+    if (countS < qs) { 
+      y <@ O.sign(x);
+      countS <- countS + 1;
+    }
     return y;
   }
 }.
@@ -198,6 +228,20 @@ module Game (Adv: Adversary) (O: Oracle_i) = {
     return b;
   }
 }.
+
+module GameI (Adv: Adversary) (O: Oracle_i) = {
+  proc main() = {
+    var b, pk, sk;
+    (pk, sk) <$ keygen;
+    RO.init();
+    O.init(sk);
+    Count.countS <- 0;
+    Count.countH <- 0;
+    b <@ Adv(O).distinguish(pk);
+    return b;
+  }
+}.
+
 
 (* This lemma should be moved to EC *)
 lemma hybrid_sum (f: int -> real) (m n:int) : m <= n =>
@@ -274,9 +318,12 @@ module Oi : Oracle_i_i = {
 
   proc h(w : W, m : M) : C = { 
     var y;
-    y <@ RO.get((w, m));
-    countH <- countH + 1;
-    logh <- w::logh;
+    y <- witness;
+    if (countH < qh) {
+      y <@ RO.get((w, m));
+      countH <- countH + 1;
+      logh <- w::logh;
+    }
     return y;
   }
 
@@ -319,9 +366,12 @@ module Oi : Oracle_i_i = {
 
   proc sign(m : M) = {
     var r;
-    if (countS < i_) r <@ sign_l(m);
-    else r <@ sign_r(m);
-    countS <- countS + 1;
+    r <- witness;
+    if (countS < qs) {
+      if (countS < i_) r <@ sign_l(m);
+      else r <@ sign_r(m);
+      countS <- countS + 1;
+    }
     return r;
   }
 
@@ -389,10 +439,13 @@ module Oij : Oracle_i_ij = {
   
   proc sign(m:M) = {
     var r;
-    if (countS < i_) r <@ sign_l(m);
-    else { if (i_ = countS) r <@ sign_i(m);
-    else r <@ sign_r(m); }
-    countS <- countS + 1;
+    r <- witness;
+    if (countS < qs) {
+      if (countS < i_) r <@ sign_l(m);
+      else { if (i_ = countS) r <@ sign_i(m);
+      else r <@ sign_r(m); }
+      countS <- countS + 1;
+    }
     return r;
   }
 
@@ -433,22 +486,82 @@ declare axiom A_bound : forall (O <: Oracle_i{-Adv, -Count}),
   hoare [ Adv(Count(O)).distinguish : Count.countS = 0 /\ Count.countH = 0 ==> 
                                       Count.countS <= qs /\ Count.countH <= qh ].
 
+section C.
+
+declare module O <: Oracle_i{-Adv, -Count}.
+
+declare axiom Oh_ll : islossless O.h.
+declare axiom Os_ll : islossless O.sign.
+
+equiv Count_CountBound: 
+  Adv(Count(O)).distinguish ~ Adv(CountBound(O)).distinguish : 
+  ={arg} /\ ={glob Adv, glob Count, glob O} /\ Count.countS{1} = 0 /\ Count.countH{1} = 0 ==>
+  ={res}.
+proof.
+  symmetry.
+  conseq (: !(qs < Count.countS \/ qh < Count.countH){2} => ={arg, glob Adv, glob Count, glob O} ==>
+            !(qs < Count.countS \/ qh < Count.countH){2} => ={res}) 
+         _ ( A_bound O) => />; 1: smt(). 
+  proc *.
+  call (: qs < Count.countS \/ qh < Count.countH, ={glob Count, glob O}).
+  + apply A_ll.
+  + proc; sp 1 0; if{1}; 1: by wp; call(: true); auto.
+    by call{2} Oh_ll; auto => /#.
+  + by move=> *; islossless; apply Oh_ll.
+  + by move=> _; proc; call Oh_ll; auto => /#.
+  + proc; sp 1 0; if{1}; 1: by wp; call(: true); auto.
+    by call{2} Os_ll; auto => /#.
+  + by move=> *; islossless; apply Os_ll.
+  + by move=> _; proc; call Os_ll; auto => /#.
+  auto => /#.
+qed.
+
+lemma Pr_Count_CountBound &m : 
+  Pr[Game(Adv, Count(O)).main() @ &m : res] =
+  Pr[Game(Adv, CountBound(O)).main() @ &m : res].
+proof.
+  have -> : Pr[Game(Adv, Count(O)).main() @ &m : res] = Pr[GameI(Adv, Count(O)).main() @ &m : res].
+  + byequiv => //; sim.
+  byequiv => //; proc; call Count_CountBound. inline *; auto; sim />.
+qed.
+
+end section C.
+
 local lemma Gleft_Hi &m : 
   Pr[Game(Adv, Count(OLeft)).main() @ &m : res] = 
   Pr[Hi(Adv, Oi).main(qs) @ &m : res].
 proof.
-  admit.
+  have -> := Pr_Count_CountBound OLeft.
+  + islossless. 
+  + islossless. 
+    while true (kappa - i).
+    + move=> z; wp; conseq (:true); 1: smt(); islossless.
+    by auto => /#.
+  byequiv => //; proc.
+  call (: ={RO.m} /\ OLeft.sk{1} = Oi.sk{2} /\ Oi.i_{2} = qs /\ 
+          Count.countS{1} = Oi.countS{2} /\ Count.countH{1} = Oi.countH{2}).
+  + by sim />. 
+  + proc; sp; if => //; rcondt{2} ^if; auto; sim />.
+  inline *; auto.
 qed.
-
+  
 local lemma Gright_Hi &m : 
   Pr[Game(Adv, Count(ORight)).main() @ &m : res] = 
   Pr[Hi(Adv, Oi).main(0) @ &m : res].
 proof.
+  have -> := Pr_Count_CountBound ORight.
+  + islossless. 
+  + islossless. 
+    while true (kappa - i).
+    + move=> z; wp; conseq (:true); 1: smt(); islossless.
+    by auto => /#.
   byequiv => //; proc. 
-  call (: ={RO.m} /\ OLeft.sk{1} = Oi.sk{2} /\ (Oi.i_ <= Oi.countS){2}).
-  + by sim />.
-  + proc; rcondf{2} ^if; 1: by auto => /#.
-    swap{1} 1; wp; conseq (: y{1} = r{2} /\ OLeft.sk{1} = Oi.sk{2} /\ ={RO.m}); 1: smt().
+  call (: ={RO.m} /\ OLeft.sk{1} = Oi.sk{2} /\ (Oi.i_ <= Oi.countS){2} /\
+          Count.countS{1} = Oi.countS{2} /\ Count.countH{1} = Oi.countH{2}).
+  + sim />.
+  + proc; sp; if => //.
+    rcondf{2} ^if; 1: by auto => /#.
+    wp; conseq (: y{1} = r{2} /\ OLeft.sk{1} = Oi.sk{2} /\ ={RO.m}); 1: smt().
     inline *; wp.
     by while (={w, c, oz} /\ i{1} = j{2} /\ m{1} = m0{2} /\ OLeft.sk{1} = Oi.sk{2} /\
            RO.m{2} = (if oz <> None then RO.m.[(w, m) <- c] else RO.m){1}); auto.
@@ -476,9 +589,9 @@ local lemma Hi_Hij &m :
    Pr[Hij(Adv,Oij).main(i,0) @ &m : res].
 proof.
   byequiv => //; proc.
-  call (: ={Oi.i_, Oi.sk, Oi.countS, RO.m} /\ Oi.j_{2} = 0).
+  call (: ={Oi.i_, Oi.sk, Oi.countS, Oi.countH, RO.m} /\ Oi.j_{2} = 0).
   + by sim />.
-  + proc; wp; if => //; 1: by sim/>.
+  + proc; sp; if => //; wp; if => //; 1: by sim/>.
     if{2}; 2: by sim/>.
     inline Oi.sign_r Oij.sign_i; wp.
     while (={m0, w, c, j, oz, RO.m, Oi.sk} /\ Oi.j_{2} <= j{2}); last by auto.
@@ -492,9 +605,9 @@ local lemma Hi1_Hij &m :
    Pr[Hij(Adv,Oij).main(i,kappa) @ &m : res].
 proof.
   byequiv => //; proc.
-  call (: ={Oi.sk, Oi.countS, RO.m} /\ Oi.i_{1} = Oi.i_{2} + 1 /\ Oi.j_{2} = kappa).
+  call (: ={Oi.sk, Oi.countS, Oi.countH, RO.m} /\ Oi.i_{1} = Oi.i_{2} + 1 /\ Oi.j_{2} = kappa).
   + by sim />.
-  + proc; wp; if{2}.
+  + proc; sp; if => //; wp; if{2}.
     + rcondt{1} ^if; 1: by auto => /#.
       by sim />.
     if{2}; 2: by rcondf{1} ^if; [auto=> /# | sim />].
@@ -516,7 +629,6 @@ qed.
 
 (* We focus on Pr[Pr[Hij(Adv, Oij).main(i,j+1) @ &m : res] - Pr[Hij(Adv, Oij).main(i, j) @ &m : res] *)
 section J.
-
 
 declare op j : int.
 declare axiom j_bounded : 0 <= j < kappa.
@@ -551,14 +663,14 @@ proof.
   call (: (exists w, w \in Oi.logh /\ Oi.wo = Some w),
           (Oi.countS <= Oi.i_ => !Oi.j_end /\ Oi.wo = None){2} /\
           (forall w, w \in Oi.logh => exists m, (w, m) \in RO.m){2} /\
-          ={Oi.countS, Oi.i_, Oi.sk, Oi.logh} /\ Oi.j_{1} = Oi.j_{2} + 1 /\ 0 <= Oi.j_{2} < kappa/\
+          ={Oi.countS, Oi.countH, Oi.i_, Oi.sk, Oi.logh} /\ Oi.j_{1} = Oi.j_{2} + 1 /\ 0 <= Oi.j_{2} < kappa/\
           if Oi.wo{2} = None then ={RO.m}
           else is_update RO.m{1} RO.m{2} (oget Oi.wo{2})).
   + apply A_ll.
-  + proc; inline *; auto => |>; smt(is_update_set get_setE).
+  + by proc; inline *; sp; if => //; auto => |>; smt(is_update_set get_setE).
   + by move=> *; islossless.
-  + by move=> _; proc; inline *; auto => />; smt( dC_ll get_setE).
-  + proc; wp.
+  + by move=> _; proc; inline *; sp; if => //; auto => />; smt( dC_ll get_setE).
+  + proc; sp; if => //; wp.
     if => //.
     + conseq (: _ ==> ={RO.m, r} /\ (forall w, w \in Oi.logh => exists m, (w, m) \in RO.m){2}); 1: smt().
       inline *; wp.
@@ -592,7 +704,8 @@ proof.
     conseq Oij_sign_ll 
       (:(exists (w : W), (w \in Oi.logh) /\ Oi.wo = Some w) ==> 
         (exists (w : W), (w \in Oi.logh) /\ Oi.wo = Some w)) => //; 1: smt(). 
-    proc; inline *; wp; if.
+    proc; sp; if => //; 2: by auto => />.
+    inline *; wp; if.
     + wp; while (exists (w4 : W), (w4 \in Oi.logh) /\ Oi.wo = Some w4); auto; smt(get_setE).
     if; wp; while (exists (w4 : W), (w4 \in Oi.logh) /\ Oi.wo = Some w4); auto; 2..4: smt(get_setE).
     if; 1: by auto; smt(get_setE).
@@ -626,10 +739,13 @@ local module Oij_split : Oracle_i_ij = {
 
   proc sign(m:M) = {
     var r;
-    if (countS < i_) r <@ sign_l(m);
-    else { if (i_ = countS) r <@ sign_i(m);
-    else r <@ sign_r(m); }
-    countS <- countS + 1;
+    r <- witness;
+    if (countS < qs) {
+      if (countS < i_) r <@ sign_l(m);
+      else { if (i_ = countS) r <@ sign_i(m);
+      else r <@ sign_r(m); }
+      countS <- countS + 1;
+    }
     return r;
   }
 
@@ -642,7 +758,8 @@ proof.
   byequiv => //; proc.
   call (: ={glob Oi} /\ 0 <= Oi.j_{2} < kappa); last by inline *; auto; smt(j_bounded).
   + by sim />.
-  proc; if => //; 1: by sim />.
+  proc; sp; if => //.
+  if => //; 1: by sim />.
   if => //; 2: by sim />.
   inline Oij.sign_i Oij_split.sign_i.
   sim />.
@@ -701,10 +818,13 @@ local module Oij_bad : Oracle_i_ij = {
 
   proc sign(m:M) = {
     var r;
-    if (countS < i_) r <@ sign_l(m);
-    else { if (i_ = countS) r <@ sign_i(m);
-    else r <@ sign_r(m); }
-    countS <- countS + 1;
+    r <- witness;
+    if (countS < qs) { 
+      if (countS < i_) r <@ sign_l(m);
+      else { if (i_ = countS) r <@ sign_i(m);
+      else r <@ sign_r(m); }
+      countS <- countS + 1;
+    }
     return r;
   }
 
@@ -717,24 +837,24 @@ proof.
   byequiv => //; symmetry; proc.
   call (: Oi.j_end /\ Oi.wo = None,
           (Oi.countS <= Oi.i_ => !Oi.j_end /\ Oi.wo = None){2} /\ 
-          ={Oi.logh, RO.m, Oi.sk, Oi.countS, Oi.i_, Oi.j_, Oi.j_end, Oi.w_} /\ 
+          ={Oi.logh, RO.m, Oi.sk, Oi.countS, Oi.countH, Oi.i_, Oi.j_, Oi.j_end, Oi.w_} /\ 
           0 <= Oi.j_{1} < kappa /\ 
           (Oi.wo <> None => Oi.j_end /\ Oi.wo = Some Oi.w_){2}).
   + apply A_ll.
-  + by proc; inline *; auto.
+  + by proc; sp; if => //; inline *; auto.
   + by move=> *; islossless.
-  + by move=> _; proc; inline *; auto => />; smt( dC_ll get_setE).    
-  + proc; wp; if => //.
+  + by move=> _; proc; sp; if => //; inline *; auto => />; smt( dC_ll get_setE).    
+  + proc; sp; if => //; wp; if => //.
     + by conseq (: ={r, RO.m}); 1: smt(); sim.
     if => //; wp; last by conseq (: ={r, RO.m}); 1: smt(); sim.
     inline Oij_bad.sign_i Oij_split.sign_i.
     seq 7 7 : 
        ((!Oi.j_end /\ Oi.wo = None){2} /\ 0 <= Oi.j_{1} < kappa /\ Oi.i_{1} = Oi.countS{1} /\
-         ={Oi.logh, RO.m, Oi.sk, Oi.countS, Oi.i_, Oi.j_, Oi.j_end, Oi.w_, m0, w, c, j, oz}).
+         ={Oi.logh, RO.m, Oi.sk, Oi.countS, Oi.countH, Oi.i_, Oi.j_, Oi.j_end, Oi.w_, m0, w, c, j, oz}).
     + by conseq (: ={RO.m, m0, w, c, j, oz}); [ smt() | sim].
     inline Oij_bad.sign_i_j Oij_split.sign_i_j.
     seq 2 2 : ( !(Oi.j_end{2} /\ Oi.wo{2} = None) =>
-                    (={Oi.logh, RO.m, Oi.sk, Oi.countS, Oi.i_, Oi.j_, Oi.j_end, Oi.w_, m0, c, j, oz} /\  
+                    (={Oi.logh, RO.m, Oi.sk, Oi.countS, Oi.countH, Oi.i_, Oi.j_, Oi.j_end, Oi.w_, m0, c, j, oz} /\  
                      (Oi.j_end{2} => oz{1} = None) /\ 0 <= Oi.j_{1} < kappa /\
                      (Oi.wo{2} <> None => Oi.j_end{2} /\ Oi.wo{2} = Some Oi.w_{2}) /\
                      Oi.i_{1} = Oi.countS{1}) /\
@@ -759,7 +879,7 @@ proof.
       by move=> z; wp; conseq (:true); 1: smt(); islossless.
     while true (kappa - j); 2: by auto => /#.
     by move=> z; wp; conseq (:true); 1: smt(); islossless.
-  + move=> _; proc; wp; if.
+  + move=> _; proc; sp; if => //; wp; if.
     + conseq />; islossless.
       while true (kappa - j); 2: by auto => /#.
       by move=> z; wp; conseq (:true); 1: smt(); islossless.
@@ -823,10 +943,13 @@ local module Oij_LE (H : ROsk.RO) : Oracle_i_ij = {
 
   proc sign(m:M) = {
     var r;
-    if (countS < i_) r <@ sign_l(m);
-    else { if (i_ = countS) r <@ sign_i(m);
-    else r <@ sign_r(m); }
-    countS <- countS + 1;
+    r <- witness;
+    if (countS < qs) {
+      if (countS < i_) r <@ sign_l(m);
+      else { if (i_ = countS) r <@ sign_i(m);
+      else r <@ sign_r(m); }
+      countS <- countS + 1;
+    }
     return r;
   }
 }.
@@ -857,11 +980,11 @@ proof.
   + case: (Oi.j_end{2}).
     + by inline *; rcondf{2} ^if; auto => /> /#.
     by call{2} (:true ==> true); [islossless | auto].
-  call (: ={RO.m, Oi.j_end, Oi.j_, Oi.logh, Oi.countH, Oi.countS, Oi.sk, Oi.i_} /\
+  call (: ={RO.m, Oi.j_end, Oi.j_, Oi.logh, Oi.countH, Oi.countS, Oi.countH, Oi.sk, Oi.i_} /\
           (Oi.countS <= Oi.i_ => !Oi.j_end /\ Oi.sk \notin ROsk.RO.m){2} /\
           (Oi.j_end => exists st, ROsk.RO.m.[Oi.sk] = Some (Oi.w_{1}, st)){2}).
   + by sim />.
-  + proc; wp; if => //; 2: if => //; last first.
+  + proc; sp; if => //; wp; if => //; 2: if => //; last first.
     + by conseq (: ={r, RO.m}); [smt() | sim].
     + by conseq (: ={r, RO.m}); [smt() | sim].
     inline Oij_bad.sign_i Oij_LE(ROsk.RO).sign_i.
