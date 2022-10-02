@@ -1,4 +1,4 @@
-require import AllCore Distr DBool PROM List StdOrder.
+require import AllCore Distr DBool PROM List StdOrder FelTactic.
 (*---*) import StdBigop.Bigreal.BRA.
 
 require import Dexcepted.
@@ -281,8 +281,20 @@ qed.
 op p : real.     (* max proba of rejection *)
 op eps : real.   (* max proba of = w *)
 
+axiom p_def sk : 
+  valid_sk sk => 
+  mu1 (dlet (commit sk) (fun (w_st : W * ST) =>              
+    dmap dC (fun (c : C) =>
+      respond sk w_st.`2 c))) None <= p.
+
 axiom p_bounded : 0%r <= p < 1%r.
-axiom eps_ge0 : 0%r <= eps.
+
+axiom valid_sk_mu1_commit sk : 
+  valid_sk sk => 
+  forall x, mu1 (dfst (commit sk)) x <= eps.
+
+(* This should be provable from valid_sk_mu1_commit *)
+axiom eps_ge0 : 0%r <= eps. 
 
 abstract theory Analysis.
 
@@ -913,30 +925,34 @@ local module Oij_LE (H : ROsk.RO) : Oracle_i_ij = {
   import var Oi
   include var Oij [-sign, sign_i, sign_i_j]
 
-  proc sign_i_j (m:M) : W * C * Z option = {
-    var c;
-    H.sample(sk);
-    c <$ dC;
-    j_end <- true;
-    return (witness, c, None);
-  }
+  (* i_done is used when we do fel *)
+  var i_done : bool
 
- proc sign_i (m:M): (W * C * Z) option = {
+  proc sign_i (m:M): (W * C * Z) option = {
     var w, c, oz, j;
+    if (!i_done /\ valid_sk Oi.sk) {
     w <- witness;
     c <- witness;
     j <- 0;
     oz <- None;
-    while(oz = None /\ j < j_) {
+    while(oz = None /\ j < Analysis.j) {
       (w, c, oz) <@ sign_i_l (m);
       j <- j + 1;
     }
     j <- j_; (* this is ensured if oz = None *)
-    if (oz = None /\ j_ < kappa) (w, c, oz) <@ sign_i_j (m); 
+    if (oz = None /\ j_ < kappa) { 
+        H.sample(sk);
+        c <$ dC;
+        j_end <- true;
+        w <- witness;
+        oz <- None;
+    }
     j <- j_ + 1;
     while (oz = None /\ j < kappa) {
        (w, c, oz) <@ sign_i_r (m); 
       j <- j + 1;
+    }
+    i_done <- true;
     }
     return if oz <> None then Some (w, c, oget oz) else None;
   }
@@ -956,15 +972,20 @@ local module Oij_LE (H : ROsk.RO) : Oracle_i_ij = {
 
 local module D (H :  ROsk.RO) = {
 
-  proc distinguish (i_i:int, j_i:int) = {
-    var b, pk, sk, st;
-    (pk, sk) <$ keygen;
+  proc distinguish1 (i_i:int, j_i:int) = {
+    var b, pk, sk;
+    (pk, sk) <$ keygen; Oij_LE.i_done <- false;
     RO.init();
     H.init();
     Oij_LE(H).init(sk, i_i, j_i);
     b <@ Adv(Oij_LE(H)).distinguish(pk);
+  }
+
+  proc distinguish (i_i:int, j_i:int) = {
+    var st;
+    distinguish1 (i_i, j_i);
     (Oi.w_, st) <@ H.get(Oi.sk);
-    return Oi.j_end /\ Oi.w_ \in Oi.logh;
+    return (Oi.j_end /\ b2i Oij_LE.i_done <= 1) /\ Oi.w_ \in Oi.logh;
   }
 
 }.
@@ -973,31 +994,36 @@ local lemma Oij_bad_DRO &m :
   Pr[Hij(Adv, Oij_bad).main(i, j) @ &m : Oi.j_end /\ Oi.w_ \in Oi.logh] = 
   Pr[D(ROsk.RO).distinguish(i, j) @ &m : res].
 proof.
-  byequiv => //; proc; wp.
-  seq 4 5: (={Oi.j_end, Oi.logh} /\ 
+  byequiv (: ={glob Adv, arg} /\ i_i{1} = i /\ j_i{1} = j ==> _) => //.
+  proc; wp; inline D(ROsk.RO).distinguish1; sp 0 2.
+  seq 4 6: (={Oi.j_end, Oi.logh} /\
              (Oi.j_end => exists st, ROsk.RO.m.[Oi.sk] = Some (Oi.w_{1}, st)){2});
     last first.
   + case: (Oi.j_end{2}).
     + by inline *; rcondf{2} ^if; auto => /> /#.
     by call{2} (:true ==> true); [islossless | auto].
   call (: ={RO.m, Oi.j_end, Oi.j_, Oi.logh, Oi.countH, Oi.countS, Oi.countH, Oi.sk, Oi.i_} /\
-          (Oi.countS <= Oi.i_ => !Oi.j_end /\ Oi.sk \notin ROsk.RO.m){2} /\
+          Oi.j_{2} = Analysis.j /\ valid_sk Oi.sk{2} /\
+          (Oi.countS <= Oi.i_ => (!Oij_LE.i_done /\ !Oi.j_end /\ Oi.sk \notin ROsk.RO.m)){2} /\
           (Oi.j_end => exists st, ROsk.RO.m.[Oi.sk] = Some (Oi.w_{1}, st)){2}).
   + by sim />.
   + proc; sp; if => //; wp; if => //; 2: if => //; last first.
     + by conseq (: ={r, RO.m}); [smt() | sim].
     + by conseq (: ={r, RO.m}); [smt() | sim].
     inline Oij_bad.sign_i Oij_LE(ROsk.RO).sign_i.
+    rcondt{2} ^if; 1: auto => /> /#.
     wp; while (={RO.m, m0, oz, w, c, j, Oi.sk}).
     + by inline *; auto.
     wp; seq 7 7 :
      (={RO.m, m0, oz, w, c, j, Oi.sk, Oi.j_end, Oi.j_, Oi.logh, Oi.countH, Oi.countS, Oi.sk, Oi.i_} /\
+     Oi.j_{2} = Analysis.j /\ valid_sk Oi.sk{2} /\
      (!Oi.j_end /\  Oi.sk \notin ROsk.RO.m /\ Oi.countS = Oi.i_){2}).
-    + by conseq (: ={RO.m, m0, oz, w, c, j, Oi.sk, Oi.j_end, Oi.j_, Oi.logh, Oi.countH, Oi.countS, Oi.sk, Oi.i_}); 
-       [ smt() | sim].
-    if=> //.
+    + conseq (: ={RO.m, m0, oz, w, c, j, Oi.sk, Oi.j_end, Oi.j_, Oi.logh, Oi.countH, Oi.countS, Oi.sk, Oi.i_}); 1: smt().
+      wp; while (={RO.m, m0, oz, w, c, j, Oi.sk} /\  Oi.j_{1} = Analysis.j); last by auto.
+      by conseq (: ={RO.m, oz, w, c, j}) => />; sim.
+    if=> //; 2: auto => /> /#.
     by inline *; rcondt{2} ^if; auto => />; smt(get_setE).
-  by inline *; auto => /> *; apply mem_empty.
+  by inline *; auto => /> *; rewrite mem_empty /= /#.
 qed.
 
 local lemma DRO_DLRO &m : 
@@ -1005,14 +1031,63 @@ local lemma DRO_DLRO &m :
   Pr[D(ROsk.LRO).distinguish(i, j) @ &m : res].
 proof. byequiv (ROsk.FullEager.RO_LRO_D D commit_ll) => //. qed.
 
-local lemma Pr_DLRO &m : Pr[D(ROsk.LRO).distinguish(i, j) @ &m : res] <= p^j * eps.
+local lemma phr_j_end:
+  phoare [D(ROsk.LRO).distinguish1 : i_i = i /\ j_i = j ==> Oi.j_end ] <= (p ^ Analysis.j).
+proof. 
+  conseq (: Oi.j_end /\ b2i (Oij_LE.i_done) <= 1); 1: smt(). 
+  bypr => &m *.
+  fel 5 (b2i (Oij_LE.i_done)) (fun _ => p ^ j) 1 Oi.j_end
+      [Oij_LE(ROsk.LRO).sign_i : (!Oij_LE.i_done /\ valid_sk Oi.sk)]
+      true => //.
+  + by have /= -> := big_int1 0.
+  + by inline *; auto.
+  + proc; rcondt^if => //.
+    seq 6 : (oz = None) (p^Analysis.j) 1%r _ 0%r (!Oi.j_end) => //.
+    + by conseq /> => //.
+    + sp; wp; conseq (: _ : <= (if oz = None then p ^ (Analysis.j - j) else 0%r)) => //.
+      while (j <= Analysis.j /\ valid_sk Oi.sk).
+      + move=> hw; exlim j => j0.
+        conseq (: _ : <= (if oz = None then p ^ (Analysis.j - j0) else 0%r)) => //.
+        seq 2 : (oz = None) p (p^(Analysis.j - (j0 + 1))) _ 0%r (j = j0 + 1 /\ j <= Analysis.j /\ valid_sk Oi.sk).
+        + by wp; conseq (:true) => // /#.
+        + wp; inline *; wp 4.
+          rndsem 1.
+          rnd (fun (wscoz: _ * _ * _ * _) => wscoz.`4 = None).
+          auto => |> &hr _ hv _. 
+          apply (RealOrder.ler_trans _ _ _ _ (p_def Oi.sk{hr} hv)).
+          admit.
+        + by conseq hw => />. 
+        + by conseq hw => /#.
+        move=> /> *; rewrite -RField.exprS /#. 
+      by auto => />; smt (RField.expr0 j_bounded).
+    by rcondf^if; 1: auto => />; conseq />.
+  + move=> c; proc; rcondt^if => //; wp.
+    by conseq (:true) => />; auto.
+  by move=> b c; proc; rcondf^if => //.
+qed.
+
+local lemma Pr_DLRO &m : Pr[D(ROsk.LRO).distinguish(i, j) @ &m : res] <= p^j * (qh%r * eps).
 proof.
   (* the eps should be easy the difficult par is p^j *)
-  admit.
+  byphoare ( : i_i = i /\ j_i = j ==> res) => //; proc.
+  seq 1 : Oi.j_end (p ^ j) (qh%r * eps) _ 0%r (Oi.sk \notin ROsk.RO.m /\ size Oi.logh <= qh /\ valid_sk Oi.sk) => //;
+    last by conseq (:false) => />.  
+  + inline D(ROsk.LRO).distinguish1.
+    call (: Oi.sk \notin ROsk.RO.m /\ size Oi.logh <= Oi.countH <= qh /\ valid_sk Oi.sk).
+    + by proc; sp; if => //; wp; conseq (:true) => // /#. 
+    + by conseq />.
+    inline *; auto => />; smt(qh_ge0 mem_empty).  
+  (* [ : Oi.j_end ] <= p ^ j *)
+  + by call (phr_j_end); auto => />.
+  (* [w_ <@ dfst (commit sk) : w_ \in logh ] *)
+  inline *; rcondt ^if; 1: by auto.
+  wp; rnd (fun x => fst x \in Oi.logh); auto => |> &hr _ hsize hval _; split; 2: smt(get_setE).
+  have := mu_mem_le_mu1 (dfst (commit Oi.sk{hr})) Oi.logh{hr} eps (valid_sk_mu1_commit Oi.sk{hr} hval).
+  rewrite /dfst dmapE /(\o); smt (eps_ge0 size_ge0).
 qed.
 
 lemma concl_j &m: 
-  Pr[Hij(Adv, Oij).main(i,j+1) @ &m : res] - Pr[Hij(Adv, Oij).main(i, j) @ &m : res] <=  p^j * eps.
+  Pr[Hij(Adv, Oij).main(i,j+1) @ &m : res] - Pr[Hij(Adv, Oij).main(i, j) @ &m : res] <=  p^j * (qh%r*eps).
 proof.
   have := bad &m; have := Oij_split_Oij_bad &m; have := Pr_DLRO &m.
   rewrite (Oij_Oij_split &m) (Oij_bad_DRO &m) (DRO_DLRO &m) /#.
@@ -1022,14 +1097,12 @@ end section J.
 
 lemma concl_i &m : 
   Pr[Hi(Adv, Oi).main(i+1) @ &m : res] - Pr[Hi(Adv, Oi).main(i) @ &m : res] <=
-    eps / (1%r - p).
+    (qh%r * eps) / (1%r - p).
 proof.
-  apply (RealOrder.ler_trans (bigi predT (fun (j : int) =>  p^j * eps) 0 kappa)).
+  apply (RealOrder.ler_trans (bigi predT (fun (j : int) =>  p^j * (qh%r * eps)) 0 kappa)).
   + rewrite (HiHi1 &m); apply StdBigop.Bigreal.ler_sum_seq => j /mem_range hj _ /=.
     by apply concl_j.
-  rewrite -mulr_suml.
-  have := sum_pow_le p kappa _ _; 1,2:smt(kappa_gt0 p_bounded).
-  rewrite (RField.mulrC _ eps); apply RealOrder.ler_wpmul2l; apply eps_ge0.
+  rewrite -mulr_suml; have := sum_pow_le p kappa _ _; smt(kappa_gt0 p_bounded qh_ge0 eps_ge0).
 qed.
 
 end section I.
@@ -1037,9 +1110,9 @@ end section I.
 lemma Gleft_Gright &m: 
   Pr[Game(Adv, Count(OLeft)).main() @ &m : res] - 
   Pr[Game(Adv, Count(ORight)).main() @ &m : res] <= 
-     qs%r * eps / (1%r - p).
+     qs%r * (qh%r * eps) / (1%r - p).
 proof.
-  apply (RealOrder.ler_trans (bigi predT (fun (j : int) =>  eps/(1%r - p)) 0 qs)).
+  apply (RealOrder.ler_trans (bigi predT (fun (j : int) =>  (qh%r * eps)/(1%r - p)) 0 qs)).
   rewrite Gleft_Gright_aux; apply StdBigop.Bigreal.ler_sum_seq => i /mem_range hi _ /=.
   apply (concl_i i hi).
   rewrite StdBigop.Bigreal.sumri_const 1:qs_ge0 //.
@@ -1068,7 +1141,7 @@ local clone import Analysis as A.
 lemma Gleft_Gright &m: 
   Pr[Game(Adv, Count(OLeft)).main() @ &m : res] - 
    Pr[Game(Adv, Count(ORight)).main() @ &m : res] <= 
-  qs%r * eps / (1%r - p).
+  qs%r * (qh%r * eps) / (1%r - p).
 proof. apply (A.Gleft_Gright Adv A_ll A_bound &m). qed.
 
 end section.
