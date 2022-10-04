@@ -55,10 +55,19 @@ op shiftV (w1 : high list) = oflist (map (fun x => shift x) w1).
 lemma size_shiftV (w1 : high list) : size (shiftV w1) = size w1.
 proof. by rewrite size_oflist size_map. qed.
 
+lemma oflist_inj : injective oflist.
+proof. smt(oflistK). qed.
+
 lemma shiftV_inj : injective shiftV. 
-admitted.
+proof. 
+have ms_inj := inj_map _ shift_inj.
+by move => hs1 hs2 /oflist_inj /ms_inj.
+qed.
 
 lemma size_mapv f v : size (mapv f v) = size v by [].
+
+lemma get_mapv f (v : vector) i : (0 <= i < size v) => (mapv f v).[i] = f v.[i].
+proof. by move => ?;  rewrite get_offunv. qed.
 
 op lowBitsV v = mapv lowBits v.
 op highBitsV v = map highBits (tolist v).
@@ -67,29 +76,97 @@ clone import MatRq.NormV as INormV with
   type a <- nat,
   op id <- zero,
   op (+) <- Nat.max,
+  op op1 <- (fun x => x),
   op norm <- Nat.ofint \o cnorm proof* by smt(maxrA maxrC max0r).
 
 op inf_normv = ofnat \o INormV.normv.
 
 lemma high_lowPv x : shiftV (highBitsV x) + lowBitsV x = x.
-admitted.
+proof.
+apply eq_vectorP.
+have eq_size : size (shiftV (highBitsV x)) = size (lowBitsV x).
+- by rewrite ?size_shiftV ?size_mapv ?size_map ?size_range /#.
+have -> /= i i_bound : size (shiftV (highBitsV x) + lowBitsV x) = size x.
+- by rewrite size_addv ?eq_size /= size_mapv.
+rewrite get_addv // get_mapv // (get_oflist witness) ?size_map ?size_range //.
+rewrite !(nth_map witness) /=; 1..3: smt(size_range size_tolist size_map).
+by rewrite nth_range //= high_lowP.
+qed.
+
+lemma max_ofnat n m : max (ofnat n) (ofnat m) = ofnat (max n m) by smt. 
+
+lemma ofnat_inj : injective ofnat by smt. 
 
 lemma inf_normv_cat (v1 v2 : vector) : 
    inf_normv (v1 || v2) = max (inf_normv v1) (inf_normv v2).
-admitted.
+proof. by rewrite /inf_normv /(\o) max_ofnat ?normv_cat. qed.
 
 lemma inf_normvN (v : vector) : inf_normv (-v) = inf_normv v.
-admitted.
+proof. 
+rewrite /inf_normv /normv /pnormv /tolist /(\o); congr. 
+by rewrite !big_map /(\o) /= &(eq_bigr) => i _ /=; rewrite cnormN.
+qed.
+
+lemma le0n n : zero <= n by smt. 
+
+lemma le_maxn (n m o : nat) : max n m <= o <=> n <= o /\ m <= o by smt.
+
+lemma maxnn (n : nat) : max n n = n.
+proof. 
+move: n. apply natW => //= x x_ge0. 
+by apply StNat.val_inj; rewrite StNat.Lift.lift2E /#.
+qed.
+
+lemma ler_bigmax (P : 'a -> bool) F (s : 'a list) (n : nat) :
+  (forall x, x \in s => P x => F x <= n) => big P F s <= n.
+proof.
+elim: s  => [|x s IHs le_s_n] ; first by rewrite big_nil le0n. 
+rewrite big_cons /=; case (P x) => [Px|/#].
+by rewrite le_maxn le_s_n //= IHs /#.
+qed.
+
+lemma eq_bigmax x0 (n : nat) (P : 'a -> bool) F (s : 'a list) :
+  (x0 \in s) => P x0 => (forall x, x \in s => P x => F x = n) => big P F s = n.
+proof.
+move => x0_s Px0 Hs; rewrite -big_filter; pose s' := filter P s.
+have [] {x0_s Px0 Hs} : x0 \in s' /\ forall x, x \in s' => F x = n.
+  smt(mem_filter).
+case s' => {s} // x s _; elim: s => [|y s IHs Hs]; first by rewrite big_seq1 /#.
+rewrite (eq_big_perm _ _ _ (y :: x :: s)) 1?perm_consCA ?perm_eq_refl.
+rewrite big_cons {1}/predT /= Hs // IHs; smt(maxnn).
+qed.
+
+lemma ler_ofnat (n : nat) m : ofnat n <= m <=> 0 <= m /\ n <= Nat.ofint m by smt.
+
+lemma mem_tolist x v : x \in tolist v <=> exists i, 0 <= i < size v /\ x = v.[i].
+proof. by rewrite mapP; smt(mem_range). qed.
+
+lemma tolist_vectc n c : tolist (vectc n c) = nseq n c. 
+proof. 
+apply oflist_inj; rewrite tolistK; apply eq_vectorP.
+rewrite size_vectc size_oflist size_nseq /= => i i_bound. 
+by rewrite get_vectc 1:/# (get_oflist c) ?size_nseq // ?nth_nseq /#.
+qed.
+
+lemma ler_ofint i j : 0 <= i <= j => (Nat.ofint i <= Nat.ofint j) by smt.
 
 lemma inf_normv_low v : inf_normv (lowBitsV v) <= gamma2.
-admitted.
+proof.
+rewrite ler_ofnat;split;1:smt(ge2_gamma2). 
+apply ler_bigmax => r @/(\o) /mem_tolist [i].
+rewrite size_mapv => -[bound_i ->] _. 
+by rewrite get_mapv // ler_ofint cnorm_ge0 /=; smt(lowbit_small).
+qed.
 
-lemma inf_normv_vectc n c : 
+
+lemma inf_normv_vectc n c : 0 < n =>
   inf_normv (vectc n c) = cnorm c.
-admitted.
+proof.
+rewrite /inf_normv /(\o) /normv /pnormv tolist_vectc => n_gt0.
+by rewrite (eq_bigmax c (Nat.ofint (cnorm c))); smt(mem_nseq ofintK cnorm_ge0).
+qed.
 
-lemma cnorm_dC c tau : c \in dC tau => cnorm c <= 1.
-admitted.
+lemma cnorm_dC c tau : c \in dC tau => cnorm c <= 1 by smt(supp_dC).
 
 type M.
 
@@ -424,7 +501,7 @@ split => [|? c_dC]; last split.
   rewrite addvC -subv_eq 2://; 1: by rewrite size_shiftV size_highBitsV /#.
   by rewrite /w1 /e oppvK high_lowPv. 
 - rewrite 2!inf_normv_cat !StdOrder.IntOrder.ltr_maxrP !max_ltrP.
-  rewrite normv_z /= 1!inf_normv_vectc.
+  rewrite normv_z /= 1!inf_normv_vectc //.
   have -> /= : cnorm c < gamma2+1 by smt(cnorm_dC ge2_gamma2).
   right. rewrite /e inf_normvN. smt(inf_normv_low ge2_gamma2).
 - rewrite catvA get_catv_r ?size_catv 1:/#. 

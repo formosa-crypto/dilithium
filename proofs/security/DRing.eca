@@ -31,6 +31,7 @@ axiom supp_dRq x a : x \in dRq_ a <=> cnorm x <= a.
 op [lossless uniform] dC  : int -> Rq distr.
 axiom supp_dC c a : c \in dC a <=> cnorm c <= 1 /\ l1_norm c = a.
 
+axiom cnorm_ge0 (r : Rq) : 0 <= cnorm r.
 axiom cnormN (r : Rq) : cnorm (-r) = cnorm r.
 
 (* high/low-bits operations (fixed modulus) *)
