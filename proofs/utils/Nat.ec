@@ -1,7 +1,7 @@
 (* Natural Numbers as a subtype of [int] *)
 
-require import StdOrder.
-require Int Subtype.
+require import StdOrder List.
+require Int Subtype Bigop.
 
 type nat.
 
@@ -74,3 +74,48 @@ clone Monoid as Max0Monoid with
   type t <- nat,
   op (+) <- max,
   op idm <- zero proof* by smt(maxrC maxrA max0r).
+
+lemma max_ofnat n m : Int.max (ofnat n) (ofnat m) = ofnat (max n m) by smt. 
+
+lemma ofnat_inj : injective ofnat by smt. 
+
+lemma le0n n : zero <= n by smt. 
+
+lemma le_maxn (n m o : nat) : max n m <= o <=> n <= o /\ m <= o by smt.
+
+lemma maxnn (n : nat) : max n n = n.
+proof. 
+move: n. apply natW => //= x x_ge0. 
+by apply StNat.val_inj; rewrite StNat.Lift.lift2E /#.
+qed.
+
+clone import Bigop as BigMax with 
+  type t <= nat,
+  op Support.idm <- zero,
+  op Support.(+) <- max
+proof* by smt(maxrC maxrA max0r).
+
+import Int.
+
+lemma ler_ofnat (n : nat) m : ofnat n <= m <=> 0 <= m /\ n <= ofint m by smt.
+
+lemma ler_ofint i j : 0 <= i <= j => (ofint i <= ofint j) by smt.
+
+lemma ler_bigmax (P : 'a -> bool) F (s : 'a list) (n : nat) :
+  (forall x, x \in s => P x => F x <= n) => big P F s <= n.
+proof.
+elim: s  => [|x s IHs le_s_n] ; first by rewrite big_nil le0n. 
+rewrite big_cons /=; case (P x) => [Px|/#].
+by rewrite le_maxn le_s_n //= IHs /#.
+qed.
+
+lemma eq_bigmax x0 (n : nat) (P : 'a -> bool) F (s : 'a list) :
+  (x0 \in s) => P x0 => (forall x, x \in s => P x => F x = n) => big P F s = n.
+proof.
+move => x0_s Px0 Hs; rewrite -big_filter; pose s' := filter P s.
+have [] {x0_s Px0 Hs} : x0 \in s' /\ forall x, x \in s' => F x = n.
+  smt(mem_filter).
+case s' => {s} // x s _; elim: s => [|y s IHs Hs]; first by rewrite big_seq1 /#.
+rewrite (eq_big_perm _ _ _ (y :: x :: s)) 1?perm_consCA ?perm_eq_refl.
+rewrite big_cons {1}/predT /= Hs // IHs; smt(maxnn).
+qed.

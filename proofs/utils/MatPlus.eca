@@ -236,29 +236,22 @@ qed.
 (* TOTHINK: this proof seems very low-level *)
 lemma colmxc v c : (colmx v) *^ vectc 1 c = c ** v. 
 proof. 
-apply eq_vectorP; rewrite /= rows_mulmx //= size_mulvs /= => i Hi.
-rewrite get_mulvs // get_mulmx /dotp /= lez_maxr //=.
-by rewrite (Big.BAdd.big_int1 0) /= get_matrixc.  
+apply eq_vectorP; rewrite /= rows_mulmx //= size_scalarv /= => i Hi.
+rewrite get_offunv // get_mulmx /dotp /= lez_maxr //=.
+by rewrite (Big.BAdd.big_int1 0) /= get_matrixc 1:/# mulrC.
 qed.
 
 require Bigop.
 
+(*
 abstract theory NormV.
 type a.
-op id : a.
 op norm : R -> a.
-op (+) : a -> a -> a.
 op op1 : a -> a.
 
-axiom op2A : associative (+).
-axiom op2C : commutative (+).
-axiom idP  : left_id id (+).
 
-clone include Bigop with 
-  type t <- a,
-  op Support.idm <- id,
-  op Support.(+) <- (+) 
-proof* by smt(op2A op2C idP).
+
+clone import Bigop as Big with type t <- a.
 
 op pnormv v = big predT norm (tolist v).
 op normv v = op1 (pnormv v).
@@ -269,4 +262,28 @@ rewrite /normv /pnormv; congr.
 by rewrite tolist_catv big_cat.
 qed.
 
-end NormV. 
+end NormV.
+*) 
+
+(* lifting functions to vectors *)
+op mapv (f : R -> R) (v : vector) : vector = 
+  offunv (fun i => f v.[i], size v).
+
+lemma size_mapv f v : size (mapv f v) = size v by [].
+
+lemma get_mapv f (v : vector) i : 
+  (0 <= i < size v) => (mapv f v).[i] = f v.[i].
+proof. by move => ?; rewrite get_offunv. qed.
+
+lemma oflist_inj : injective oflist.
+proof. smt(oflistK). qed.
+
+lemma mem_tolist x v : x \in tolist v <=> exists i, 0 <= i < size v /\ x = v.[i].
+proof. by rewrite mapP; smt(mem_range). qed.
+
+lemma tolist_vectc n c : tolist (vectc n c) = nseq n c. 
+proof. 
+apply oflist_inj; rewrite tolistK; apply eq_vectorP.
+rewrite size_vectc size_oflist size_nseq /= => i i_bound. 
+by rewrite get_vectc 1:/# (get_oflist c) ?size_nseq // ?nth_nseq /#.
+qed.
