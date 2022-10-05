@@ -388,7 +388,7 @@ seq 6 7 : (={sig,PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in
         (fun mAt : matrix => (subm mAt 0 k 0 l,- col mAt l)) : *0 *0.
     skip => /= &1 &2 _. split => [A|?]; last split => [A|?].
     * rewrite dmap_id => /size_dmatrix /(_ _ _) /=; 1,2: smt(Top.gt0_k Top.gt0_l).
-      rewrite colmxN oppvK => -[<-]. apply subm_colmx; smt(Top.gt0_k Top.gt0_l).
+      rewrite colmxN oppvK => -[<-] ?. rewrite subm_colmx; smt(Top.gt0_k Top.gt0_l).
     * rewrite -(dmap_dprodE _ _ (fun x => x)) !dmap_id.
       rewrite dprod1E (@dvector_rnd_funi _ _ (col A l)) ?dRq_funi // -dprod1E.
       move/size_dmatrix => /(_ _ _); 1,2: smt(Top.gt0_k Top.gt0_l).
@@ -435,7 +435,7 @@ split => [|? c_dC]; last split.
   + rewrite rows_catmc /=; smt(). 
   rewrite -size_e mulmx1v mulmxv_cat;  1..3: smt().
   rewrite colmxN colmxc scalarvN.  
-  rewrite addvC -subv_eq 2://; 1: by rewrite size_shiftV size_highBitsV /#.
+  rewrite addvC -sub_eqv 2://; 1: by rewrite size_shiftV size_highBitsV /#.
   by rewrite /w1 /e oppvK high_lowPv. 
 - rewrite 2!inf_normv_cat !StdOrder.IntOrder.ltr_maxrP !max_ltrP.
   rewrite normv_z /= 1!inf_normv_vectc //.
