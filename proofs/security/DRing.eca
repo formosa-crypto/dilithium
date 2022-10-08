@@ -1,0 +1,59 @@
+(* Axiomatization of the Ring Zq[X]/(X^n + 1) and the highBits and
+lowBits operations used in Dilithium *)
+
+require import AllCore IntDiv Distr.
+
+(* Modulo *)
+op q : {int | prime q} as prime_q. 
+
+(* Poly degrees *)
+op n : {int | 0 < n} as gt0_n.
+
+(* Polynomial ring ℤq[X]/(X^n +1 ) *)
+type Rq.
+
+clone import Ring.ComRing as RqRing with type t <= Rq.
+
+op cnorm : Rq -> int.             (* infinity norm (after centered reduction modulo) *)
+op l1_norm : Rq -> int.           (* sum over absolute values                        *)
+
+(* TOTHINK: If [high = Rq] is a problem, we either need to have a
+ComRing structure on high or use lists rather than vectors to pass
+[w1] around *)
+
+op [lossless full uniform] dRq : Rq distr. 
+
+lemma dRq_funi : is_funiform dRq by smt(dRq_fu dRq_uni).
+
+op [lossless uniform] dRq_ : int -> Rq distr.
+axiom supp_dRq x a : x \in dRq_ a <=> cnorm x <= a.
+
+op [lossless uniform] dC  : int -> Rq distr.
+axiom supp_dC c a : c \in dC a <=> cnorm c <= 1 /\ l1_norm c = a.
+
+axiom cnorm_ge0 (r : Rq) : 0 <= cnorm r.
+axiom cnormN (r : Rq) : cnorm (-r) = cnorm r.
+
+(* high/low-bits operations (fixed modulus) *)
+
+abstract theory HighLow.
+op alpha : int.            (* modulus *)
+
+type high.                 (* abstract type of "rounded" elements *)
+
+op lowBits  : Rq -> Rq.    (* "low-order"  bits *)
+op highBits : Rq -> high.  (* "high-order" bits *)
+op shift    : high -> Rq.  (* adding zeros      *)
+
+axiom high_lowP x : shift (highBits x) + lowBits x = x.
+
+axiom hide_low r s b : 
+  cnorm s <= b => cnorm (lowBits s) < alpha %/ 2 - b =>
+  highBits (r + s) = highBits r.
+
+axiom lowbit_small r :
+  cnorm (lowBits r) <= alpha %/ 2. (* TOTHINK: +1 ? *)
+
+axiom shift_inj : injective shift. 
+
+end HighLow.

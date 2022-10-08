@@ -409,3 +409,14 @@ apply (ler_trans (sdist (dbiased (mu d p)) (dbiased 1%r))).
 - exact sdist_dlet.
 by rewrite sdist_dbiased; smt(mu_not le1_mu).
 qed.
+
+
+lemma gt0_prodr_seq (P : 'a -> bool) (F : 'a -> real) (s : 'a list) :
+  (forall (a : 'a), a \in s => P a => 0%r <= F a) =>
+  0%r < BRM.big P F s =>
+  (forall (a : 'a), a \in s => P a => 0%r < F a).
+proof.
+elim: s => // x s IHs F_ge0; rewrite BRM.big_cons.
+have {IHs} IHs := IHs _; first by smt().
+case: (P x) => [Px F_big_gt0 a [->|a_s] Pa | nPx /IHs]; smt().
+qed.
