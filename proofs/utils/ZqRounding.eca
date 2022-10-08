@@ -438,3 +438,95 @@ split => [|?]; first by smt().
 by apply (ler_lt_trans ((q - alpha - 1) %/ alpha * alpha)) => /#.
 qed.
 
+(* -- Polynomial versions -- *)
+
+require PolyReduce.
+
+op n : int.
+
+clone import PolyReduceZp as PolyReduceZq with
+  type Zp <= zmod,
+  op p <= q,
+  op n <= n,
+  theory Zp <= ZModQ.
+(* TODO proof lemmas where possible *)
+
+type int_poly = int list.
+
+op poly_lowbits p alpha = polyLX (mkseq (fun i => lowbits p.[i] alpha) n).
+op poly_round p alpha = polyLX (mkseq (fun i => round p.[i] alpha) n).
+op poly_rightshift p alpha : int_poly = mkseq (fun i => rightshift p.[i] alpha) n.
+op poly_leftshift p alpha : polyXnD1 = polyLX (mkseq (fun i => leftshift (nth 0 p i) alpha) n).
+op poly_highbits p alpha : int_poly = mkseq (fun i => highbits p.[i] alpha) n.
+
+lemma polyLXE coeffs i :
+  size coeffs <= n =>
+  (polyLX coeffs).[i] = nth zero coeffs i.
+proof.
+(* TODO *)
+admitted.
+
+lemma lowbits_of_zero alpha :
+  2 <= alpha =>
+  lowbits zero alpha = zero.
+proof. smt(zeroE). qed.
+
+lemma poly_lowbits_correct p i alpha :
+  2 <= alpha =>
+  (poly_lowbits p alpha).[i] = lowbits p.[i] alpha.
+proof.
+move => ?; rewrite /poly_lowbits.
+rewrite polyLXE; first smt(size_mkseq ge0_n).
+rewrite nth_mkseq_if /=.
+smt(lt0_rcoeff gered_rcoeff lowbits_of_zero).
+qed.
+
+lemma round_of_zero alpha :
+  2 <= alpha =>
+  round zero alpha = zero.
+proof.
+move => ?; rewrite /round.
+suff: lowbits zero alpha = zero.
+move => H; rewrite H; by field.
+smt(lowbits_of_zero).
+qed.
+
+lemma rightshift_of_zero alpha :
+  rightshift zero alpha = 0.
+proof.
+by rewrite /rightshift zeroE /#.
+qed.
+
+lemma highbits_of_zero alpha :
+  2 <= alpha =>
+  highbits zero alpha = 0.
+proof.
+move => ?; rewrite /highbits round_of_zero //.
+exact rightshift_of_zero.
+qed.
+
+lemma poly_highbits_correct p i alpha :
+  2 <= alpha =>
+  nth 0 (poly_highbits p alpha) i = highbits p.[i] alpha.
+proof.
+move => ?; rewrite /poly_highbits.
+rewrite nth_mkseq_if /=.
+smt(highbits_of_zero lt0_rcoeff gered_rcoeff).
+qed.
+
+(*
+lemma leftshift_of_zero alpha :
+  leftshift 0 alpha = zero.
+proof. smt(). qed.
+*)
+
+lemma poly_leftshift_correct p i alpha :
+  size p <= n =>
+  leftshift (nth 0 p i) alpha = (poly_leftshift p alpha).[i].
+proof.
+rewrite /poly_leftshift /=.
+rewrite polyLXE; first smt(size_mkseq ge0_n).
+rewrite nth_mkseq_if.
+smt(nth_out).
+qed.
+
