@@ -463,8 +463,12 @@ lemma polyLXE coeffs i :
   size coeffs <= n =>
   (polyLX coeffs).[i] = nth zero coeffs i.
 proof.
-(* TODO *)
-admitted.
+move => H.
+rewrite /"_.[_]" /polyLX.
+rewrite piK.
+- by rewrite reduced_polyL //.
+smt(BasePoly.polyLE).
+qed.
 
 lemma lowbits_of_zero alpha :
   2 <= alpha =>
@@ -514,6 +518,13 @@ rewrite nth_mkseq_if /=.
 smt(highbits_of_zero lt0_rcoeff gered_rcoeff).
 qed.
 
+lemma poly_highbits_size p alpha :
+  size (poly_highbits p alpha) = n.
+proof.
+rewrite /poly_highbits size_mkseq.
+smt(ge0_n).
+qed.
+
 (*
 lemma leftshift_of_zero alpha :
   leftshift 0 alpha = zero.
@@ -530,3 +541,16 @@ rewrite nth_mkseq_if.
 smt(nth_out).
 qed.
 
+lemma poly_high_lowP p alpha :
+  2 <= alpha =>
+  alpha <= q %/ 2 =>
+  poly_leftshift (poly_highbits p alpha) alpha + poly_lowbits p alpha = p.
+proof.
+move => ??.
+apply polyXnD1_eqP => i [??].
+rewrite rcoeffD.
+rewrite -poly_leftshift_correct; first smt(poly_highbits_size).
+rewrite poly_highbits_correct //.
+rewrite poly_lowbits_correct //.
+by rewrite -high_lowP //.
+qed.
