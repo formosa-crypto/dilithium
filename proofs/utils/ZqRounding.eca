@@ -419,13 +419,17 @@ qed.
 require PolyReduce.
 
 op n : int.
+axiom gt0_n : 0 < n.
 
 clone import PolyReduceZp as PolyReduceZq with
   type Zp <= zmod,
   op p <= q,
   op n <= n,
-  theory Zp <= ZModQ.
-(* TODO proof lemmas where possible *)
+  theory Zp <= ZModQ
+proof ge2_p, gt0_n.
+realize ge2_p by exact ge2_p.
+realize gt0_n by exact gt0_n.
+(* TODO Double check everything else is not provable? *)
 
 type int_poly = int list.
 
@@ -579,7 +583,35 @@ apply (ler_trans `|poly_lowbits px|) => //.
 smt(poly_lowbits_correct inf_norm_poly_ler).
 qed.
 
-(* TODO lowbits small *)
+(*** Used in DRing ***)
+lemma poly_lowbit_small p :
+  `|poly_lowbits p| <= alpha %/ 2.
+proof.
+rewrite /"`|_|".
+apply ler_ofnat; split; first smt(ge2_alpha).
+rewrite /inf_norm /=.
+apply ler_bigmax => x H _ /=.
+suff: `|x| <= alpha %/ 2.
+- move => ?.
+  by apply Nat.ler_ofint => /#.
+rewrite mkseqP in H; case H => i [??]; subst.
+by rewrite poly_lowbits_correct lowbits_small.
+qed.
 
-
-(* TODO shift_inj *)
+(*** Used in DRing ***)
+(* Not true without side-conditions *)
+lemma poly_leftshift_inj xs ys :
+  size xs = n =>
+  size ys = n =>
+  (forall x, (x \in xs => 0 <= x <= (q - alpha - 1) %/ alpha)) =>
+  (forall y, (y \in ys => 0 <= y <= (q - alpha - 1) %/ alpha)) =>
+  poly_leftshift xs = poly_leftshift ys =>
+  xs = ys.
+proof.
+move => sz_xs sz_ys rg_x rg_y eq_shift_xy.
+(* have H: (forall i, (poly_leftshift x).[i] = (poly_leftshift y).[i]) by smt(). *)
+have ?: (forall i, leftshift (nth 0 xs i) = leftshift (nth 0 ys i)) by smt(poly_leftshift_correct).
+apply (eq_from_nth 0); first by smt().
+move => i rg_i.
+by apply leftshift_injective; smt(mem_nth).
+qed.
