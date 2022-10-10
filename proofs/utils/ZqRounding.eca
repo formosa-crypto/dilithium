@@ -507,6 +507,7 @@ rewrite nth_mkseq_if /=.
 smt(nth_out).
 qed.
 
+(*** Used in DRing ***)
 lemma poly_high_lowP p :
   poly_leftshift (poly_highbits p) + poly_lowbits p = p.
 proof.
@@ -520,17 +521,65 @@ qed.
 
 require import Nat.
 
+(* Other direction of what's been proven *)
+lemma ler_bigmax' (P : 'a -> bool) F (s : 'a list) (n : nat) :
+  BigMax.big P F s <= n => (forall x, x \in s => P x => F x <= n).
+proof.
+elim: s => [|head tail IHs le_s_n]; first by auto.
+rewrite BigMax.big_cons in le_s_n.
+smt(StNat.Lift.lift2E).
+qed.
+
 op inf_norm = BigMax.big predT (fun (q : zmod) => Nat.ofint `|q|).
 op "`|_|" p = Nat.ofnat (inf_norm (mkseq (fun i => p.[i]) n)).
 
+lemma ler_ofint (n : int) (m : nat) :
+  0 <= n =>
+  (ofint n <= m) <=> (n <= ofnat m).
+proof. smt(ofintK). qed.
+
+lemma ge0_inf_norm_p p :
+  0 <= `|p|.
+proof. exact StNat.valP. qed.
+
+lemma abs_zp_zero :
+  `|ZModQ.zero| = 0.
+proof.
+rewrite /"`|_|".
+rewrite /crepr.
+rewrite zeroE => /=.
+smt(ge2_p).
+qed.
+
+lemma inf_norm_poly_ler p i :
+  `|p.[i]| <= `|p|.
+proof.
+case (0 <= i /\ i < n) => ?.
+- apply ler_ofint; first smt().
+  apply (ler_bigmax' predT (fun (q: zmod) => Nat.ofint `|q|) (mkseq (fun i => p.[i]) n)).
+  + smt().
+  + smt(mkseqP).
+  + smt().
+- have ->: (p.[i] = ZModQ.zero) by smt(lt0_rcoeff gered_rcoeff).
+  rewrite abs_zp_zero.
+  exact ge0_inf_norm_p.
+qed.
+
+(*** Used in DRing ***)
 lemma poly_hide_low px py b1 b2 :
   `|poly_lowbits px| <= b1 =>
   `|py| <= b2 =>
   b1 + b2 < alpha %/ 2 => poly_highbits (px + py) = poly_highbits px.
 proof.
 move => *.
+apply (eq_from_nth 0) => [|??]; first by rewrite !poly_highbits_size.
+rewrite !poly_highbits_correct rcoeffD.
+apply (hide_low _ _ b1 b2) => //; last smt(inf_norm_poly_ler).
+apply (ler_trans `|poly_lowbits px|) => //.
+smt(poly_lowbits_correct inf_norm_poly_ler).
+qed.
+
+(* TODO lowbits small *)
 
 
-print hide_low.
-
-admitted.
+(* TODO shift_inj *)
