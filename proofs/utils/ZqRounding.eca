@@ -574,11 +574,7 @@ case (0 <= i /\ i < n) => ?.
   exact ge0_inf_norm_p.
 qed.
 
-print hide_low.
-
-(*** Used in DRing?? ***)
-(* TODO Different version there *)
-lemma poly_hide_low alpha px py b1 b2 :
+lemma poly_hide_low_aux alpha px py b1 b2 :
   2 <= alpha && alpha <= q %/ 2 =>
   2 %| alpha =>
   alpha %| (q - 1) =>
@@ -592,6 +588,19 @@ rewrite !poly_highbits_correct // rcoeffD.
 apply (hide_low _ _ _ b1 b2) => //; last smt(inf_norm_poly_ler).
 apply (ler_trans `|poly_lowbits alpha px|) => //.
 smt(poly_lowbits_correct inf_norm_poly_ler).
+qed.
+
+(*** Used in DRing ***)
+lemma poly_hide_low alpha r s b :
+  2 <= alpha && alpha <= q %/ 2 =>
+  2 %| alpha =>
+  alpha %| (q - 1) =>
+  `|poly_lowbits alpha r| < alpha %/ 2 - b =>
+  `|s| <= b =>
+  poly_highbits alpha (r + s) = poly_highbits alpha r.
+proof.
+move => *.
+by apply (poly_hide_low_aux alpha r s (alpha %/ 2 - b - 1) b) => /#.
 qed.
 
 (*** Used in DRing ***)
