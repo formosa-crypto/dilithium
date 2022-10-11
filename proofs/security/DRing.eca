@@ -39,6 +39,11 @@ axiom cnormN (r : Rq) : cnorm (-r) = cnorm r.
 abstract theory HighLow.
 op alpha : int.            (* modulus *)
 
+axiom ge2_alpha : 2 <= alpha.
+axiom alpha_halfq_le : alpha <= q %/ 2.
+axiom even_alpha : 2 %| alpha.
+axiom alpha_almost_divides_q : alpha %| (q - 1).
+
 type high.                 (* abstract type of "rounded" elements *)
 
 op lowBits  : Rq -> Rq.    (* "low-order"  bits *)
