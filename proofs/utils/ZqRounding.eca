@@ -137,10 +137,7 @@ op highbits alpha r = rightshift alpha (round alpha r).
 (* Image of rounding *)
 
 (*** Should really be in the stdlib ***)
-
 op image (f: 'a -> 'b) (b : 'b) = exists a, f a = b.
-op im_high alpha y = 0 <= y <= (q - alpha - 1) %/ alpha.
-op im_round alpha y = 0 <= asint y <= q - alpha - 1.
 
 lemma round_is_multiple alpha r :
   2 <= alpha <= q %/ 2 =>
@@ -184,13 +181,12 @@ rewrite modzDmr modzNDmr.
 by rewrite modz_small; smt(rg_asint cmod_lower_bound).
 qed.
 
-lemma im_round_correct alpha y :
+lemma rg_round alpha x :
   2 <= alpha <= q %/ 2 =>
   2 %| alpha =>
   alpha %| (q - 1) =>
-  image (round alpha) y => im_round alpha y.
+  0 <= asint (round alpha x) <= q - alpha - 1.
 proof. smt(round_upper_bound rg_asint). qed.
-
 (* High bits image and injectivity *)
 
 lemma highbits_lower_bound alpha y :
@@ -218,14 +214,6 @@ lemma rg_highbits alpha y :
   0 <= y <= (q - alpha - 1) %/ alpha.
 proof. smt(highbits_lower_bound highbits_upper_bound). qed.
 
-lemma im_high_correct alpha y :
-  2 <= alpha <= q %/ 2 =>
-  2 %| alpha =>
-  alpha %| (q - 1) =>
-  image (highbits alpha) y =>
-  im_high alpha y.
-proof. smt(rg_highbits). qed.
-
 lemma leftshift_injective alpha (x y : int) :
   2 <= alpha <= q %/ 2 =>
   2 %| alpha =>
@@ -249,7 +237,7 @@ qed.
 (* Everything else? *)
 
 lemma leftshift_rightshiftK alpha r :
-  im_round alpha r =>
+  image (round alpha) r =>
   alpha %| asint r =>
   leftshift alpha (rightshift alpha r) = r.
 proof.
@@ -272,7 +260,7 @@ lemma high_lowP alpha r :
 proof.
 move => *.
 rewrite leftshift_rightshiftK.
-- smt(im_round_correct).
+- by exists r.
 - exact round_is_multiple.
 - exact round_lowP.
 qed.
@@ -386,8 +374,6 @@ apply (lowbits_unique alpha x r (x - r)) => //.
   by have -> //: r + x0 - r = x0 by field.
 qed.
 
-print round_upper_bound.
-
 lemma hide_low alpha (x y : zmod) b1 b2 :
   2 <= alpha <= q %/ 2 =>
   2 %| alpha =>
@@ -407,37 +393,6 @@ rewrite (round_unique alpha (x + y) (round alpha x) (lowbits alpha x + lowbits a
 - exact round_upper_bound.
 - by left; smt(lowbits_id abs_zp_triangle).
 - smt(lowbits_id abs_zp_triangle).
-qed.
-
-(* For poly version out-of-bound accesses.
- * Maybe unnecessary? *)
-
-lemma lowbits_of_zero alpha :
-  2 <= alpha =>
-  lowbits alpha ZModQ.zero = ZModQ.zero.
-proof. smt(zeroE). qed.
-
-lemma round_of_zero alpha :
-  2 <= alpha =>
-  round alpha ZModQ.zero = ZModQ.zero.
-proof.
-move => ?.
-rewrite /round lowbits_of_zero //.
-by field.
-qed.
-
-lemma rightshift_of_zero alpha :
-  rightshift alpha ZModQ.zero = 0.
-proof.
-by rewrite /rightshift zeroE.
-qed.
-
-lemma highbits_of_zero alpha :
-  2 <= alpha =>
-  highbits alpha ZModQ.zero = 0.
-proof.
-move => ?.
-by rewrite /highbits round_of_zero // rightshift_of_zero.
 qed.
 
 (* -- Polynomial versions -- *)
@@ -491,19 +446,21 @@ qed.
 
 lemma poly_lowbits_correct alpha p i :
   2 <= alpha =>
+  0 <= i < n =>
   (poly_lowbits alpha p).[i] = lowbits alpha p.[i].
 proof.
 rewrite /poly_lowbits polyLXE; first smt(size_mkseq ge0_n).
 rewrite nth_mkseq_if /=.
-smt(lt0_rcoeff gered_rcoeff lowbits_of_zero).
+smt(lt0_rcoeff gered_rcoeff).
 qed.
 
 lemma poly_highbits_correct alpha p i :
   2 <= alpha =>
+  0 <= i < n =>
   nth 0 (poly_highbits alpha p) i = highbits alpha p.[i].
 proof.
 rewrite /poly_highbits nth_mkseq_if /=.
-smt(highbits_of_zero lt0_rcoeff gered_rcoeff).
+smt(lt0_rcoeff gered_rcoeff).
 qed.
 
 lemma poly_highbits_size alpha p :
@@ -584,10 +541,14 @@ lemma poly_hide_low_aux alpha px py b1 b2 :
 proof.
 move => [??] *.
 apply (eq_from_nth 0) => [|??]; first by rewrite !poly_highbits_size.
-rewrite !poly_highbits_correct // rcoeffD.
+rewrite !poly_highbits_correct //; 1, 2: smt(poly_highbits_size).
+rewrite rcoeffD.
 apply (hide_low _ _ _ b1 b2) => //; last smt(inf_norm_poly_ler).
 apply (ler_trans `|poly_lowbits alpha px|) => //.
-smt(poly_lowbits_correct inf_norm_poly_ler).
+print inf_norm_poly_ler.
+print poly_lowbits_correct.
+rewrite -poly_lowbits_correct //; first smt(poly_highbits_size).
+exact inf_norm_poly_ler.
 qed.
 
 (*** Used in DRing ***)
