@@ -12,7 +12,7 @@ require FSabort.
 require FSa_CMAtoKOA.
 require FSa_CRtoGen.
 
-require DRing MLWE SelfTargetMSIS. 
+require DRing DVect MLWE SelfTargetMSIS. 
 
 
 (* Dilithium-specific parameters *)
@@ -40,73 +40,15 @@ op b : int.
 
 clone import DRing as DR. 
 import RqRing.
-clone import HighLow as HL2 with 
-  op alpha <- 2*gamma2.
 
-clone import MatPlus as MatRq 
-  with theory ZR <= DR.RqRing.
-
-op shiftV (w1 : high list) = oflist (map (fun x => shift x) w1).
-op lowBitsV v = mapv lowBits v.
-op highBitsV v = map highBits (tolist v).
-
-lemma size_shiftV (w1 : high list) : size (shiftV w1) = size w1.
-proof. by rewrite size_oflist size_map. qed.
-
-lemma shiftV_inj : injective shiftV. 
-proof. 
-have ms_inj := inj_map _ shift_inj.
-by move => hs1 hs2 /oflist_inj /ms_inj.
-qed.
-
-import BigMax.
-
-lemma high_lowPv x : shiftV (highBitsV x) + lowBitsV x = x.
-proof.
-apply eq_vectorP.
-have eq_size : size (shiftV (highBitsV x)) = size (lowBitsV x).
-- by rewrite ?size_shiftV ?size_mapv ?size_map ?size_range /#.
-have -> /= i i_bound : size (shiftV (highBitsV x) + lowBitsV x) = size x.
-- by rewrite size_addv ?eq_size /= size_mapv.
-rewrite get_addv // get_mapv // (get_oflist witness) ?size_map ?size_range //.
-rewrite !(nth_map witness) /=; 1..3: smt(size_range size_tolist size_map).
-by rewrite nth_range //= high_lowP.
-qed.
-
-op inf_norm = big predT (Nat.ofint \o cnorm).
-op inf_normv = Nat.ofnat \o inf_norm \o tolist.
-
-lemma inf_normv_cat (v1 v2 : vector) : 
-   inf_normv (v1 || v2) = max (inf_normv v1) (inf_normv v2).
-proof. 
-by rewrite /inf_normv /(\o) max_ofnat tolist_catv /inf_norm big_cat.
-qed.
-
-lemma inf_normvN (v : vector) : inf_normv (-v) = inf_normv v.
-proof. 
-rewrite /inf_normv /normv /pnormv /tolist /(\o); congr. 
-by rewrite /inf_norm !big_map /(\o) /= &(eq_bigr) => i _ /=; rewrite cnormN.
-qed.
-
-lemma inf_normv_low v : inf_normv (lowBitsV v) <= gamma2.
-proof.
-rewrite ler_ofnat;split;1:smt(ge2_gamma2). 
-apply ler_bigmax => r @/(\o) /mem_tolist [i].
-rewrite size_mapv => -[bound_i ->] _. 
-by rewrite get_mapv // ler_ofint cnorm_ge0 /=; smt(lowbit_small).
-qed.
-
-lemma inf_normv_vectc n c : 0 < n =>
-  inf_normv (vectc n c) = cnorm c.
-proof.
-rewrite /inf_normv /(\o) /normv /pnormv tolist_vectc /inf_norm => n_gt0.
-by rewrite (eq_bigmax c (Nat.ofint (cnorm c))); smt(mem_nseq ofintK cnorm_ge0).
-qed.
+clone import DVect as DV with 
+  theory DR <- DR,
+  op HL.alpha <- 2*gamma2. (* FIXME proof HL.*. *)
+import HL MatRq.
 
 lemma cnorm_dC c tau : c \in dC tau => cnorm c <= 1 by smt(supp_dC).
 
 type M.
-
 
 type challenge_t = Rq.
 type SK = matrix * vector * vector.
@@ -115,8 +57,6 @@ type commit_t = high list.
 type response_t = vector. 
 
 op dC : challenge_t distr = dC tau. 
-
-
 
 (* Just storing `y` should be good here. *)
 type pstate_t = vector. 
