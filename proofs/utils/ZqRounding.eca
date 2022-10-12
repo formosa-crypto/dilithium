@@ -97,6 +97,7 @@ lemma rg_round alpha x :
   alpha %| (q - 1) =>
   0 <= asint (round alpha x) <= q - alpha - 1.
 proof. smt(round_upper_bound rg_asint). qed.
+
 (* High bits image and injectivity *)
 
 lemma highbits_lower_bound alpha y :
@@ -396,6 +397,7 @@ qed.
 op inf_norm = BigMax.big predT (fun (q : zmod) => Nat.ofint `|q|).
 op "`|_|" p = Nat.ofnat (inf_norm (mkseq (fun i => p.[i]) n)).
 
+(* More nat stuff *)
 (* Maybe this proof could've just been inlined? *)
 lemma ler_ofint_ofnat (n : int) (m : nat) :
   0 <= n =>
@@ -434,8 +436,6 @@ rewrite !poly_highbits_correct //; 1, 2: smt(poly_highbits_size).
 rewrite rcoeffD.
 apply (hide_low _ _ _ b1 b2) => //; last smt(inf_norm_poly_ler).
 apply (ler_trans `|poly_lowbits alpha px|) => //.
-print inf_norm_poly_ler.
-print poly_lowbits_correct.
 rewrite -poly_lowbits_correct //; first smt(poly_highbits_size).
 exact inf_norm_poly_ler.
 qed.
@@ -471,7 +471,6 @@ by rewrite poly_lowbits_correct // lowbits_small.
 qed.
 
 (*** Used in DRing ***)
-(* Not true without side-conditions *)
 lemma poly_leftshift_inj alpha xs ys :
   2 <= alpha && alpha <= q %/ 2 =>
   2 %| alpha =>
