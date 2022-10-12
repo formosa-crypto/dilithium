@@ -480,6 +480,17 @@ rewrite addrC BCA.big_seq BCA.big1 ?addr0 /=.
 by rewrite add0r &(BCA.eq_bigr) => i; rewrite !piK.
 qed.
 
+lemma polyLXE coeffs i :
+  size coeffs <= n =>
+  (polyLX coeffs).[i] = nth Coeff.zeror coeffs i.
+proof.
+move => H.
+rewrite /"_.[_]" /polyLX.
+rewrite piK.
+- by rewrite reduced_polyL //.
+smt(BasePoly.polyLE).
+qed.
+
 (* -------------------------------------------------------------------- *)
 lemma finite_for_polyXnD1 s :
      is_finite_for predT s

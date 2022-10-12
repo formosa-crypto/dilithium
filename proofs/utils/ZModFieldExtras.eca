@@ -9,6 +9,19 @@ clone include ZModField.
 op crepr x = let y = asint x in
   if (p + 1) %/ 2 <= y then y - p else y.
 
+lemma crepr_eq x y :
+  crepr x = crepr y <=> x = y.
+proof. smt(rg_asint asint_eq). qed.
+
+lemma asint_crepr x :
+  asint x = (crepr x) %% p.
+proof.
+rewrite /crepr /=.
+case (p %/ 2 <= asint x) => _; last by smt(modz_small rg_asint).
+rewrite -modzDr.
+smt(modz_small rg_asint).
+qed.
+
 op "`|_|" x = `|crepr x|.
 
 lemma abs_zp_small (x: int) :
@@ -33,7 +46,89 @@ rewrite oppE -modzDl.
 by rewrite modz_small; smt(rg_asint asint_inj zeroE).
 qed.
 
+lemma abs_zp_zero :
+  `|zero| = 0.
+proof.
+rewrite /"`|_|".
+rewrite /crepr.
+rewrite zeroE => /=.
+smt(ge2_p).
+qed.
+
+(* -- Distributions over interval of ZModField -- *)
 (* Keeping inputs as `int` to allow ranges that go across 0 *)
 op dinter_zp i j = dmap (dinter i j) inzmod.
 
 op dball_zp (i: int) = dinter_zp (-i) i.
+
+(* -- Centered modulo -- *)
+
+(* Similar to `( %% )`, but output in range (-alpha/2, alpha/2].
+ * The open-closed interval is opposite of normal convention. *)
+
+op mod_to_cmod r d = if r <= d %/ 2 then r else r - d.
+op cmod x d = let r = x %% d in mod_to_cmod r d.
+
+lemma cmod_small x d :
+  2 <= d =>
+  `|cmod x d| <= d %/ 2.
+proof. smt(modz_ge0 ltz_pmod). qed.
+
+op cmod_to_mod r d =
+  if r < 0 then r + d else r.
+
+lemma mod_to_cmodK x d :
+  0 <= x =>
+  x < d =>
+  cmod_to_mod (mod_to_cmod x d) d = x.
+proof. smt(). qed.
+
+lemma cmod_to_mod_injective x y d :
+  -d %/ 2 < x =>
+  x <= d %/ 2 =>
+  -d %/ 2 < y =>
+  y <= d %/ 2 =>
+  cmod_to_mod x d = cmod_to_mod y d => x = y.
+proof. smt(). qed.
+
+lemma cmod_to_mod_correct x d :
+  0 < d =>
+  d %| (x - cmod_to_mod x d).
+proof. smt(). qed.
+
+lemma dvdz_modzD m n d :
+  d %| m =>
+  d %| n =>
+  d %| (m + n).
+proof. smt(dvdz_modzDr). qed.
+
+(* Generalization of the `euclideUl` lemma to centered modulo.
+ * Representative chosen from (-d %/ 2, d %/ 2] *)
+lemma euclideUl_centered (x x0 d : int) :
+  0 < d =>
+  d %| (x - x0) =>
+  -d %/ 2 < x0 =>
+  x0 <= d %/ 2 =>
+  x0 = cmod x d.
+proof.
+move => *.
+rewrite /cmod /=.
+apply (cmod_to_mod_injective _ _ d) => //; 1, 2: smt().
+rewrite mod_to_cmodK; 1, 2: smt().
+(* Fixing interface to euclideUl *)
+suff: (x - (cmod_to_mod x0 d)) %/ d = x %/ d /\ (cmod_to_mod x0 d) = x %% d by smt().
+apply euclideUl; last by smt().
+rewrite -divz_eq.
+rewrite divzK; last by smt().
+have ->: x - cmod_to_mod x0 d = (x - x0) + (x0 - cmod_to_mod x0 d) by smt().
+apply dvdz_modzD => //.
+exact cmod_to_mod_correct.
+qed.
+
+lemma cmod_lower_bound x d :
+  2 <= d =>
+  2 %| d =>
+  -d %/ 2 < cmod x d.
+proof.
+smt(modz_ge0 ltz_pmod).
+qed.
