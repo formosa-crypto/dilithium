@@ -331,15 +331,6 @@ op poly_rightshift alpha p : high_t = mkseq (fun i => rightshift alpha p.[i]) n.
 op poly_leftshift alpha p = polyLX (mkseq (fun i => leftshift alpha (nth 0 p i)) n).
 op poly_highbits alpha p : high_t = mkseq (fun i => highbits alpha p.[i]) n.
 
-(* Other direction of what's been proven *)
-lemma ler_bigmax' (P : 'a -> bool) F (s : 'a list) (n : nat) :
-  BigMax.big P F s <= n => (forall x, x \in s => P x => F x <= n).
-proof.
-elim: s => [|head tail IHs le_s_n]; first by auto.
-rewrite BigMax.big_cons in le_s_n.
-smt(StNat.Lift.lift2E).
-qed.
-
 (** Proving things are indeed coefficient-wise **)
 
 lemma poly_lowbits_correct alpha p i :
@@ -397,13 +388,6 @@ qed.
 op inf_norm = BigMax.big predT (fun (q : zmod) => Nat.ofint `|q|).
 op "`|_|" p = Nat.ofnat (inf_norm (mkseq (fun i => p.[i]) n)).
 
-(* More nat stuff *)
-(* Maybe this proof could've just been inlined? *)
-lemma ler_ofint_ofnat (n : int) (m : nat) :
-  0 <= n =>
-  (ofint n <= m) <=> (n <= ofnat m).
-proof. smt(ofintK). qed.
-
 lemma ge0_inf_norm_p p :
   0 <= `|p|.
 proof. exact StNat.valP. qed.
@@ -413,7 +397,7 @@ lemma inf_norm_poly_ler p i :
 proof.
 case (0 <= i /\ i < n) => ?.
 - apply ler_ofint_ofnat; first smt().
-  apply (ler_bigmax' predT (fun (q: zmod) => Nat.ofint `|q|) (mkseq (fun i => p.[i]) n)).
+  apply (ler_bigmax predT (fun (q: zmod) => Nat.ofint `|q|) (mkseq (fun i => p.[i]) n)).
   + smt().
   + smt(mkseqP).
   + smt().

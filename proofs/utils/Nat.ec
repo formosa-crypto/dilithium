@@ -101,13 +101,30 @@ lemma ler_ofnat (n : nat) m : ofnat n <= m <=> 0 <= m /\ n <= ofint m by smt.
 
 lemma ler_ofint i j : 0 <= i <= j => (ofint i <= ofint j) by smt.
 
-lemma ler_bigmax (P : 'a -> bool) F (s : 'a list) (n : nat) :
+lemma ler_ofint_ofnat (n : int) (m : nat) :
+  0 <= n =>
+  (ofint n <= m) <=> (n <= ofnat m).
+proof. smt(ofintK). qed.
+
+lemma ub_elem_is_ub_big (P : 'a -> bool) F (s : 'a list) (n : nat) :
   (forall x, x \in s => P x => F x <= n) => big P F s <= n.
 proof.
 elim: s  => [|x s IHs le_s_n] ; first by rewrite big_nil le0n. 
 rewrite big_cons /=; case (P x) => [Px|/#].
 by rewrite le_maxn le_s_n //= IHs /#.
 qed.
+
+lemma ub_big_is_ub_elem (P : 'a -> bool) F (s : 'a list) (n : nat) :
+  BigMax.big P F s <= n => (forall x, x \in s => P x => F x <= n).
+proof.
+elim: s => [|head tail IHs le_s_n]; first by auto.
+rewrite BigMax.big_cons in le_s_n.
+smt(StNat.Lift.lift2E).
+qed.
+
+lemma ler_bigmax (P : 'a -> bool) F (s : 'a list) (n : nat) :
+  (forall x, x \in s => P x => F x <= n) <=> big P F s <= n.
+proof. smt(ub_big_is_ub_elem ub_elem_is_ub_big). qed.
 
 lemma eq_bigmax x0 (n : nat) (P : 'a -> bool) F (s : 'a list) :
   (x0 \in s) => P x0 => (forall x, x \in s => P x => F x = n) => big P F s = n.
