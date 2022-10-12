@@ -4,6 +4,7 @@ require NonSquareMatrix.
 require ZModFieldExtras.
 import StdOrder IntOrder.
 require import Nat.
+require import Supplementary.
 
 op q : {int | prime q} as prime_q.
 
@@ -46,9 +47,6 @@ op highbits alpha r = rightshift alpha (round alpha r).
 
 (* Image of rounding *)
 
-(*** Should really be in the stdlib ***)
-op image (f: 'a -> 'b) (b : 'b) = exists a, f a = b.
-
 lemma round_is_multiple alpha r :
   2 <= alpha <= q %/ 2 =>
   alpha %| asint (round alpha r).
@@ -74,10 +72,7 @@ lemma round_upper_bound alpha x :
   asint (round alpha x) <= q - alpha - 1.
 proof.
 move => *.
-suff: asint (round alpha x) < q - 1.
-- rewrite -(divzK alpha (asint (round alpha x))).
-  + exact round_is_multiple.
-  smt(divzK modzDr).
+suff: asint (round alpha x) < q - 1 by smt(divzK modzDr round_is_multiple).
 suff: asint (round alpha x) <> q - 1 by smt(rg_asint).
 rewrite /round /lowbits /=.
 case (q - alpha %/ 2 <= asint x) => ?.
@@ -191,8 +186,7 @@ lemma lowbits_id alpha (x : zmod) :
   `|x| <= alpha %/ 2 =>
   lowbits alpha x = x.
 proof.
-move => ??.
-rewrite /lowbits.
+move => *; rewrite /lowbits.
 case (q - alpha %/ 2 <= asint x) => [|?]; first by trivial.
 apply crepr_eq.
 rewrite inzmodK_centered; smt(rg_asint).

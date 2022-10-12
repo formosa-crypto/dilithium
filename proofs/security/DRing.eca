@@ -3,10 +3,7 @@ lowBits operations used in Dilithium *)
 
 require import AllCore IntDiv Distr.
 require Subtype.
-
-pred image (f : 'a -> 'b) y = exists x, f x = y.
-pred injective_in P (f : 'a -> 'b) = 
-  forall x y, P x => P y => f x = f y => x = y.
+require import Supplementary.
 
 (* Modulo *)
 op q : {int | prime q} as prime_q. 
@@ -44,22 +41,32 @@ axiom cnormN (r : Rq) : cnorm (-r) = cnorm r.
 theory Flex.
 
 type high.
-op lowBits : Rq -> int -> Rq. 
-op highBits : Rq -> int -> high.
-op shift    : high -> int ->  Rq.
+op lowBits : int -> Rq -> Rq. 
+op highBits : int -> Rq -> high.
+op shift    : int -> high ->  Rq.
 
-axiom high_lowP x a : shift (highBits x a) a + lowBits x a = x.
+axiom high_lowP alpha x :
+  2 <= alpha && alpha <= q %/ 2 =>
+  2 %| alpha =>
+  alpha %| (q - 1) =>
+  shift alpha (highBits alpha x) + lowBits alpha x = x.
 
-axiom hide_low r s b a : 
-  cnorm s <= b => cnorm (lowBits s a) < a %/ 2 - b =>
-  highBits (r + s) a = highBits r a.
+axiom hide_low alpha r s b :
+  2 <= alpha && alpha <= q %/ 2 =>
+  2 %| alpha =>
+  alpha %| (q - 1) =>
+  cnorm s <= b => cnorm (lowBits alpha r) < alpha %/ 2 - b =>
+  highBits alpha (r + s) = highBits alpha r.
 
-axiom lowbit_small r a :
-  cnorm (lowBits r a) <= a %/ 2. (* TOTHINK: +1 ? *)
+axiom lowbit_small alpha r :
+  2 <= alpha && alpha <= q %/ 2 =>
+  cnorm (lowBits alpha r) <= alpha %/ 2. (* TOTHINK: +1 ? *)
 
-axiom shift_inj a : 
-  injective_in (image (transpose highBits a)) (transpose shift a).
-
+axiom shift_inj alpha :
+  2 <= alpha && alpha <= q %/ 2 =>
+  2 %| alpha =>
+  alpha %| (q - 1) =>
+  injective_in (image (highBits alpha)) (shift alpha).
 end Flex.
     
 abstract theory HighLow.
@@ -70,36 +77,49 @@ axiom alpha_halfq_le : alpha <= q %/ 2.
 axiom even_alpha : 2 %| alpha.
 axiom alpha_almost_divides_q : alpha %| (q - 1).
 
+lemma rg_alpha : 2 <= alpha <= q %/ 2 by smt(ge2_alpha alpha_halfq_le).
+
 clone import Subtype as S with 
   type T <- Flex.high,
-  pred P <- image (transpose Flex.highBits alpha).
+  pred P <- image (Flex.highBits alpha).
 
 type high = sT.
 
-op highBits (r : Rq) = insubd (Flex.highBits r alpha).
-op lowBits (r : Rq) = Flex.lowBits r alpha.
-op shift (h : high) = Flex.shift (val h) alpha.
+op highBits (r : Rq) = insubd (Flex.highBits alpha r).
+op lowBits (r : Rq) = Flex.lowBits alpha r.
+op shift (h : high) = Flex.shift alpha (val h).
 
 lemma high_lowP x : shift (highBits x) + lowBits x = x.
 proof. 
-by rewrite /shift /highBits /lowBits insubdK 1:/# Flex.high_lowP.
+rewrite /shift /highBits /lowBits insubdK 1:/# Flex.high_lowP //.
+- exact rg_alpha.
+- exact even_alpha.
+- exact alpha_almost_divides_q.
 qed.
 
 lemma hide_low r s b : 
-  cnorm s <= b => cnorm (lowBits s) < alpha %/ 2 - b =>
+  cnorm s <= b => cnorm (lowBits r) < alpha %/ 2 - b =>
   highBits (r + s) = highBits r.
 proof.
-by move => *; rewrite /highBits (Flex.hide_low r s b).
+move => *; rewrite /highBits (Flex.hide_low alpha r s b) //.
+- exact rg_alpha.
+- exact even_alpha.
+- exact alpha_almost_divides_q.
 qed.
 
 lemma lowbit_small r :
   cnorm (lowBits r) <= alpha %/ 2. 
-proof. by rewrite /lowsBits (Flex.lowbit_small). qed.
+proof. by rewrite /lowsBits (Flex.lowbit_small) rg_alpha. qed.
 
 lemma shift_inj : injective shift. 
 proof.
-move => h1 h2; have S := Flex.shift_inj alpha _ _ (valP h1) (valP h2).
-by move/S; apply val_inj.
+move => x y ?.
+have H : injective_in (image ((Flex.highBits alpha))) ((Flex.shift alpha)).
+- apply Flex.shift_inj.
+  + exact rg_alpha.
+  + exact even_alpha.
+  + exact alpha_almost_divides_q.
+smt(val_inj valP).
 qed.
 
 end HighLow.

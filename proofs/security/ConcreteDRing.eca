@@ -1,0 +1,48 @@
+require import AllCore List.
+require ZqRounding DRing.
+require import Distr DistrExtras.
+require import Supplementary.
+
+clone import ZqRounding as Round.
+import PolyReduceZq.
+import ZModQ.
+require StdBigop.
+import StdBigop.Bigint.BIA.
+
+(* l1 norm of poly. *)
+(* Not sure if it belongs here *)
+op l1_norm (p : polyXnD1) = big predT ZModQ."`|_|" (mkseq (fun i => p.[i]) Round.n).
+op dC a = dcond dpolyXnD1 (fun (c : polyXnD1) => `|c| <= 1 /\ l1_norm c = a).
+
+clone DRing as DR with
+  op q <= q,
+  op n <= Round.n,
+  type Rq <= PolyReduceZq.polyXnD1,
+  theory RqRing <= PolyReduceZq.ComRing,
+  op cnorm <= Round."`|_|",
+  op dRq <= dpolyXnD1,
+  op dRq_ <= fun i => (dpolyX (dball_zp i)),
+  op dC <= dC,
+  op l1_norm <= l1_norm,
+  type Flex.high <= int list,
+  op Flex.highBits <= poly_highbits,
+  op Flex.shift <= poly_leftshift,
+  op Flex.lowBits <= poly_lowbits
+proof *.
+realize prime_q by exact prime_q.
+realize gt0_n by exact gt0_n.
+realize dRq_ll by exact dpolyXnD1_ll.
+realize supp_dC by smt(dcond_supp dpolyXnD1_fu).
+realize dRq_uni by exact dpolyXnD1_uni.
+realize dRq_fu by exact dpolyXnD1_fu.
+realize dRq__ll by admit. (* TODO *)
+realize dRq__uni by admit. (* TODO *)
+realize supp_dRq by admit. (* TODO *)
+realize dC_ll by admit. (* TODO need witness in dC *)
+realize dC_uni by admit. (* TODO need supporting lemma for dcond *)
+realize cnorm_ge0 by exact ge0_inf_norm_p.
+realize cnormN by admit. (* TODO *)
+realize Flex.high_lowP by exact poly_high_lowP.
+realize Flex.hide_low by smt(poly_hide_low).
+realize Flex.lowbit_small by exact poly_lowbit_small.
+realize Flex.shift_inj by admit. (* TODO relate images of poly_highbits and highbits *)
