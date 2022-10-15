@@ -222,10 +222,6 @@ lemma dunit_me (x: 'a) :
   min_entropy (dunit x) = 0%r.
 proof. smt(ln_eq0 dunit_pmax). qed.
 
-op dcond (d : 'a distr) (p : 'a -> bool) = dscale (drestrict d p).
-lemma weight_drestrict (d: 'a distr) (p: 'a -> bool) :
-  weight (drestrict d p) = mu d p.
-admitted. (* in PR 235 *)
 lemma dcond_supp (d: 'a distr) (p: 'a -> bool) (x: 'a):
   x \in dcond d p <=> x \in d /\ p x.
 proof.

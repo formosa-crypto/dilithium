@@ -28,7 +28,7 @@ op [lossless full uniform] dRq : Rq distr.
 lemma dRq_funi : is_funiform dRq by smt(dRq_fu dRq_uni).
 
 op [lossless uniform] dRq_ : int -> Rq distr.
-axiom supp_dRq x a : x \in dRq_ a <=> cnorm x <= a.
+axiom supp_dRq x a : 0 <= a => x \in dRq_ a <=> cnorm x <= a.
 
 op [lossless uniform] dC  : int -> Rq distr.
 axiom supp_dC c a : c \in dC a <=> cnorm c <= 1 /\ l1_norm c = a.

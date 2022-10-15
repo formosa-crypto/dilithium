@@ -96,18 +96,18 @@ op oneXnD1 = oner.
 
 (* -------------------------------------------------------------------- *)
 clone BigComRing as BigXnD1 with
-  type CR.t      <- polyXnD1,
-    op CR.zeror  <- zeroXnD1,
-    op CR.oner   <- oneXnD1,
-    op CR.( + )  <- ( + ),
-    op CR.([-])  <- ([-]),
-    op CR.( * )  <- ( * ),
-    op CR.invr   <- invr,
-    op CR.intmul <- ComRing.intmul,
-    op CR.ofint  <- ComRing.ofint,
-    op CR.exp    <- ComRing.exp,
-    op CR.lreg   <- ComRing.lreg,
-  pred CR.unit   <- unit
+  type CR.t      <= polyXnD1,
+    op CR.zeror  <= zeroXnD1,
+    op CR.oner   <= oneXnD1,
+    op CR.( + )  <= ( + ),
+    op CR.([-])  <= ([-]),
+    op CR.( * )  <= ( * ),
+    op CR.invr   <= invr,
+    op CR.intmul <= ComRing.intmul,
+    op CR.ofint  <= ComRing.ofint,
+    op CR.exp    <= ComRing.exp,
+    op CR.lreg   <= ComRing.lreg,
+  pred CR.unit   <= unit
 
   proof *
 

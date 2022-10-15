@@ -1,18 +1,235 @@
 require import AllCore List.
 require ZqRounding DRing.
-require import Distr DistrExtras.
+require import Distr.
 require import Supplementary.
+require import DInterval.
+require import Nat.
 
 clone import ZqRounding as Round.
 import PolyReduceZq.
 import ZModQ.
 require StdBigop.
 import StdBigop.Bigint.BIA.
+import IntDiv.
 
 (* l1 norm of poly. *)
 (* Not sure if it belongs here *)
 op l1_norm (p : polyXnD1) = big predT ZModQ."`|_|" (mkseq (fun i => p.[i]) Round.n).
 op dC a = dcond dpolyXnD1 (fun (c : polyXnD1) => `|c| <= 1 /\ l1_norm c = a).
+
+lemma dinter_zp_ll (i j : int) :
+  i <= j =>
+  is_lossless (dinter_zp i j).
+proof.
+move => ?.
+by rewrite dmap_ll dinter_ll //.
+qed.
+
+lemma dinter_zp_uni (i j : int) :
+  i <= j =>
+  j - i < q =>
+  is_uniform (dinter_zp i j).
+proof.
+move => ??.
+rewrite /dinter_zp.
+rewrite dmap_uni_in_inj => [x y rg_x rg_y ?|]; last smt(supp_dinter1E).
+rewrite supp_dinter in rg_x.
+rewrite supp_dinter in rg_y.
+case (y <= x) => ?. (* wlog *)
+- have ?: asint (inzmod (x - y)) = 0 by smt(zeroE inzmodD).
+  suff: asint (inzmod (x - y)) = x - y by smt().
+  by rewrite inzmodK modz_small => /#.
+- have ?: asint (inzmod (y - x)) = 0 by smt(zeroE inzmodD).
+  suff: asint (inzmod (y - x)) = y - x by smt().
+  by rewrite inzmodK modz_small => /#.
+qed.
+
+lemma dinter_zp_supp (i j : int) (x : zmod):
+  i <= j =>
+  j - i < q =>
+  ((x \in dinter_zp i j) <=> (exists xi, x = inzmod xi /\ i <= xi /\ xi <= j)).
+proof.
+move => ??; rewrite /dinter_zp.
+rewrite supp_dmap.
+smt(supp_dinter).
+qed.
+
+lemma dball_zp_ll i :
+  0 <= i =>
+  is_lossless (dball_zp i).
+proof.
+move => ?.
+by rewrite /dball_zp dinter_zp_ll => /#.
+qed.
+
+lemma dball_zp_uni i :
+  0 <= i =>
+  i < q %/ 2 =>
+  is_uniform (dball_zp i).
+proof.
+move => *; rewrite /dball_zp.
+apply dinter_zp_uni => /#.
+qed.
+
+lemma dpolyX_ll d :
+  is_lossless d => is_lossless (dpolyX d).
+proof.
+move => ?; rewrite /dpolyX.
+apply dmap_ll.
+exact BasePoly.dpoly_ll.
+qed.
+
+lemma asintK_centered (x : zmod) :
+  `|x| < q %/ 2 =>
+   inzmod (crepr x) = x.
+proof.
+move => ?; rewrite /crepr /=.
+smt(asintK).
+qed.
+
+lemma dball_zp_supp i x :
+  0 <= i =>
+  i < q %/ 2 =>
+  x \in dball_zp i <=> `|x| <= i.
+proof.
+move => *.
+rewrite /dball_zp.
+rewrite dinter_zp_supp; 1, 2: smt().
+split => ?; first smt(abs_zp_small).
+exists (crepr x).
+split; last smt().
+by rewrite asintK_centered // /#.
+qed.
+
+lemma reduced_dpoly d p m :
+  m <= Round.n =>
+  p \in BasePoly.dpoly Round.n d =>
+  reduced p.
+proof.
+move => *.
+have ?: BasePoly.deg p <= Round.n.
+- smt(BasePoly.supp_dpoly Round.gt0_n).
+exact reducedP.
+qed.
+
+(* Definitely stlib material... *)
+lemma map_mkseq (f : 'a -> 'b) (g: int -> 'a) (n : int) :
+  map f (mkseq g n) = mkseq (f \o g) n.
+proof.
+apply (eq_from_nth witness).
+rewrite size_map !size_mkseq //.
+move => i rg_i.
+rewrite size_map size_mkseq in rg_i.
+rewrite (nth_map witness); first smt(size_mkseq).
+rewrite !nth_mkseq; smt(ge0_n).
+qed.
+
+lemma abs_polyXN (p : polyXnD1) :
+  `|-p| = `|p|.
+proof.
+rewrite /"`|_|"; congr.
+rewrite /inf_norm.
+apply BigMax.eq_big_perm_map.
+apply perm_eq_refl_eq.
+rewrite !map_mkseq /(\o).
+congr; rewrite fun_ext => x /=; congr.
+by rewrite -rcoeffN -abs_zpN.
+qed.
+
+lemma dpolyX_uni d :
+  is_uniform d => is_uniform (dpolyX d).
+proof.
+move => ?.
+rewrite /dpolyX.
+rewrite dmap_uni_in_inj; first smt(reduced_dpoly piK).
+exact BasePoly.dpoly_uni.
+qed.
+
+lemma dpolyX_supp d p :
+  p \in dpolyX d <=> (forall i, 0 <= i < Round.n => p.[i] \in d).
+proof.
+rewrite /dpolyX.
+rewrite supp_dmap.
+split.
+- move => [f[supp_f ?]] i rg_i; subst.
+  rewrite BasePoly.supp_dpoly // in supp_f.
+  case supp_f => [deg_f supp_coeff].
+  by rewrite /"_.[_]" piK; smt(reducedP).
+- move => *.
+  exists (crepr p).
+  split; last by rewrite creprK.
+  apply BasePoly.supp_dpoly => //.
+  split => //.
+  exact deg_crepr.
+qed.
+
+lemma inf_norm_le (p : polyXnD1) a :
+  0 <= a =>
+  (forall i, 0 <= i < Round.n => `|p.[i]| <= a) =>
+  `|p| <= a.
+proof.
+move => ge0_a ?; rewrite /"`|_|" /inf_norm ler_ofnat.
+split; first by auto.
+rewrite -ler_bigmax /=.
+move => x mem_x _.
+apply ler_ofint.
+split => [|_]; first smt().
+rewrite mkseqP in mem_x.
+case mem_x => j [rg_j ?]; subst => /#.
+qed.
+
+lemma ge0_abs_zp (x : zmod) :
+  0 <= `|x|.
+proof. smt(). qed.
+
+lemma ler_ofint' i j :
+  0 <= i /\ 0 <= j /\ ofint i <= ofint j
+  => i <= j.
+proof. smt(ofintK). qed.
+
+lemma inf_normXE (p : polyXnD1) a i :
+  0 <= a =>
+  `|p| <= a =>
+  0 <= i < Round.n => `|p.[i]| <= a.
+proof.
+move => ge0_a H rg_i.
+rewrite /"`|_|" in H.
+rewrite ler_ofnat in H.
+case H => [_ H].
+rewrite /inf_norm /= in H.
+rewrite -ler_bigmax in H.
+suff: p.[i] \in mkseq (fun i => p.[i]) Round.n by smt(ler_ofint').
+smt(mkseqP).
+qed.
+
+lemma abs_zp_ub (p : zmod) :
+  `|p| <= Round.q %/ 2.
+proof. smt(rg_asint). qed.
+
+lemma inf_norm_ub (p : polyXnD1) :
+  `|p| <= Round.q %/ 2.
+proof.
+apply inf_norm_le.
+- smt(ge2_p).
+- move => ?_; exact abs_zp_ub.
+qed.
+
+op dpoly_ball i =
+  if 0 <= i < Round.q %/ 2 then dpolyX (dball_zp i) else dpolyXnD1.
+
+lemma poly_leftshift_imE alpha (xs : int list) (x : int) :
+  2 <= alpha =>
+  x \in xs =>
+  image (poly_highbits alpha) xs =>
+  image (highbits alpha) x.
+proof.
+move => ge2_alpha in_x im_xs.
+case im_xs => [y im_y].
+rewrite eq_sym in im_y; subst.
+rewrite /poly_highbits mkseqP in in_x.
+case in_x => [i [rg_i ?]]; subst.
+by exists (y.[i]).
+qed.
 
 clone DRing as DR with
   op q <= q,
@@ -21,7 +238,7 @@ clone DRing as DR with
   theory RqRing <= PolyReduceZq.ComRing,
   op cnorm <= Round."`|_|",
   op dRq <= dpolyXnD1,
-  op dRq_ <= fun i => (dpolyX (dball_zp i)),
+  op dRq_ <= dpoly_ball,
   op dC <= dC,
   op l1_norm <= l1_norm,
   type Flex.high <= int list,
@@ -35,14 +252,40 @@ realize dRq_ll by exact dpolyXnD1_ll.
 realize supp_dC by smt(dcond_supp dpolyXnD1_fu).
 realize dRq_uni by exact dpolyXnD1_uni.
 realize dRq_fu by exact dpolyXnD1_fu.
-realize dRq__ll by admit. (* TODO *)
-realize dRq__uni by admit. (* TODO *)
-realize supp_dRq by admit. (* TODO *)
+realize dRq__ll.
+move => i; rewrite /dpoly_ball.
+case (0 <= i < Round.q %/ 2) => /= ?; last exact dpolyXnD1_ll.
+by rewrite dpolyX_ll dball_zp_ll /#.
+qed.
+realize dRq__uni.
+move => i; rewrite /dpoly_ball.
+case (0 <= i < Round.q %/ 2) => /= ?; last exact dpolyXnD1_uni.
+by rewrite dpolyX_uni dball_zp_uni /#.
+qed.
+realize supp_dRq.
+move => p a ?; rewrite /dpoly_ball.
+have -> /=: (0 <= a) = true by smt().
+case (a < Round.q %/ 2) => /= ?; last smt(dpolyXnD1_fu inf_norm_ub).
+rewrite dpolyX_supp.
+split => H.
+- apply inf_norm_le; first smt().
+  smt(dball_zp_supp).
+- move => i rg_i.
+  rewrite dball_zp_supp //.
+  exact inf_normXE.
+qed.
 realize dC_ll by admit. (* TODO need witness in dC *)
 realize dC_uni by admit. (* TODO need supporting lemma for dcond *)
 realize cnorm_ge0 by exact ge0_inf_norm_p.
-realize cnormN by admit. (* TODO *)
+realize cnormN by exact abs_polyXN.
 realize Flex.high_lowP by exact poly_high_lowP.
 realize Flex.hide_low by smt(poly_hide_low).
 realize Flex.lowbit_small by exact poly_lowbit_small.
-realize Flex.shift_inj by admit. (* TODO relate images of poly_highbits and highbits *)
+realize Flex.shift_inj.
+move => alpha rg_alpha even_alpha alpha_almost_divides_q xs ys im_x im_y sx_sy_eq.
+apply (poly_leftshift_inj alpha xs ys) => //.
+- smt(poly_highbits_size).
+- smt(poly_highbits_size).
+- smt(poly_leftshift_imE).
+- smt(poly_leftshift_imE).
+qed.
