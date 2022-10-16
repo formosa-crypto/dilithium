@@ -222,60 +222,6 @@ lemma dunit_me (x: 'a) :
   min_entropy (dunit x) = 0%r.
 proof. smt(ln_eq0 dunit_pmax). qed.
 
-lemma dcond_supp (d: 'a distr) (p: 'a -> bool) (x: 'a):
-  x \in dcond d p <=> x \in d /\ p x.
-proof.
-rewrite supp_dscale supp_drestrict => //.
-qed.
-
-lemma dcond_ll (d: 'a distr) (p: 'a -> bool):
-  mu d p > 0%r => is_lossless (dcond d p).
-proof.
-move => dcond_valid; apply dscale_ll; smt(weight_drestrict).
-qed.
-
-(* Chain rule of probability *)
-lemma dcondE (d : 'a distr) (p : 'a -> bool) (p' : 'a -> bool) :
-  mu (dcond d p) p' = mu d (predI p p') / mu d p.
-proof.
-by rewrite dscaleE drestrictE weight_drestrict.
-qed.
-
-lemma dcond1E (d : 'a distr) (p : 'a -> bool) (x : 'a):
-  mu1 (dcond d p) x = if p x then mu1 d x / mu d p else 0%r.
-proof.
-rewrite dcondE; case: (p x) => [pxT|pxF]; last by rewrite mu0_false /#.
-by congr; apply mu_eq => /#.
-qed.
-
-lemma dcondZ (d: 'a distr) (P: 'a -> bool) :
-  mu d P = 0%r <=> dcond d P = dnull.
-proof.
-split => H.
-- apply eq_distr => a; rewrite dnull1E.
-  suff: a \notin (dcond d P) by smt(ge0_mu).
-  rewrite dcond_supp; smt(mu_sub).
-- have H': (mu (dcond d P) P = 0%r) by smt(dnullE).
-  rewrite dcondE // in H'.
-  smt(predIpp).
-qed.
-
-lemma dcond_dnull (P: 'a -> bool) :
-  dcond dnull P = dnull.
-proof.
-apply eq_distr; smt(dnull1E dcond_supp supp_dnull ge0_mu).
-qed.
-
-lemma marginal_sampling (d : 'a distr) (f : 'a -> 'b) :
-  d = dlet (dmap d f) (fun b => dcond d (fun a => f a = b)).
-proof.
-apply eq_distr => a; rewrite dlet1E /=.
-rewrite (@sumE_fin _ [f a]) ?big_seq1 //=; 1: smt(dcond1E).
-rewrite dcond1E dmap1E /(\o) /pred1 -/(pred1 a) /=.
-case (a \in d) => [a_d|]; 2: smt(ge0_mu).
-suff : mu d (fun (a0 : 'a) => f a0 = f a) > 0%r; smt(mu_sub).
-qed.
-
 lemma dcond_pmax (d: 'a distr) P :
   p_max (dcond d P) <= p_max d / mu d P.
 proof.
@@ -305,6 +251,18 @@ rewrite -(@log_mono 2%r) in H => //=; first smt(gt0_pmax).
 rewrite logM in H; first smt(dcond_supp gt0_pmax).
 - smt(dcond_supp gt0_pmax).
 suff: log 2%r (inv (mu d P)) = -log 2%r (mu d P); smt(lnV ge0_mu).
+qed.
+
+lemma uni_dcond (d: 'a distr) P :
+  is_uniform d =>
+  is_uniform (dcond d P).
+proof.
+move => uni_d x y supp_x supp_y.
+rewrite dcond_supp in supp_x.
+case supp_x => [supp_x px].
+rewrite dcond_supp in supp_y.
+case supp_y => [supp_y py].
+by rewrite !dcond1E => /#.
 qed.
 
 lemma pmax_upper_bound (d: 'a distr) (x: 'a) :
