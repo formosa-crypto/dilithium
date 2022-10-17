@@ -18,6 +18,10 @@ op highBitsV v = map highBits (tolist v).
 lemma size_shiftV (w1 : high list) : size (shiftV w1) = size w1.
 proof. by rewrite size_oflist size_map. qed.
 
+lemma size_lowBitsV (v : vector) : size (lowBitsV v) = size v by [].
+lemma size_highBitsV (v : vector) : size (highBitsV v) = size v.
+proof. by rewrite /highBitsV size_map size_tolist. qed.
+
 lemma shiftV_inj : injective shiftV. 
 proof. 
 have ms_inj := inj_map _ shift_inj.
