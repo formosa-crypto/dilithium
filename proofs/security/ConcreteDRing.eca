@@ -12,6 +12,8 @@ require StdBigop.
 import StdBigop.Bigint.BIA.
 import IntDiv.
 
+require import DistrExtras.
+
 (* l1 norm of poly. *)
 (* Not sure if it belongs here *)
 op l1_norm (p : polyXnD1) = big predT ZModQ."`|_|" (mkseq (fun i => p.[i]) Round.n).
@@ -231,6 +233,64 @@ case in_x => [i [rg_i ?]]; subst.
 by exists (y.[i]).
 qed.
 
+lemma abs_zp_one : `|one| = 1.
+proof.
+rewrite /"`|_|" /crepr /=.
+rewrite oneE; smt(ge2_p).
+qed.
+
+(* Makes a valid challenge *)
+op make_valid_challenge a =
+  polyLX (nseq a one).
+
+lemma make_valid_challenge_infty_norm a :
+  0 <= a <= Round.n =>
+  `|make_valid_challenge a| <= 1.
+proof.
+move => rg_a.
+rewrite /make_valid_challenge /"`|_|".
+rewrite /inf_norm ler_ofnat /= -ler_bigmax => x supp_x _.
+rewrite mkseqP in supp_x.
+case supp_x => i [rg_i ?]; subst => /=.
+apply ler_ofint.
+split => [|_]; first exact ge0_abs_zp.
+rewrite polyLXE; first smt(size_nseq).
+rewrite nth_nseq_if.
+case (0 <= i && i < a) => /= _.
+- by rewrite abs_zp_one //.
+- by rewrite abs_zp_zero //.
+qed.
+
+lemma make_valid_challenge_1norm a :
+  0 <= a <= Round.n =>
+  l1_norm (make_valid_challenge a) = a.
+proof.
+move => rg_a; rewrite /l1_norm /make_valid_challenge.
+have ->: (mkseq (fun i => (polyLX (nseq a one)).[i]) Round.n =
+          mkseq (fun i => nth ZModQ.zero (nseq a one) i) Round.n).
+- apply eq_in_mkseq => i rg_i /=.
+  apply polyLXE.
+  rewrite size_nseq; smt().
+have ->: ((fun i => nth ZModQ.zero (nseq a one) i) =
+           fun i => if 0 <= i < a then one else ZModQ.zero).
+- by rewrite fun_ext => i; rewrite nth_nseq_if //.
+have ->: mkseq (fun (i : int) => if 0 <= i && i < a then one else ZModQ.zero) Round.n
+       = nseq a one ++ nseq (Round.n - a) ZModQ.zero.
+- apply (eq_from_nth ZModQ.zero).
+  + by rewrite size_cat size_mkseq !size_nseq => /#.
+  move => i rg_i.
+  rewrite size_mkseq in rg_i.
+  rewrite nth_mkseq_if /=.
+  have -> /=: ((0 <= i && i < Round.n) = true) by smt().
+  rewrite nth_cat /=.
+  rewrite size_nseq; smt(nth_nseq).
+rewrite big_cat !big_nseq.
+rewrite abs_zp_zero abs_zp_one.
+rewrite -!AddMonoid.iteropE.
+rewrite -!StdOrder.IntOrder.Domain.intmulpE; 1,2: smt().
+by rewrite !intmulz.
+qed.
+
 clone DRing as DR with
   op q <= q,
   op n <= Round.n,
@@ -274,8 +334,20 @@ split => H.
   rewrite dball_zp_supp //.
   exact inf_normXE.
 qed.
-realize dC_ll by admit. (* TODO need witness in dC *)
-realize dC_uni by admit. (* TODO need supporting lemma for dcond *)
+realize dC_ll.
+move => i rg_i.
+apply dcond_ll.
+apply witness_support => /=.
+exists (make_valid_challenge i).
+split; last by exact dpolyXnD1_fu.
+split; first by exact make_valid_challenge_infty_norm.
+exact make_valid_challenge_1norm.
+qed.
+realize dC_uni.
+move => i.
+apply uni_dcond.
+exact dpolyXnD1_uni.
+qed.
 realize cnorm_ge0 by exact ge0_inf_norm_p.
 realize cnormN by exact abs_polyXN.
 realize Flex.high_lowP by exact poly_high_lowP.

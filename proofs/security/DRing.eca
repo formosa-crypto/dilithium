@@ -30,7 +30,10 @@ lemma dRq_funi : is_funiform dRq by smt(dRq_fu dRq_uni).
 op [lossless uniform] dRq_ : int -> Rq distr.
 axiom supp_dRq x a : 0 <= a => x \in dRq_ a <=> cnorm x <= a.
 
-op [lossless uniform] dC  : int -> Rq distr.
+op [uniform] dC : int -> Rq distr.
+(* This was a [lossless] tag.
+ * Had to make it a separate lemma for the side-condition. *)
+axiom dC_ll a : 0 <= a <= n => is_lossless (dC a).
 axiom supp_dC c a : c \in dC a <=> cnorm c <= 1 /\ l1_norm c = a.
 
 axiom cnorm_ge0 (r : Rq) : 0 <= cnorm r.
