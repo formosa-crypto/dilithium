@@ -202,7 +202,7 @@ module GameI (Adv: Adversary) (O: Oracle_i) = {
 lemma hybrid_sum (f: int -> real) (m n:int) : m <= n =>
   f(n) - f(m) = bigi predT (fun i => f(i+1) - f(i)) m n.
 proof.
-  move=> /IntOrder.ler_eqVlt [<<- | hmn].
+  move=> /IntOrder.ler_eqVlt [<<- | hmn]. 
   + by rewrite big_geq 1://; ring.
   rewrite -sumrB (big_ltn m n f) 1:// /=.
   have heq: n = n - 1 + 1 by ring.
@@ -243,6 +243,9 @@ module type Oracle_i_ij = {
   include Oracle
   proc init(sk_i : SK, i:int, j:int) : unit
  }.
+
+(* Outer Hybrid: First (i-1) calls to sign perform the [set] at every iteration, 
+   the remaining iterations only perform the [set] when [respond] succeeds. *)
 
 module Oi : Oracle_i_i = {
   var sk : SK
@@ -325,6 +328,13 @@ module Oi : Oracle_i_i = {
 
 }.
 
+(** Two-Dimensional (inner) Hybrid: [sign_l] and [sign_r] as before, 
+    but on the i-th [sign] query, we do the following:
+    - the first (j-i) iterations perform a [set].
+    - from (j+1) onwards we only [set] if respond succeeds 
+    - on the j-th query...?     
+*)
+
 module Oij : Oracle_i_ij = {
   include var Oi [-init, sign]
 
@@ -354,7 +364,8 @@ module Oij : Oracle_i_ij = {
     (w_, st) <$ commit sk;
     c <$ dC;
     oz <- respond sk st c;
-    (* The !j_end and wo = None seems stupid but it is important to be able prove preservation of bads (for the two next bad event *)
+    (* The !j_end and wo = None seems stupid but it is important 
+       to be able prove preservation of bads (for the two next bad event *)
     wo <- (!j_end /\ wo = None /\ oz = None) ? Some w_ : wo;  
     j_end <- true;
     RO.m <- (oz <> None) ? RO.m.[(w_,m) <- c] : RO.m;
@@ -399,6 +410,7 @@ module Oij : Oracle_i_ij = {
 
 }.
 
+(* Outer hybrid game *)
 module Hi (Adv: Adversary) (O: Oracle_i_i) = {
   proc main(i_i:int) = {
     var b, pk, sk;
@@ -410,6 +422,7 @@ module Hi (Adv: Adversary) (O: Oracle_i_i) = {
   }
 }.
 
+(* Inner hybrid game *)
 module Hij (Adv: Adversary) (O: Oracle_i_ij) = {
   proc main(i_i:int, j_i:int) = {
     var b, pk, sk;
@@ -441,13 +454,17 @@ declare module O <: Oracle_i{-Adv, -Count}.
 declare axiom Oh_ll : islossless O.h.
 declare axiom Os_ll : islossless O.sign.
 
+(* Since A is query bounded, we can stop answering queries once the 
+   query bound has been reached *)
 equiv Count_CountBound: 
   Adv(Count(O)).distinguish ~ Adv(CountBound(O)).distinguish : 
-  ={arg} /\ ={glob Adv, glob Count, glob O} /\ Count.countS{1} = 0 /\ Count.countH{1} = 0 ==>
-  ={res}.
+    ={arg} /\ ={glob Adv, glob Count, glob O} /\ 
+    Count.countS{1} = 0 /\ Count.countH{1} = 0 
+  ==> ={res}.
 proof.
   symmetry.
-  conseq (: !(qs < Count.countS \/ qh < Count.countH){2} => ={arg, glob Adv, glob Count, glob O} ==>
+  conseq (: !(qs < Count.countS \/ qh < Count.countH){2} => 
+              ={arg, glob Adv, glob Count, glob O} ==>
             !(qs < Count.countS \/ qh < Count.countH){2} => ={res}) 
          _ ( A_bound O) => />; 1: smt(). 
   proc *.
@@ -475,6 +492,7 @@ qed.
 
 end section C.
 
+(* The LHS game is Hi with i = qs *)
 local lemma Gleft_Hi &m : 
   Pr[Game(Adv, Count(OLeft)).main() @ &m : res] = 
   Pr[Hi(Adv, Oi).main(qs) @ &m : res].
@@ -492,7 +510,8 @@ proof.
   + proc; sp; if => //; rcondt{2} ^if; auto; sim />.
   inline *; auto.
 qed.
-  
+
+(* The LHS game is Hi with i = 0 *)  
 local lemma Gright_Hi &m : 
   Pr[Game(Adv, Count(ORight)).main() @ &m : res] = 
   Pr[Hi(Adv, Oi).main(0) @ &m : res].
@@ -516,16 +535,23 @@ proof.
   by inline *; auto.
 qed.
 
+(* The difference between LHS and RHS game is 
+   the sum of the differences of the Hi *)
 local lemma Gleft_Gright_aux &m: 
   Pr[Game(Adv, Count(OLeft)).main() @ &m : res] - 
   Pr[Game(Adv, Count(ORight)).main() @ &m : res] = 
-     bigi predT (fun (i : int) => Pr[Hi(Adv, Oi).main(i+1) @ &m : res] - Pr[Hi(Adv, Oi).main(i) @ &m : res]) 0 qs.
+     bigi predT 
+       (fun (i : int) => Pr[Hi(Adv, Oi).main(i+1) @ &m : res] - 
+                         Pr[Hi(Adv, Oi).main(i) @ &m : res]) 0 qs.
 proof.
-  rewrite Gright_Hi Gleft_Hi.
-  by have /= -> := (hybrid_sum (fun i => Pr[Hi(Adv, Oi).main(i) @ &m : res]) 0 qs qs_ge0).
+rewrite Gright_Hi Gleft_Hi.
+by have /= -> := 
+  (hybrid_sum (fun i => Pr[Hi(Adv, Oi).main(i) @ &m : res]) 0 qs qs_ge0).
 qed.
 
-(* We focus on Pr[Hi(Adv, Oi).main(i) @ &m : res ] - Pr[Hi(Adv, Oi).main(i+1) @ &m : res] *)
+(* We focus on 
+    Pr[Hi(Adv, Oi).main(i) @ &m : res ] - Pr[Hi(Adv, Oi).main(i+1) @ &m : res] 
+*)
 
 section I.
 
@@ -568,23 +594,29 @@ qed.
 
 local lemma HiHi1 &m : 
   Pr[Hi(Adv, Oi).main(i+1) @ &m : res] - Pr[Hi(Adv, Oi).main(i) @ &m : res] =
-  bigi predT (fun (j : int) => Pr[Hij(Adv, Oij).main(i,j+1) @ &m : res] - Pr[Hij(Adv, Oij).main(i, j) @ &m : res]) 0 kappa.
+  bigi predT 
+     (fun (j : int) => Pr[Hij(Adv, Oij).main(i,j+1) @ &m : res] - 
+                       Pr[Hij(Adv, Oij).main(i, j) @ &m : res]) 0 kappa.
 proof.
   rewrite Hi_Hij Hi1_Hij.
   have /= -> // := (hybrid_sum (fun j => Pr[Hij(Adv, Oij).main(i, j) @ &m : res]) 0 kappa).
   smt(kappa_gt0).
 qed.
 
-(* We focus on Pr[Pr[Hij(Adv, Oij).main(i,j+1) @ &m : res] - Pr[Hij(Adv, Oij).main(i, j) @ &m : res] *)
+(* We focus on: 
+    Pr[Pr[Hij(Adv, Oij).main(i,j+1) @ &m : res] - 
+    Pr[Hij(Adv, Oij).main(i, j) @ &m : res] *)
 section J.
 
 declare op j : int.
 declare axiom j_bounded : 0 <= j < kappa.
 
+(* m1 is an update of m2 with at some (w,_) pair *)
 op is_update (m1 m2: (W * M, C)fmap) (w:W) = 
   exists m c, m1 = m2.[(w,m) <- c].
 
-lemma is_update_set m1 m2 w k c: is_update m1 m2 w => is_update m1.[k<-c] m2.[k<-c] w.
+lemma is_update_set m1 m2 w k c: 
+  is_update m1 m2 w => is_update m1.[k<-c] m2.[k<-c] w.
 proof.
   move=> /> m c'; case: (k = (w, m)) => [-> | ? ]; [exists m c | exists m c']; 
     apply fmap_eqP; smt(get_setE).
@@ -601,12 +633,17 @@ proof.
   by move=> z; wp; conseq (:true); 1: smt(); islossless.
 qed.
 
+(* H_{i,j} and H_{i,j+1} differ by at most the probability that the adversary
+   queries [h] on a [w] that is stored in the j-th iteration of the i-th query. 
+   In particular, this requires the j-th iteration to be reached. *)
+
 local lemma bad &m : 
-  Pr[Hij(Adv, Oij).main(i,j+1) @ &m : res] <= Pr[Hij(Adv, Oij).main(i, j) @ &m : res] + 
-  Pr[Hij(Adv, Oij).main(i, j) @ &m : exists w, w \in Oi.logh /\ Oi.wo = Some w].
+     Pr[Hij(Adv, Oij).main(i,j+1) @ &m : res] 
+  <= Pr[Hij(Adv, Oij).main(i, j) @ &m : res] 
+   + Pr[Hij(Adv, Oij).main(i, j) @ &m : exists w, w \in Oi.logh /\ Oi.wo = Some w].
 proof.
-  byequiv (: _ ==> !(exists w, w \in Oi.logh /\ Oi.wo = Some w){2} => ={res}) => //; last first.
-  + by move=> &1 &2 h1 /h1 ->.
+byequiv (: _ ==> !(exists w, w \in Oi.logh /\ Oi.wo = Some w){2} => ={res}) => //;
+  last by move=> &1 &2 h1 /h1 ->.
   proc.
   call (: (exists w, w \in Oi.logh /\ Oi.wo = Some w),
           (Oi.countS <= Oi.i_ => !Oi.j_end /\ Oi.wo = None){2} /\
@@ -661,6 +698,8 @@ proof.
   inline *; auto; smt (j_bounded).
 qed.
 
+(* Same as [Oij], but with the loop of [sign_i] split at j_ *)
+
 local module Oij_split : Oracle_i_ij = {
   import var Oi
   include Oij [-sign, sign_i]
@@ -700,8 +739,10 @@ local module Oij_split : Oracle_i_ij = {
 }.
 
 local lemma Oij_Oij_split &m : 
-  Pr[Hij(Adv, Oij).main(i, j) @ &m : exists w, w \in Oi.logh /\ Oi.wo = Some w] = 
-  Pr[Hij(Adv, Oij_split).main(i, j) @ &m : exists w, w \in Oi.logh /\ Oi.wo = Some w].
+  Pr[Hij(Adv, Oij).main(i, j) @ &m : 
+       exists w, w \in Oi.logh /\ Oi.wo = Some w] = 
+  Pr[Hij(Adv, Oij_split).main(i, j) @ &m : 
+       exists w, w \in Oi.logh /\ Oi.wo = Some w].
 proof.
   byequiv => //; proc.
   call (: ={glob Oi} /\ 0 <= Oi.j_{2} < kappa); last by inline *; auto; smt(j_bounded).
@@ -778,14 +819,20 @@ local module Oij_bad : Oracle_i_ij = {
 
 }.
 
+(* Bad event can be bounded by prob of reaching j-th iteration on i-th
+query and the adversary querying [h] on [w_] (the commitment of the
+i-j iteration *)
+
 local lemma Oij_split_Oij_bad &m : 
-   Pr[Hij(Adv, Oij_split).main(i, j) @ &m : exists w, w \in Oi.logh /\ Oi.wo = Some w] <= 
+   Pr[Hij(Adv, Oij_split).main(i, j) @ &m : 
+        exists w, w \in Oi.logh /\ Oi.wo = Some w] <= 
    Pr[Hij(Adv, Oij_bad).main(i, j) @ &m : Oi.j_end /\ Oi.w_ \in Oi.logh].
 proof. 
   byequiv => //; symmetry; proc.
   call (: Oi.j_end /\ Oi.wo = None,
           (Oi.countS <= Oi.i_ => !Oi.j_end /\ Oi.wo = None){2} /\ 
-          ={Oi.logh, RO.m, Oi.sk, Oi.countS, Oi.countH, Oi.i_, Oi.j_, Oi.j_end, Oi.w_} /\ 
+          ={Oi.logh, RO.m, Oi.sk, Oi.countS, Oi.countH, 
+            Oi.i_, Oi.j_, Oi.j_end, Oi.w_} /\ 
           0 <= Oi.j_{1} < kappa /\ 
           (Oi.wo <> None => Oi.j_end /\ Oi.wo = Some Oi.w_){2}).
   + apply A_ll.
@@ -797,12 +844,15 @@ proof.
     if => //; wp; last by conseq (: ={r, RO.m}); 1: smt(); sim.
     inline Oij_bad.sign_i Oij_split.sign_i.
     seq 7 7 : 
-       ((!Oi.j_end /\ Oi.wo = None){2} /\ 0 <= Oi.j_{1} < kappa /\ Oi.i_{1} = Oi.countS{1} /\
-         ={Oi.logh, RO.m, Oi.sk, Oi.countS, Oi.countH, Oi.i_, Oi.j_, Oi.j_end, Oi.w_, m0, w, c, j, oz}).
+       ((!Oi.j_end /\ Oi.wo = None){2} /\ 0 <= Oi.j_{1} < kappa 
+         /\ Oi.i_{1} = Oi.countS{1} /\
+         ={Oi.logh, RO.m, Oi.sk, Oi.countS, Oi.countH, Oi.i_, Oi.j_, 
+           Oi.j_end, Oi.w_, m0, w, c, j, oz}).
     + by conseq (: ={RO.m, m0, w, c, j, oz}); [ smt() | sim].
     inline Oij_bad.sign_i_j Oij_split.sign_i_j.
     seq 2 2 : ( !(Oi.j_end{2} /\ Oi.wo{2} = None) =>
-                    (={Oi.logh, RO.m, Oi.sk, Oi.countS, Oi.countH, Oi.i_, Oi.j_, Oi.j_end, Oi.w_, m0, c, j, oz} /\  
+                   (={Oi.logh, RO.m, Oi.sk, Oi.countS, Oi.countH, Oi.i_, 
+                      Oi.j_, Oi.j_end, Oi.w_, m0, c, j, oz} /\  
                      (Oi.j_end{2} => oz{1} = None) /\ 0 <= Oi.j_{1} < kappa /\
                      (Oi.wo{2} <> None => Oi.j_end{2} /\ Oi.wo{2} = Some Oi.w_{2}) /\
                      Oi.i_{1} = Oi.countS{1}) /\
@@ -857,6 +907,9 @@ local clone PROM.FullRO as ROsk with
   type d_out_t <= bool
 proof *.
 
+(* Preparation for eager/lazy step: we sample the committment in a
+random oracle, but we do not return. Thus, it can be resampled at the
+end *)
 local module Oij_LE (H : ROsk.RO) : Oracle_i_ij = {
   import var Oi
   include var Oij [-sign, sign_i, sign_i_j]
@@ -926,6 +979,7 @@ local module D (H :  ROsk.RO) = {
 
 }.
 
+(* rephrase the game as a distinguisher for [ROsk] *)
 local lemma Oij_bad_DRO &m : 
   Pr[Hij(Adv, Oij_bad).main(i, j) @ &m : Oi.j_end /\ Oi.w_ \in Oi.logh] = 
   Pr[D(ROsk.RO).distinguish(i, j) @ &m : res].
