@@ -10,6 +10,12 @@ require GuessReprog.
 import Biased.
 import SmtMap.
 
+lemma lossless_supp (d : 'a distr) : 
+  is_lossless d => exists x, x \in d. 
+proof.
+by apply contraLR => ?; rewrite support_eq0 1:/# /is_lossless dnullE.
+qed.
+
 (* Define some necessary abstract stuff *)
 
 type M, W, C, Z, ST, PK, SK.
@@ -32,14 +38,25 @@ axiom p_def sk :
     dmap dC (fun (c : C) =>
       respond sk w_st.`2 c))) None <= p.
 
-axiom p_bounded : 0%r <= p < 1%r.
+axiom lt1_p : p < 1%r.
+
+lemma p_bounded : 0%r <= p < 1%r.
+proof.
+split; last by move => _; apply lt1_p.
+have [[pk sk] Hp] := lossless_supp _ keygen_ll.
+have [c Hc] := lossless_supp _ dC_ll.
+by have := p_def sk _; smt(mu_bounded).
+qed.  
 
 axiom valid_sk_mu1_commit sk : 
   valid_sk sk => 
   forall x, mu1 (dfst (commit sk)) x <= eps.
 
-(* This should be provable from valid_sk_mu1_commit *)
-axiom eps_ge0 : 0%r <= eps. 
+lemma eps_ge0 : 0%r <= eps. 
+proof.
+have [[pk sk] Hp] := lossless_supp _ keygen_ll.
+have := valid_sk_mu1_commit sk _ witness; smt(mu_bounded).
+qed.
 
  (* max. number of signing queries *)
 op qs : {int | 0 <= qs} as qs_ge0.
@@ -1121,7 +1138,7 @@ end section Analysis.
 
 end Analysis.
 
-(* To remove the dependency to Oi *)
+(* Remove the counting wrappers and the dependency to Oi *)
 section.
 
 declare module Adv <: Adversary {-Count, -RO, -OLeft}.
@@ -1138,9 +1155,23 @@ declare axiom A_bound : forall (O <: Oracle_i{-Adv, -Count}),
 local clone import Analysis as A.
 
 lemma Gleft_Gright &m: 
-  Pr[Game(Adv, Count(OLeft)).main() @ &m : res] - 
-   Pr[Game(Adv, Count(ORight)).main() @ &m : res] <= 
+  Pr[Game(Adv, OLeft).main() @ &m : res] - 
+   Pr[Game(Adv, ORight).main() @ &m : res] <= 
   qs%r * (qh%r * eps) / (1%r - p).
-proof. apply (A.Gleft_Gright Adv A_ll A_bound &m). qed.
+proof. 
+have -> : Pr[Game(Adv, OLeft).main() @ &m : res] = 
+          Pr[Game(Adv, Count(OLeft)).main() @ &m : res].
+- byequiv => //; proc;call (: ={RO.m, glob OLeft}). 
+  + proc*. inline Count(OLeft).h. wp. call(: ={RO.m}). sim. auto.
+  + proc. inline OLeft.sign. wp. by sim. 
+  by inline*; auto => />.
+have -> : Pr[Game(Adv, ORight).main() @ &m : res] = 
+          Pr[Game(Adv, Count(ORight)).main() @ &m : res].
+- byequiv => //; proc;call (: ={RO.m, glob ORight}). 
+  + proc*. inline Count(ORight).h. wp. call(: ={RO.m}). sim. auto.
+  + proc. inline ORight.sign. wp. by sim. 
+  by inline*; auto => />.
+exact (A.Gleft_Gright Adv A_ll A_bound &m). 
+qed.
 
 end section.
