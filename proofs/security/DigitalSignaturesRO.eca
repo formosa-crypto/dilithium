@@ -8,6 +8,7 @@ require DigitalSignatures.
 (* FIXME: this pulls in all kinds of axioms on bounds for notions we
 do not intend to use *)
 clone import DigitalSignatures as DS.
+clone import Stateless.EFCMA.
 import Stateless.
 
 (* We keep the input and output type of the hash function abstract *)
@@ -52,7 +53,7 @@ module EF_CMA_RO(S : SchemeRO, A : Adv_EFCMA_RO, H : Hash_i, O : Oracle_CMA) = {
   proc main() : bool = {
     var r;
     H.init();
-    r <@ Stateless.EF_CMA(S(H),A(H),O).main();
+    r <@ EF_CMA(S(H),A(H),O).main();
     return r;
   }
 }.

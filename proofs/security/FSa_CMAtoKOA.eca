@@ -24,21 +24,7 @@ import DSS.
 import DSS.PRO.
 import DSS.DS.Stateless.
 
-
-(* Operators for the ID scheme *)
-op [lossless] keygen : (PK * SK) distr.
-op [lossless] commit : SK -> (W * Pstate) distr.
-op response : SK -> C -> Pstate -> Z option. (* TODO: should be respond *)
-op verify : PK -> W -> C -> Z -> bool.
-
-(* Operator-Based instances for prover and verifyer *)
-clone import OpBased as OP with 
-  op keygen <- keygen,
-  op commit <- commit,
-  op response <- response,
-  axiom keygen_ll <- keygen_ll,
-  axiom commit_ll <- commit_ll
-proof*.
+clone import OpBased as OP.
 
 (* -- Extra assumptions on the min-entropy of commitments for (good) secret keys -- *)
 
@@ -324,7 +310,7 @@ local module Game1 (A : Adv_EFCMA_RO) (O: Oracle_CMA) = {
     is_fresh <@ O(IDS_Sig(P,V,RO)).fresh(m);
     nrqs <@ O(IDS_Sig(P,V,RO)).nr_queries();
     
-    return nrqs <= q_efcma /\ is_valid /\ is_fresh;
+    return nrqs <= qS /\ is_valid /\ is_fresh;
   }
 }.
 
@@ -352,7 +338,7 @@ local module (D (O : Oracle_CMA) : Dist.GenDist.Distinguisher) = {
     is_fresh <@ O(IDS_Sig(P,V,RO)).fresh(m);
     nrqs <@ O(IDS_Sig(P,V,RO)).nr_queries();
     
-    return nrqs <= q_efcma /\ is_valid /\ is_fresh;
+    return nrqs <= qS /\ is_valid /\ is_fresh;
   }
 }.
 
@@ -748,7 +734,7 @@ local module RedOnce (O : R1.Oracle) = {
     is_valid <@ IDS_Sig(P,V,CountH(H)).verify(pk, m, sig);
     is_fresh <- !(m \in SO.qs);
     nrqs <- size SO.qs;    
-    return nrqs <= q_efcma /\ is_valid /\ is_fresh;
+    return nrqs <= qS /\ is_valid /\ is_fresh;
   }
 }.
 
@@ -865,7 +851,7 @@ local module Game2 (A : Adv_EFCMA_RO) = {
     is_fresh <@ OGame1.fresh(m);
     nrqs <@ OGame1.nr_queries();
     
-    return nrqs <= q_efcma /\ is_valid /\ is_fresh;
+    return nrqs <= qS /\ is_valid /\ is_fresh;
   }
 }.
 
@@ -943,7 +929,7 @@ local module Game3 (A : Adv_EFCMA_RO) = {
     is_fresh <@ OGame2.fresh(m);
     nrqs <@ OGame2.nr_queries();
     
-    return nrqs <= q_efcma /\ is_valid /\ is_fresh;
+    return nrqs <= qS /\ is_valid /\ is_fresh;
   }
 }.
 
@@ -992,7 +978,7 @@ local module Game4 (A : Adv_EFCMA_RO) = {
     is_fresh <@ OGame2.fresh(m);
     nrqs <@ OGame2.nr_queries();
     
-    return nrqs <= q_efcma /\ is_valid /\ is_fresh;
+    return nrqs <= qS /\ is_valid /\ is_fresh;
   }
 }.
 
@@ -1014,7 +1000,7 @@ local module D2 = {
     is_fresh <@ OGame2.fresh(m);
     nrqs <@ OGame2.nr_queries();
     
-    return nrqs <= q_efcma /\ is_valid /\ is_fresh;
+    return nrqs <= qS /\ is_valid /\ is_fresh;
   }
 }.
 

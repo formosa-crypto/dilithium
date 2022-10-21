@@ -14,6 +14,11 @@ require FSa_CRtoGen.
 
 require DRing DVect MLWE SelfTargetMSIS. 
 
+(* Parameters of the security games *)
+const qS : int. (* allowed number of sig queries *)
+const qH : int. (* allowed number of ro  queries *)
+axiom qS_ge0 : 0 <= qS.
+axiom qH_ge0 : 0 <= qH.
 
 (* Dilithium-specific parameters *)
 
@@ -22,7 +27,7 @@ require DRing DVect MLWE SelfTargetMSIS.
 op e : int.
 
 (* upper bound on number of itertions. *)
-op kappa : int.
+op kappa : { int | 0 < kappa } as gt0_kappa.
 
 (* matrix dimensions *)
 op k : {int | 0 < k} as gt0_k.
@@ -81,16 +86,13 @@ clone IDS as DID with
   type Z <= response_t,
   type Pstate <= pstate_t proof*.
 
-(* Raises "`ID.Imp_Game` is incompatible" error *)
-(*
-clone import FSabort as OpFSA with
+clone import FSabort as FSa with 
   theory ID <= DID,
-  type M <- M,
-  op dC <- dC.
-*)
+  type M <= M,
+  op dC <= dC tau
+proof* by smt(dC_ll dC_uni tau_bound).
 
-(* Unsure if this is intended usage;
- * can't recall from the meeting the other day *)
+(* no longer needed
 clone import FSabort as OpFSA with
   type ID.PK <= PK,
   type ID.SK <= SK,
@@ -100,7 +102,7 @@ clone import FSabort as OpFSA with
   type ID.Pstate <= pstate_t,
   type M <= M,
   op dC <= dC tau
-proof* by smt(dC_ll dC_uni tau_bound).
+proof* by smt(dC_ll dC_uni tau_bound). *)
 
 (* -- Procedure-based -- *)
 
@@ -108,12 +110,16 @@ op recover (pk : PK) (c : challenge_t) (z : response_t) : commit_t =
   let (mA, t) = pk in
   highBitsV (mA *^ z - c ** t).
 
-clone import CommRecov as FSaCR with
+clone FSa.CommRecov as FSaCR with
   op recover <= recover,
-  op kappa <- kappa.
-(* TODO instantiate a couple more things and prove axioms
- * TODO at least `recover` has to be defined for things to be provable *)
-import DSS.
+  op kappa <= kappa,
+  op qS <= qS,
+  op qH <= qH
+proof* by smt(gt0_kappa qS_ge0 qH_ge0).
+
+section.
+import FSaCR.
+import FSaCR.DSS.
 
 module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
   proc keygen() : PK * SK = {
@@ -188,7 +194,9 @@ clone import SelfTargetMSIS as RqStMSIS with
   op dR <- dRq,
   op dC <- dC tau,
   op inf_norm <- inf_normv,
-  op gamma <- max (gamma1 - b) (gamma2+1).
+  op gamma <- max (gamma1 - b) (gamma2+1)
+proof* by smt(Top.gt0_k Top.gt0_l). 
+(* Where do dout_ll and enum_spec come from? Why are they not picked up by proof* *)
 
 module H = DSS.PRO.RO.
 module G = RqStMSIS.PRO.RO.
@@ -390,7 +398,6 @@ qed.
 
 end section PROOF.
 
-
 (* -- Operator-based -- *)
 
 op keygen : (PK * SK) distr =
@@ -421,12 +428,25 @@ op verify (pk : PK) (w1 : commit_t) (c : challenge_t) (z : response_t) : bool =
   inf_normv z < gamma1 - b /\
   w1 = highBitsV (mA *^ z - c ** t).
 
+lemma keygen_ll : is_lossless keygen. 
+proof. 
+apply dlet_ll => [|/= mA ?]; 1: by apply dmatrix_ll; apply dRq_ll.
+apply dlet_ll => [|/= s1 ?]; 1: by apply dvector_ll; apply dRq__ll.
+by apply dmap_ll; apply dvector_ll; apply dRq__ll.
+qed.
+
+lemma commit_ll sk : is_lossless (commit sk).
+proof.
+case: sk => mA s1 s2 @/commit /=.
+by apply dmap_ll; apply dvector_ll; apply dRq__ll. 
+qed.
+
 clone import OpBased with
   op keygen <= keygen,
   op commit <= commit,
   op response <= respond,
-  op verify <= verify.
-(* TODO proof *. *)
+  op verify <= verify
+proof* by smt(keygen_ll commit_ll).
 
 (* Sanity check for matrix/vector dimensions *)
 lemma size_t pk sk : (pk,sk) \in keygen => size pk.`2 = k.
@@ -440,7 +460,7 @@ rewrite size_addv size_mulmxv;
 smt(size_dmatrix size_dvector Top.gt0_k Top.gt0_l).
 qed.
 
-module OpBasedSig = IDS_Sig(OpBased.P, OpBased.V).
+module OpBasedSig = FSaCR.IDS_Sig(OpBased.P, OpBased.V).
 
 section OpBasedCorrectness.
 
@@ -491,20 +511,22 @@ qed.
 
 end section OpBasedCorrectness.
 
-
+end section.
 
 (* Main Theorem *)
 
 import FSaCR.DSS.
 import FSaCR.DSS.PRO.
 import FSaCR.DSS.DS.Stateless.
+import FSaCR.DSS.EFCMA.
 
 (* Distinguisher for (RO) signature schemes *)
 module type SigDist (S : Scheme) (H : Hash_i) = { 
   proc distinguish() : bool
 }.
 
-equiv eqv_code_op (D <: SigDist{-OpBasedSig}) (H <: Hash_i{-P,-D}) : 
+
+equiv eqv_code_op (D <: SigDist{-OpBasedSig}) (H <: Hash_i{-OpBased.P,-D}) : 
   D(SimplifiedDilithium(H),H).distinguish ~ D(OpBasedSig(H),H).distinguish : 
   ={glob D,glob H} ==> ={glob D,glob H,res}.
 proof.
@@ -552,15 +574,29 @@ qed.
 
 (*** Step 2 : Reduce to the case for general (i.e., not commitment recoverable schemes) ***)
 
-(* TODO: this should be local, but for this all axioms need to be proved *)
-clone Generic as FSaG with
-  op kappa <- kappa,
-  op qS <- qS,
-  op qH <- qH + qS.
+local clone Generic as FSaG with
+  op kappa <= kappa,
+  op qS <= qS,
+  op qH <= qH + Top.qS 
+proof* by smt(gt0_kappa qS_ge0 qH_ge0).
 
-(* clone import FSa_CRtoGen as CG with  *)
-(*   theory FSa <- OpFSA. *)
-(*   theory FSaG <- FSaG. *)
+(* Generic FS+abort transform of the OpBased ID scheme *)
+local module OpBasedSigG = FSaG.IDS_Sig(OpBased.P,OpBased.V).
+
+local module EF_CMA_RO_G = FSaG.DSS.EF_CMA_RO.
+
+(* raises : module `FSa.ID.Imp_Game` is incompatible 
+local clone import FSa_CRtoGen as CG with
+  theory FSa <= FSa,
+  theory FSaCR <= FSaCR,
+  theory FSaG <= FSaG.
+*)
+
+(* Need the reduction from the cloned theory ... 
+local lemma pr_cr_gen &m : 
+  Pr [ EF_CMA_RO(OpBasedSig, A, RO,O_CMA_Default).main() @ &m : res ] = 
+  Pr [ EF_CMA_RO_G(OpBasedSigG, A, RO,O_CMA_Default).main() @ &m : res ].
+*)
 
 lemma SimplifiedDilithium_secure &m : 
   Pr [ EF_CMA_RO(SimplifiedDilithium, A, RO,O_CMA_Default).main() @ &m : res ] <= bound.
