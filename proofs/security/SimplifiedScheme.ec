@@ -491,6 +491,33 @@ qed.
 
 end section OpBasedCorrectness.
 
+(* -- OpBased is commitment recoverable -- *)
+(* Necessary for the simulator definition below to make sense *)
+(* There's a strong argument to put this in a separate file... *)
+
+op recover_commitment pk (c : challenge_t) (z : vector) =
+  let (mA, t) = pk in
+  highBitsV (mA *^ z - c ** t).
+
+module HonestExecutionWithRecover = {
+  proc get_trans(pk : PK, sk : SK) : (commit_t * challenge_t * response_t) option = {
+    var st, w, c, oz, result;
+    (w, st) <$ commit sk;
+    c <$ OpFSA.dC;
+    oz <- respond sk c st;
+    result <- if oz = None then None else Some (recover_commitment pk c (oget oz), c, oget oz);
+    return result;
+  }
+}.
+
+equiv recover_correct k :
+  DID.Honest_Execution(OpBased.P, OpBased.V).get_trans ~ HonestExecutionWithRecover.get_trans :
+  k \in keygen /\ arg{1} = k /\ arg{2} = k ==> ={res}.
+proof.
+case k => pk sk; proc; inline *.
+print hide_low. (* Probably need vector version of this. *)
+admitted. (* TODO understand pen-and-paper first... *)
+
 (* -- OpBased is indeed zero-knowledge -- *)
 (* TODO Maybe refactor into separate file? *)
 
@@ -550,10 +577,6 @@ import Biased.
 op line12_magic_number = (size (to_seq check_znorm))%r / (size (to_seq (support dy)))%r.
 op dsimoz : response_t option distr = dlet (dbiased line12_magic_number) (fun b => if b then dmap dsimz Some else dunit None).
 
-op recover_commitment pk (c : challenge_t) (z : vector) =
-  let (mA, t) = pk in
-  highBitsV (mA *^ z - c ** t).
-
 module HVZK_Sim_Inst : DID.HVZK_Sim = {
   proc get_trans(pk : PK) = {
     var mA, t, t0, w', c, oz, z;
@@ -575,10 +598,39 @@ module HVZK_Sim_Inst : DID.HVZK_Sim = {
 
 section OpBasedHVZK.
 
+local module HVZK_Hops = {
+  (* Hopefully just unfolding everything *)
+  proc game1(pk: PK, sk: SK) : (commit_t * challenge_t * response_t) option = {
+    var mA, s1, s2, w, w', y, c, z, t, resp;
+
+    (mA, s1, s2) <- sk;
+    t <- mA *^ s1 + s2;
+    c <$ OpFSA.dC;
+    y <$ dy;
+    w <- mA *^ y;
+    z <- y + c ** s1;
+    if(check_znorm z) {
+      w' <- mA *^ y - c ** s2;
+      resp <- if gamma2 - b <= inf_normv w' then None else Some z;
+    } else {
+      resp <- None;
+    }
+    return if resp = None then None else Some (recover_commitment pk c (oget resp), c, oget resp);
+  }
+}.
+
+local equiv hop1_correct pk sk :
+  HonestExecutionWithRecover.get_trans ~ HVZK_Hops.game1 :
+  arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res}.
+proof.
+proc; inline*.
+admitted.
+
 lemma HVZK_Sim_correct k :
   equiv[DID.Honest_Execution(OpBased.P, OpBased.V).get_trans ~ HVZK_Sim_Inst.get_trans :
         k \in keygen /\ arg{1} = k /\ arg{2} = k.`1 ==> ={res}].
 proof.
+case k => pk sk /=.
 admitted.
 
 end section OpBasedHVZK.
