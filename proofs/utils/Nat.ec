@@ -15,6 +15,7 @@ clone import Subtype as StNat with
 op (+) = Lift.lift2 Int.(+).
 op max = Lift.lift2 Int.max.
 op (<=) = fun n m => Int.(<=) (val n) (val m).
+op (<) = fun n m => Int.(<) (val n) (val m).
 
 op ofint = insubd.
 op ofnat = val.
@@ -83,6 +84,8 @@ lemma le0n n : zero <= n by smt.
 
 lemma le_maxn (n m o : nat) : max n m <= o <=> n <= o /\ m <= o by smt.
 
+lemma lt_maxn (n m o : nat) : max n m < o <=> n < o /\ m < o by smt.
+
 lemma maxnn (n : nat) : max n n = n.
 proof. 
 move: n. apply natW => //= x x_ge0. 
@@ -99,6 +102,10 @@ import Int.
 
 lemma ler_ofnat (n : nat) m : ofnat n <= m <=> 0 <= m /\ n <= ofint m by smt.
 
+lemma ltr_ofnat (n : nat) (m : int) :
+  ofnat n < m <=> 0 <= m /\ n < ofint m.
+proof. smt(ofintK ler_ofnat). qed.
+
 lemma ler_ofint i j : 0 <= i <= j => (ofint i <= ofint j) by smt.
 
 lemma ler_ofint_ofnat (n : int) (m : nat) :
@@ -106,16 +113,33 @@ lemma ler_ofint_ofnat (n : int) (m : nat) :
   (ofint n <= m) <=> (n <= ofnat m).
 proof. smt(ofintK). qed.
 
-lemma ub_elem_is_ub_big (P : 'a -> bool) F (s : 'a list) (n : nat) :
+lemma ler_elem_is_ler_big (P : 'a -> bool) F (s : 'a list) (n : nat) :
   (forall x, x \in s => P x => F x <= n) => big P F s <= n.
 proof.
-elim: s  => [|x s IHs le_s_n] ; first by rewrite big_nil le0n. 
+elim: s => [|x s IHs le_s_n] ; first by rewrite big_nil le0n. 
 rewrite big_cons /=; case (P x) => [Px|/#].
 by rewrite le_maxn le_s_n //= IHs /#.
 qed.
 
-lemma ub_big_is_ub_elem (P : 'a -> bool) F (s : 'a list) (n : nat) :
+lemma ltr_elem_is_ltr_big (P : 'a -> bool) F s (n : nat) :
+  0 < val n =>
+  (forall x, x \in s => P x => F x < n) => big P F s < n.
+proof.
+move => gt0_n; elim: s => [| x s IHs lt_s_n]; first smt(ofintK).
+rewrite big_cons /=; case (P x) => [Px|/#].
+by rewrite lt_maxn lt_s_n // IHs /#.
+qed.
+
+lemma ler_big_is_ler_elem (P : 'a -> bool) F (s : 'a list) (n : nat) :
   BigMax.big P F s <= n => (forall x, x \in s => P x => F x <= n).
+proof.
+elim: s => [|head tail IHs le_s_n]; first by auto.
+rewrite BigMax.big_cons in le_s_n.
+smt(StNat.Lift.lift2E).
+qed.
+
+lemma ltr_big_is_ltr_elem (P : 'a -> bool) F (s : 'a list) (n : nat) :
+  BigMax.big P F s < n => (forall x, x \in s => P x => F x < n).
 proof.
 elim: s => [|head tail IHs le_s_n]; first by auto.
 rewrite BigMax.big_cons in le_s_n.
@@ -124,7 +148,12 @@ qed.
 
 lemma ler_bigmax (P : 'a -> bool) F (s : 'a list) (n : nat) :
   (forall x, x \in s => P x => F x <= n) <=> big P F s <= n.
-proof. smt(ub_big_is_ub_elem ub_elem_is_ub_big). qed.
+proof. smt(ler_big_is_ler_elem ler_elem_is_ler_big). qed.
+
+lemma ltr_bigmax (P : 'a -> bool) F (s : 'a list) (n : nat) :
+  0 < val n =>
+  (forall x, x \in s => P x => F x < n) <=> big P F s < n.
+proof. smt(ltr_big_is_ltr_elem ltr_elem_is_ltr_big). qed.
 
 lemma eq_bigmax x0 (n : nat) (P : 'a -> bool) F (s : 'a list) :
   (x0 \in s) => P x0 => (forall x, x \in s => P x => F x = n) => big P F s = n.

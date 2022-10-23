@@ -55,11 +55,111 @@ rewrite zeroE => /=.
 smt(ge2_p).
 qed.
 
+lemma asintK_centered (x : zmod) :
+  `|x| < p %/ 2 =>
+   inzmod (crepr x) = x.
+proof.
+move => ?; rewrite /crepr /=.
+smt(asintK).
+qed.
+
 (* -- Distributions over interval of ZModField -- *)
 (* Keeping inputs as `int` to allow ranges that go across 0 *)
 op dinter_zp i j = dmap (dinter i j) inzmod.
 
 op dball_zp (i: int) = dinter_zp (-i) i.
+
+op dopenball_zp (i : int) = dball_zp (i - 1).
+
+lemma dinter_zp_ll (i j : int) :
+  i <= j =>
+  is_lossless (dinter_zp i j).
+proof.
+move => ?.
+by rewrite dmap_ll dinter_ll //.
+qed.
+
+lemma dinter_zp_uni (i j : int) :
+  i <= j =>
+  j - i < p =>
+  is_uniform (dinter_zp i j).
+proof.
+move => ??.
+rewrite /dinter_zp.
+rewrite dmap_uni_in_inj => [x y rg_x rg_y ?|]; last smt(supp_dinter1E).
+rewrite supp_dinter in rg_x.
+rewrite supp_dinter in rg_y.
+case (y <= x) => ?. (* wlog *)
+- have ?: asint (inzmod (x - y)) = 0 by smt(zeroE inzmodD).
+  suff: asint (inzmod (x - y)) = x - y by smt().
+  by rewrite inzmodK modz_small => /#.
+- have ?: asint (inzmod (y - x)) = 0 by smt(zeroE inzmodD).
+  suff: asint (inzmod (y - x)) = y - x by smt().
+  by rewrite inzmodK modz_small => /#.
+qed.
+
+lemma dinter_zp_supp (i j : int) (x : zmod):
+  i <= j =>
+  j - i < p =>
+  ((x \in dinter_zp i j) <=> (exists xi, x = inzmod xi /\ i <= xi /\ xi <= j)).
+proof.
+move => ??; rewrite /dinter_zp.
+rewrite supp_dmap.
+smt(supp_dinter).
+qed.
+
+lemma dball_zp_ll i :
+  0 <= i =>
+  is_lossless (dball_zp i).
+proof.
+move => ?.
+by rewrite /dball_zp dinter_zp_ll => /#.
+qed.
+
+lemma dopenball_zp_ll i :
+  1 <= i =>
+  is_lossless (dopenball_zp i).
+proof.
+move => ?.
+by rewrite /dopenball_zp /dball_zp dinter_zp_ll => /#.
+qed.
+
+lemma dball_zp_uni i :
+  0 <= i =>
+  i < p %/ 2 =>
+  is_uniform (dball_zp i).
+proof.
+move => *; rewrite /dball_zp.
+apply dinter_zp_uni => /#.
+qed.
+
+lemma dopenball_zp_uni i :
+  1 <= i =>
+  i < p %/ 2 =>
+  is_uniform (dopenball_zp i).
+proof.
+smt(dball_zp_uni).
+qed.
+
+lemma dball_zp_supp i x :
+  0 <= i =>
+  i < p %/ 2 =>
+  x \in dball_zp i <=> `|x| <= i.
+proof.
+move => *.
+rewrite /dball_zp.
+rewrite dinter_zp_supp; 1, 2: smt().
+split => ?; first smt(abs_zp_small).
+exists (crepr x).
+split; last smt().
+by rewrite asintK_centered // /#.
+qed.
+
+lemma dopenball_zp_supp i x :
+  1 <= i =>
+  i < p %/ 2 =>
+  x \in dopenball_zp i <=> `|x| < i.
+proof. smt(dball_zp_supp). qed.
 
 (* -- Centered modulo -- *)
 

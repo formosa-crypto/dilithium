@@ -494,9 +494,51 @@ end section OpBasedCorrectness.
 (* -- OpBased is indeed zero-knowledge -- *)
 (* TODO Maybe refactor into separate file? *)
 
-(* TODO define me *)
-op dsimoz : response_t option distr.
-op recover_commitment : challenge_t -> response_t -> commit_t.
+op check_znorm (v : vector) = (size v = l) /\ (inf_normv v < gamma1 - b).
+op dy = dvector (dRq_ (gamma1 - 1)) l.
+op dsimz = dvector (dRq_ (gamma1 - b)) l.
+
+lemma dsimz_uni :
+  is_uniform dsimz.
+proof.
+apply dvector_uni.
+exact dRq__uni.
+qed.
+
+lemma dsimz_ll :
+  is_lossless dsimz.
+proof.
+apply dvector_ll.
+exact dRq__ll.
+qed.
+
+axiom b_gamma1_le : b <= gamma1.
+
+lemma dsimz_supp :
+  support dsimz = check_znorm.
+proof.
+apply fun_ext => v.
+rewrite supp_dvector; first smt(Top.gt0_l).
+case (size v = l); last by smt().
+move => ?.
+suff: (forall (i : int), 0 <= i && i < l => v.[i] \in dRq_ (gamma1 - b)) <=> 
+      (inf_normv v < gamma1 - b) by smt().
+rewrite ltr_ofnat.
+have -> /=: (0 <= gamma1 - b) = true by smt(b_gamma1_le).
+rewrite /inf_norm /=.
+rewrite -ltr_bigmax.
+(* TODO relate inf_normv down to cnorm? (I.e. ring level) *)
+admitted. (* TODO *)
+
+require import Finite DBool.
+import Biased.
+
+op line12_magic_number = (size (to_seq check_znorm))%r / (size (to_seq (support dy)))%r.
+op dsimoz : response_t option distr = dlet (dbiased line12_magic_number) (fun b => if b then dmap dsimz Some else dunit None).
+
+op recover_commitment pk (c : challenge_t) (z : vector) =
+  let (mA, t) = pk in
+  highBitsV (mA *^ z - c ** t).
 
 module HVZK_Sim_Inst : DID.HVZK_Sim = {
   proc get_trans(pk : PK) = {
@@ -513,7 +555,7 @@ module HVZK_Sim_Inst : DID.HVZK_Sim = {
     } else {
       resp <- None;
     }
-    return if resp = None then None else Some (recover_commitment c (oget resp), c, oget resp);
+    return if resp = None then None else Some (recover_commitment pk c (oget resp), c, oget resp);
   }
 }.
 

@@ -19,88 +19,12 @@ require import DistrExtras.
 op l1_norm (p : polyXnD1) = big predT ZModQ."`|_|" (mkseq (fun i => p.[i]) Round.n).
 op dC a = dcond dpolyXnD1 (fun (c : polyXnD1) => `|c| <= 1 /\ l1_norm c = a).
 
-lemma dinter_zp_ll (i j : int) :
-  i <= j =>
-  is_lossless (dinter_zp i j).
-proof.
-move => ?.
-by rewrite dmap_ll dinter_ll //.
-qed.
-
-lemma dinter_zp_uni (i j : int) :
-  i <= j =>
-  j - i < q =>
-  is_uniform (dinter_zp i j).
-proof.
-move => ??.
-rewrite /dinter_zp.
-rewrite dmap_uni_in_inj => [x y rg_x rg_y ?|]; last smt(supp_dinter1E).
-rewrite supp_dinter in rg_x.
-rewrite supp_dinter in rg_y.
-case (y <= x) => ?. (* wlog *)
-- have ?: asint (inzmod (x - y)) = 0 by smt(zeroE inzmodD).
-  suff: asint (inzmod (x - y)) = x - y by smt().
-  by rewrite inzmodK modz_small => /#.
-- have ?: asint (inzmod (y - x)) = 0 by smt(zeroE inzmodD).
-  suff: asint (inzmod (y - x)) = y - x by smt().
-  by rewrite inzmodK modz_small => /#.
-qed.
-
-lemma dinter_zp_supp (i j : int) (x : zmod):
-  i <= j =>
-  j - i < q =>
-  ((x \in dinter_zp i j) <=> (exists xi, x = inzmod xi /\ i <= xi /\ xi <= j)).
-proof.
-move => ??; rewrite /dinter_zp.
-rewrite supp_dmap.
-smt(supp_dinter).
-qed.
-
-lemma dball_zp_ll i :
-  0 <= i =>
-  is_lossless (dball_zp i).
-proof.
-move => ?.
-by rewrite /dball_zp dinter_zp_ll => /#.
-qed.
-
-lemma dball_zp_uni i :
-  0 <= i =>
-  i < q %/ 2 =>
-  is_uniform (dball_zp i).
-proof.
-move => *; rewrite /dball_zp.
-apply dinter_zp_uni => /#.
-qed.
-
 lemma dpolyX_ll d :
   is_lossless d => is_lossless (dpolyX d).
 proof.
 move => ?; rewrite /dpolyX.
 apply dmap_ll.
 exact BasePoly.dpoly_ll.
-qed.
-
-lemma asintK_centered (x : zmod) :
-  `|x| < q %/ 2 =>
-   inzmod (crepr x) = x.
-proof.
-move => ?; rewrite /crepr /=.
-smt(asintK).
-qed.
-
-lemma dball_zp_supp i x :
-  0 <= i =>
-  i < q %/ 2 =>
-  x \in dball_zp i <=> `|x| <= i.
-proof.
-move => *.
-rewrite /dball_zp.
-rewrite dinter_zp_supp; 1, 2: smt().
-split => ?; first smt(abs_zp_small).
-exists (crepr x).
-split; last smt().
-by rewrite asintK_centered // /#.
 qed.
 
 lemma reduced_dpoly d p m :
@@ -180,6 +104,12 @@ rewrite mkseqP in mem_x.
 case mem_x => j [rg_j ?]; subst => /#.
 qed.
 
+lemma inf_norm_lt (p : polyXnD1) a :
+  0 < a =>
+  (forall i, 0 <= i < Round.n => `|p.[i]| < a) =>
+  `|p| < a.
+proof. smt(inf_norm_le). qed.
+
 lemma ge0_abs_zp (x : zmod) :
   0 <= `|x|.
 proof. smt(). qed.
@@ -217,7 +147,7 @@ apply inf_norm_le.
 qed.
 
 op dpoly_ball i =
-  if 0 <= i < Round.q %/ 2 then dpolyX (dball_zp i) else dpolyXnD1.
+  if 1 <= i <= Round.q %/ 2 then dpolyX (dopenball_zp i) else dpolyXnD1.
 
 lemma poly_leftshift_imE alpha (xs : int list) (x : int) :
   2 <= alpha =>
@@ -298,7 +228,7 @@ clone DRing as DR with
   theory RqRing <= PolyReduceZq.ComRing,
   op cnorm <= Round."`|_|",
   op dRq <= dpolyXnD1,
-  op dRq_ <= dpoly_ball,
+  op dRq_ <= fun i => dpoly_ball i,
   op dC <= dC,
   op l1_norm <= l1_norm,
   type Flex.high <= int list,
@@ -314,25 +244,25 @@ realize dRq_uni by exact dpolyXnD1_uni.
 realize dRq_fu by exact dpolyXnD1_fu.
 realize dRq__ll.
 move => i; rewrite /dpoly_ball.
-case (0 <= i < Round.q %/ 2) => /= ?; last exact dpolyXnD1_ll.
+case (1 <= i <= Round.q %/ 2) => /= ?; last exact dpolyXnD1_ll.
 by rewrite dpolyX_ll dball_zp_ll /#.
 qed.
 realize dRq__uni.
 move => i; rewrite /dpoly_ball.
-case (0 <= i < Round.q %/ 2) => /= ?; last exact dpolyXnD1_uni.
+case (1 <= i <= Round.q %/ 2) => /= ?; last exact dpolyXnD1_uni.
 by rewrite dpolyX_uni dball_zp_uni /#.
 qed.
 realize supp_dRq.
 move => p a ?; rewrite /dpoly_ball.
-have -> /=: (0 <= a) = true by smt().
-case (a < Round.q %/ 2) => /= ?; last smt(dpolyXnD1_fu inf_norm_ub).
+have -> /=: (1 <= a) = true by smt().
+case (a <= Round.q %/ 2) => /= ?; last smt(dpolyXnD1_fu inf_norm_ub).
 rewrite dpolyX_supp.
 split => H.
-- apply inf_norm_le; first smt().
+- apply inf_norm_lt; first smt().
   smt(dball_zp_supp).
 - move => i rg_i.
-  rewrite dball_zp_supp //.
-  exact inf_normXE.
+  rewrite dball_zp_supp //; 1,2:smt().
+  smt(inf_normXE).
 qed.
 realize dC_ll.
 move => i rg_i.
