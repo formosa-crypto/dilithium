@@ -32,7 +32,6 @@ proof. by rewrite ofintK. qed.
 lemma zeroPv : val zero = 0. 
 proof. exact ofintK. qed.
 
-
 lemma ofnatK : cancel ofnat ofint.
 proof. exact valKd. qed.
 
@@ -108,6 +107,8 @@ proof. smt(ofintK ler_ofnat). qed.
 
 lemma ler_ofint i j : 0 <= i <= j => (ofint i <= ofint j) by smt.
 
+lemma ltr_ofint i j : 0 <= i < j => (ofint i < ofint j) by smt.
+
 lemma ler_ofint_ofnat (n : int) (m : nat) :
   0 <= n =>
   (ofint n <= m) <=> (n <= ofnat m).
@@ -122,7 +123,7 @@ by rewrite le_maxn le_s_n //= IHs /#.
 qed.
 
 lemma ltr_elem_is_ltr_big (P : 'a -> bool) F s (n : nat) :
-  0 < val n =>
+  0 < ofnat n =>
   (forall x, x \in s => P x => F x < n) => big P F s < n.
 proof.
 move => gt0_n; elim: s => [| x s IHs lt_s_n]; first smt(ofintK).
@@ -151,7 +152,7 @@ lemma ler_bigmax (P : 'a -> bool) F (s : 'a list) (n : nat) :
 proof. smt(ler_big_is_ler_elem ler_elem_is_ler_big). qed.
 
 lemma ltr_bigmax (P : 'a -> bool) F (s : 'a list) (n : nat) :
-  0 < val n =>
+  0 < ofnat n =>
   (forall x, x \in s => P x => F x < n) <=> big P F s < n.
 proof. smt(ltr_big_is_ltr_elem ltr_elem_is_ltr_big). qed.
 

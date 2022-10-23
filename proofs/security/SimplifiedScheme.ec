@@ -512,7 +512,7 @@ apply dvector_ll.
 exact dRq__ll.
 qed.
 
-axiom b_gamma1_le : b <= gamma1.
+axiom b_gamma1_lt : b < gamma1.
 
 lemma dsimz_supp :
   support dsimz = check_znorm.
@@ -524,11 +524,25 @@ move => ?.
 suff: (forall (i : int), 0 <= i && i < l => v.[i] \in dRq_ (gamma1 - b)) <=> 
       (inf_normv v < gamma1 - b) by smt().
 rewrite ltr_ofnat.
-have -> /=: (0 <= gamma1 - b) = true by smt(b_gamma1_le).
+have -> /=: (0 <= gamma1 - b) = true by smt(b_gamma1_lt).
 rewrite /inf_norm /=.
-rewrite -ltr_bigmax.
-(* TODO relate inf_normv down to cnorm? (I.e. ring level) *)
-admitted. (* TODO *)
+rewrite -ltr_bigmax; first rewrite ofintK; smt(b_gamma1_lt).
+split => ?.
+- move => x supp_x _.
+  rewrite /(\o) ltr_ofint.
+  split => [|_]; first exact cnorm_ge0.
+  rewrite mem_tolist in supp_x.
+  case supp_x => [i [rg_i ?]]; subst.
+  rewrite -supp_dRq; smt(b_gamma1_lt).
+- move => i rg_i.
+  rewrite supp_dRq; first smt(b_gamma1_lt).
+  have ?: v.[i] \in tolist v.
+  + rewrite mem_tolist.
+    exists i => /#.
+  have H: (\o) Nat.ofint cnorm v.[i] < (ofint (gamma1 - b))%Nat by smt().
+  rewrite /(\o) in H.
+  smt(ofintK b_gamma1_lt).
+qed.
 
 require import Finite DBool.
 import Biased.
