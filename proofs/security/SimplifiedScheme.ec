@@ -21,9 +21,6 @@ require DRing DVect MLWE SelfTargetMSIS.
  * Typically "eta" but that's a reserved keyword in EC. *)
 op e : int.
 
-(* challenge weight *)
-op tau : int.
-
 (* upper bound on number of itertions. *)
 op kappa : int.
 
@@ -31,20 +28,35 @@ op kappa : int.
 op k : {int | 0 < k} as gt0_k.
 op l : {int | 0 < l} as gt0_l.
 
-(* Rounding stuff *)
+(* Abstract theory representing Rq = Zq[X]/(X^n + 1) and the high/lowBits operations *)
+(* The constants [n] and [q] are defined by this theory *)
+clone import DRing as DR. 
+import RqRing.
+
+(* Parameters for "Rounding" (e.g., highBits, lowBits, and shift)  *)
 op gamma1 : int.
-op gamma2 : { int | 2 <= gamma2 } as ge2_gamma2.
+op gamma2 : { int | 2 <= gamma2 <= q %/ 4 } as gamma2_bound.
+axiom gamma2_div : 2 * gamma2 %| (q - 1).
+
 (* beta in spec.
  * beta is again a reserved keyword in EC. *)
 op b : int.
 
-clone import DRing as DR. 
-import RqRing.
-
 clone import DVect as DV with 
   theory DR <- DR,
-  op HL.alpha <- 2*gamma2. (* FIXME proof HL.*. *)
-import HL MatRq.
+  op HL.alpha <- 2*gamma2 
+proof HL.ge2_alpha, HL.alpha_halfq_le, HL.even_alpha, HL.alpha_almost_divides_q.
+realize HL.ge2_alpha by smt(gamma2_bound).
+realize HL.even_alpha by smt().
+realize HL.alpha_halfq_le by smt(gamma2_bound).
+realize HL.alpha_almost_divides_q by apply gamma2_div.
+
+import DV.MatRq. (* Matrices and Vectors over Rq *)
+import DV.HL.    (* highBitsV and lowBitsV with alpha = 2 * gamma2 *)
+
+
+(* challenge weight *)
+op tau : { int | 1 <= tau <= n } as tau_bound.
 
 lemma cnorm_dC c tau : c \in dC tau => cnorm c <= 1 by smt(supp_dC).
 
@@ -56,7 +68,7 @@ type PK = matrix * vector.
 type commit_t = high list.
 type response_t = vector. 
 
-op dC : challenge_t distr = dC tau. 
+(* op dC : challenge_t distr = dC tau.  *)
 
 (* Just storing `y` should be good here. *)
 type pstate_t = vector. 
@@ -87,8 +99,8 @@ clone import FSabort as OpFSA with
   type ID.Z <= response_t,
   type ID.Pstate <= pstate_t,
   type M <= M,
-  op dC <= dC.
-(* TODO proof *. *)
+  op dC <= dC tau
+proof* by smt(dC_ll dC_uni tau_bound).
 
 (* -- Procedure-based -- *)
 
@@ -161,7 +173,7 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
 (** KOA to MLWE + SelfTargetMSIS *)
 
 clone import MLWE as RqMLWE with 
-  theory M <= MatRq, (* <- raises "Anomaly: removed" - issue #268 *)
+  theory M <- MatRq,
   op dR <- dRq,
   op dS <- dRq_ e,
   op k <- k,
@@ -169,12 +181,12 @@ clone import MLWE as RqMLWE with
 proof* by smt(gt0_k gt0_l).
 
 clone import SelfTargetMSIS as RqStMSIS with
-  theory M <= MatRq,
+  theory M <- MatRq,
   type M <- M,
   op m <- k,
   op n <- l+1,
   op dR <- dRq,
-  op dC <- dC,
+  op dC <- dC tau,
   op inf_norm <- inf_normv,
   op gamma <- max (gamma1 - b) (gamma2+1).
 
@@ -286,39 +298,19 @@ qed.
 
 import StdOrder.RealOrder.
 
-(* BEGIN MOVE ELSEWHERE *)
-
-lemma size_lowBitsV (v : vector) : size (lowBitsV v) = size v by [].
-lemma size_highBitsV (v : vector) : size (highBitsV v) = size v.
-proof. by rewrite /highBitsV size_map size_tolist. qed.
-
-
+(* move to EC lib? *)
 lemma max_ltrP (i j k : int) : i < max j k <=> i < j \/ i < k by smt().
-
-(* END MOVE ELSEWHERE *)
-
-(*
-local lemma supp_dmatrix_Rqkl m : 
-  (m \in dmatrix dRq k l) <=> 
-  size m = (k,l) /\ forall i j, mrange m i j => m.[i,j] \in dRq.
-proof. smt(supp_dmatrix Top.gt0_k Top.gt0_l). qed.
-
-local lemma supp_dvector_Rqk v : 
-  (v \in dvector dRq k) <=> 
-  size v = k /\ forall i, 0 <= i < k => v.[i] \in dRq.
-proof. smt(supp_dvector Top.gt0_k Top.gt0_l). qed.
-*)
 
 local lemma hop3 &m : 
   Pr[EF_KOA_RO(S1, A, H').main() @ &m : res] <= Pr[Game(RedMSIS(A), G).main() @ &m : res].
 proof.
 byequiv (_ : ={glob A} ==> res{1} => res{2}) => //; proc. 
 inline{1} 2; inline{1} 1. inline{1} 2; inline{2} 3. 
-seq 6 7 : (={sig,PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in dC){1}
+seq 6 7 : (={sig,PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in dC tau){1}
            /\ m{1} = mu0{2} /\ pk{1} = (mA0,t){2} /\ 
            (mA = (mA0 || - colmx t) /\ size mA0 = (k,l) /\ size t = k){2}).
 - (* merge [dmatrix/dvector] sampling on LHS *)
-  seq 3 2 : (={glob A,PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in dC){1}
+  seq 3 2 : (={glob A,PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in dC tau){1}
             /\ size mA{1} = (k,l) /\ size t{1} = k /\
             (mA || - colmx t){1} = mA{2}). 
   + inline*; sp 1 1. 
@@ -342,7 +334,7 @@ seq 6 7 : (={sig,PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in
     rewrite col_catmcR /= ?r_A ?c_A ?s_t // subrr. 
     rewrite colN oppmK colK /=; apply supp_dmatrix_catmc => //;1,2: smt(Top.gt0_k Top.gt0_l).
     rewrite supp_dmatrix_full ?dRq_fu //; smt(Top.gt0_k Top.gt0_l). 
-  call (: ={PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in dC){1}).
+  call (: ={PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in dC tau){1}).
     proc; inline*; auto => />; smt(get_setE get_set_sameE).
   auto => /> &1 &2 RO_dC r_mA c_mA s_t. split => [|E1 E2]. 
   + rewrite -r_mA -c_mA subm_catmcCl /= 1:/#. 
@@ -356,7 +348,8 @@ inline H'.get. wp. sp 1 1.
 (* need [size z{1} = l] to prove equality of the RO argument *)
 case (size z{1} = l /\ inf_normv z{1} < gamma1 - b);
   last by conseq (:_ ==> true); [ smt() | inline*; auto].
-call(: ={arg,glob G} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in dC){1} ==> ={res} /\ res{1} \in dC).
+call(: ={arg,glob G} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in dC tau){1} 
+       ==> ={res} /\ res{1} \in dC tau).
   proc; inline*; auto => />.  smt(get_set_sameE).
 wp; skip => &1 &2. case: (sig0{1}) => // -[? ?]. 
 move => />. case. move => /> _. (* why is case needed? *)
@@ -379,8 +372,8 @@ split => [|? c_dC]; last split.
   by rewrite /w1 /e oppvK high_lowPv. 
 - rewrite 2!inf_normv_cat !StdOrder.IntOrder.ltr_maxrP !max_ltrP.
   rewrite normv_z /= 1!inf_normv_vectc //.
-  have -> /= : cnorm c < gamma2+1 by smt(cnorm_dC ge2_gamma2).
-  right. rewrite /e inf_normvN. smt(inf_normv_low ge2_gamma2).
+  have -> /= : cnorm c < gamma2+1 by smt(cnorm_dC gamma2_bound).
+  right. rewrite /e inf_normvN. smt(inf_normv_low gamma2_bound).
 - rewrite catvA get_catv_r ?size_catv 1:/#. 
   have -> : k + (l + 1) - 1 - (size e + size z) = 0 by smt().
   by rewrite get_vectc.
