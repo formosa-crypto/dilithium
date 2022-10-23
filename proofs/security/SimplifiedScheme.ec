@@ -504,7 +504,7 @@ module HVZK_Sim_Inst : DID.HVZK_Sim = {
     var resp;
     (mA, t) <- pk;
     t0 <- lowBitsV t;
-    c <$ dC;
+    c <$ OpFSA.dC;
     oz <$ dsimoz;
     if(oz <> None) {
       z <- oget oz;
