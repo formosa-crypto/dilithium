@@ -498,7 +498,41 @@ qed.
 
 end section OpBasedCorrectness.
 
+(* -- OpBased is indeed zero-knowledge -- *)
+(* TODO Maybe refactor into separate file? *)
 
+(* TODO define me *)
+op dsimoz : response_t option distr.
+op recover_commitment : challenge_t -> response_t -> commit_t.
+
+module HVZK_Sim_Inst : DID.HVZK_Sim = {
+  proc get_trans(pk : PK) = {
+    var mA, t, t0, w', c, oz, z;
+    var resp;
+    (mA, t) <- pk;
+    t0 <- lowBitsV t;
+    c <$ dC;
+    oz <$ dsimoz;
+    if(oz <> None) {
+      z <- oget oz;
+      w' <- mA *^ z - c ** t;
+      resp <- if gamma2 - b <= inf_normv w' then None else Some z;
+    } else {
+      resp <- None;
+    }
+    return if resp = None then None else Some (recover_commitment c (oget resp), c, oget resp);
+  }
+}.
+
+section OpBasedHVZK.
+
+lemma HVZK_Sim_correct k :
+  equiv[DID.Honest_Execution(OpBased.P, OpBased.V).get_trans ~ HVZK_Sim_Inst.get_trans :
+        k \in keygen /\ arg{1} = k /\ arg{2} = k.`1 ==> ={res}].
+proof.
+admitted.
+
+end section OpBasedHVZK.
 
 (* Main Theorem *)
 
