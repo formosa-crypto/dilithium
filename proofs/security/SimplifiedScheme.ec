@@ -520,20 +520,20 @@ admitted. (* TODO understand pen-and-paper first... *)
 
 op check_znorm (v : vector) = (size v = l) /\ (inf_normv v < gamma1 - b).
 op dy = dvector (dRq_ (gamma1 - 1)) l.
-op dsimz = dvector (dRq_ (gamma1 - b)) l.
+op dsimz = dvector (dRq_open (gamma1 - b)) l.
 
 lemma dsimz_uni :
   is_uniform dsimz.
 proof.
 apply dvector_uni.
-exact dRq__uni.
+exact dRq_open_uni.
 qed.
 
 lemma dsimz_ll :
   is_lossless dsimz.
 proof.
 apply dvector_ll.
-exact dRq__ll.
+exact dRq_open_ll.
 qed.
 
 axiom b_gamma1_lt : b < gamma1.
@@ -544,22 +544,22 @@ proof.
 apply fun_ext => v.
 rewrite supp_dvector; first smt(Top.gt0_l).
 case (size v = l); last by smt().
-move => ?.
-suff: (forall (i : int), 0 <= i && i < l => v.[i] \in dRq_ (gamma1 - b)) <=> 
-      (inf_normv v < gamma1 - b) by smt().
+move => ? /=.
+rewrite /check_znorm.
+have -> /=: (size v = l) = true by smt().
 rewrite ltr_ofnat.
 have -> /=: (0 <= gamma1 - b) = true by smt(b_gamma1_lt).
 rewrite /inf_norm /=.
-rewrite -ltr_bigmax; first rewrite ofintK; smt(b_gamma1_lt).
-split => ?.
+rewrite -ltr_bigmax /=; first rewrite ofintK; smt(b_gamma1_lt).
+rewrite eq_iff; split => ?.
 - move => x supp_x _.
   rewrite /(\o) ltr_ofint.
   split => [|_]; first exact cnorm_ge0.
   rewrite mem_tolist in supp_x.
   case supp_x => [i [rg_i ?]]; subst.
-  rewrite -supp_dRq; smt(b_gamma1_lt).
+  rewrite -supp_dRq_open; smt(b_gamma1_lt).
 - move => i rg_i.
-  rewrite supp_dRq; first smt(b_gamma1_lt).
+  rewrite supp_dRq_open; first smt(b_gamma1_lt).
   have ?: v.[i] \in tolist v.
   + rewrite mem_tolist.
     exists i => /#.
@@ -589,7 +589,7 @@ module HVZK_Sim_Inst : DID.HVZK_Sim = {
     } else {
       resp <- None;
     }
-    return if resp = None then None else Some (recover_commitment pk c (oget resp), c, oget resp);
+    return if resp = None then None else Some (recover pk c (oget resp), c, oget resp);
   }
 }.
 
@@ -612,7 +612,7 @@ local module HVZK_Hops = {
     } else {
       resp <- None;
     }
-    return if resp = None then None else Some (recover_commitment pk c (oget resp), c, oget resp);
+    return if resp = None then None else Some (recover pk c (oget resp), c, oget resp);
   }
 }.
 
