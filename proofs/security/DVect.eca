@@ -71,3 +71,70 @@ proof.
 rewrite /inf_normv /(\o) /normv /pnormv tolist_vectc /inf_norm => n_gt0.
 by rewrite (eq_bigmax c (Nat.ofint (cnorm c))); smt(mem_nseq ofintK cnorm_ge0).
 qed.
+
+lemma inf_normv_ltr v a :
+  0 < a =>
+  inf_normv v < a <=>
+  (forall i, 0 <= i < size v => cnorm v.[i] < a).
+proof.
+move => gt0_a.
+rewrite /inf_normv /inf_norm /(\o).
+rewrite ltr_ofnat; have -> /=: (0 <= a) = true by smt().
+rewrite -ltr_bigmax; first smt(ofintK).
+split => ?.
+- move => i rg_i.
+  have ?: v.[i] \in tolist v by smt(mem_tolist).
+  smt(ofintK).
+- move => x supp_x _ /=.
+  rewrite mem_tolist in supp_x.
+  rewrite ltr_ofint.
+  by split => [|/#]; first exact cnorm_ge0.
+qed.
+
+lemma inf_normv_ler v a :
+  0 <= a =>
+  inf_normv v <= a <=>
+  (forall i, 0 <= i < size v => cnorm v.[i] <= a).
+proof.
+move => ge0_a.
+rewrite /inf_normv /inf_norm /(\o).
+rewrite ler_ofnat; have -> /=: (0 <= a) = true by smt().
+rewrite -ler_bigmax.
+split => ?.
+- move => i rg_i.
+  have ?: v.[i] \in tolist v by smt(mem_tolist).
+  smt(ofintK).
+- move => x supp_x _ /=.
+  rewrite mem_tolist in supp_x.
+  rewrite ler_ofint.
+  by split => [|/#]; first exact cnorm_ge0.
+qed.
+
+lemma hide_lowV (rv sv : vector) (b : int) :
+  size rv = size sv =>
+  0 <= b =>
+  0 < alpha %/ 2 - b =>
+  inf_normv sv <= b =>
+  inf_normv (lowBitsV rv) < alpha %/ 2 - b =>
+  highBitsV (rv + sv) = highBitsV rv.
+proof.
+move => eq_size ge0_b lt_b_halfalpha small_sv small_low_rv.
+rewrite inf_normv_ler // in small_sv.
+rewrite inf_normv_ltr // in small_low_rv.
+rewrite /highBitsV.
+apply (eq_from_nth witness).
+- rewrite !size_map !size_range /=.
+  smt(size_addv).
+move => j rg_j.
+rewrite !size_map size_range in rg_j.
+rewrite size_addv eq_size /= in rg_j.
+rewrite (nth_map witness).
+- by rewrite size_tolist; smt(size_addv).
+rewrite (nth_map witness witness highBits).
+- by rewrite size_tolist; smt(size_addv).
+rewrite nth_tolist; first smt(size_addv).
+rewrite nth_tolist; first smt(size_addv).
+rewrite get_addv //.
+rewrite (hide_low _ _ b) //; first smt().
+smt(get_mapv size_lowBitsV).
+qed.

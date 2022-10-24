@@ -495,17 +495,13 @@ end section OpBasedCorrectness.
 (* Necessary for the simulator definition below to make sense *)
 (* There's a strong argument to put this in a separate file... *)
 
-op recover_commitment pk (c : challenge_t) (z : vector) =
-  let (mA, t) = pk in
-  highBitsV (mA *^ z - c ** t).
-
 module HonestExecutionWithRecover = {
   proc get_trans(pk : PK, sk : SK) : (commit_t * challenge_t * response_t) option = {
     var st, w, c, oz, result;
     (w, st) <$ commit sk;
     c <$ OpFSA.dC;
     oz <- respond sk c st;
-    result <- if oz = None then None else Some (recover_commitment pk c (oget oz), c, oget oz);
+    result <- if oz = None then None else Some (recover pk c (oget oz), c, oget oz);
     return result;
   }
 }.
@@ -515,7 +511,8 @@ equiv recover_correct k :
   k \in keygen /\ arg{1} = k /\ arg{2} = k ==> ={res}.
 proof.
 case k => pk sk; proc; inline *.
-print hide_low. (* Probably need vector version of this. *)
+print hide_lowV.
+(* rv = Ay, sv = -cs2 *)
 admitted. (* TODO understand pen-and-paper first... *)
 
 (* -- OpBased is indeed zero-knowledge -- *)
