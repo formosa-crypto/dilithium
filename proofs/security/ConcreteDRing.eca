@@ -146,8 +146,11 @@ apply inf_norm_le.
 - move => ?_; exact abs_zp_ub.
 qed.
 
-op dpoly_ball i =
+op dpoly_openball i =
   if 1 <= i <= Round.q %/ 2 then dpolyX (dopenball_zp i) else dpolyXnD1.
+
+op dpoly_ball i =
+  if 0 <= i < Round.q %/ 2 then dpolyX (dball_zp i) else dpolyXnD1.
 
 lemma poly_leftshift_imE alpha (xs : int list) (x : int) :
   2 <= alpha =>
@@ -228,7 +231,8 @@ clone DRing as DR with
   theory RqRing <= PolyReduceZq.ComRing,
   op cnorm <= Round."`|_|",
   op dRq <= dpolyXnD1,
-  op dRq_ <= fun i => dpoly_ball i,
+  op dRq_ <= dpoly_ball,
+  op dRq_open <= dpoly_openball,
   op dC <= dC,
   op l1_norm <= l1_norm,
   type Flex.high <= int list,
@@ -244,24 +248,24 @@ realize dRq_uni by exact dpolyXnD1_uni.
 realize dRq_fu by exact dpolyXnD1_fu.
 realize dRq__ll.
 move => i; rewrite /dpoly_ball.
-case (1 <= i <= Round.q %/ 2) => /= ?; last exact dpolyXnD1_ll.
+case (0 <= i < Round.q %/ 2) => /= ?; last exact dpolyXnD1_ll.
 by rewrite dpolyX_ll dball_zp_ll /#.
 qed.
 realize dRq__uni.
 move => i; rewrite /dpoly_ball.
-case (1 <= i <= Round.q %/ 2) => /= ?; last exact dpolyXnD1_uni.
+case (0 <= i < Round.q %/ 2) => /= ?; last exact dpolyXnD1_uni.
 by rewrite dpolyX_uni dball_zp_uni /#.
 qed.
 realize supp_dRq.
 move => p a ?; rewrite /dpoly_ball.
-have -> /=: (1 <= a) = true by smt().
-case (a <= Round.q %/ 2) => /= ?; last smt(dpolyXnD1_fu inf_norm_ub).
+have -> /=: (0 <= a) = true by smt().
+case (a < Round.q %/ 2) => /= ?; last smt(dpolyXnD1_fu inf_norm_ub).
 rewrite dpolyX_supp.
 split => H.
-- apply inf_norm_lt; first smt().
+- apply inf_norm_le; first smt().
   smt(dball_zp_supp).
 - move => i rg_i.
-  rewrite dball_zp_supp //; 1,2:smt().
+  rewrite dball_zp_supp //.
   smt(inf_normXE).
 qed.
 realize dC_ll.
@@ -290,4 +294,26 @@ apply (poly_leftshift_inj alpha xs ys) => //.
 - smt(poly_highbits_size).
 - smt(poly_leftshift_imE).
 - smt(poly_leftshift_imE).
+qed.
+realize dRq_open_ll.
+move => i; rewrite /dpoly_openball.
+case (1 <= i <= Round.q %/ 2) => /= ?; last exact dpolyXnD1_ll.
+by rewrite dpolyX_ll dball_zp_ll /#.
+qed.
+realize dRq_open_uni.
+move => i; rewrite /dpoly_openball.
+case (1 <= i <= Round.q %/ 2) => /= ?; last exact dpolyXnD1_uni.
+by rewrite dpolyX_uni dball_zp_uni /#.
+qed.
+realize supp_dRq_open.
+move => p a ?; rewrite /dpoly_openball.
+have -> /=: (1 <= a) = true by smt().
+case (a <= Round.q %/ 2) => /= ?; last smt(dpolyXnD1_fu inf_norm_ub).
+rewrite dpolyX_supp.
+split => H.
+- apply inf_norm_lt; first smt().
+  smt(dball_zp_supp).
+- move => i rg_i.
+  rewrite dball_zp_supp //; 1, 2: smt().
+  by rewrite inf_normXE => /#.
 qed.

@@ -27,8 +27,11 @@ op [lossless full uniform] dRq : Rq distr.
 
 lemma dRq_funi : is_funiform dRq by smt(dRq_fu dRq_uni).
 
+op [lossless uniform] dRq_open : int -> Rq distr.
+axiom supp_dRq_open x a : 1 <= a => x \in dRq_open a <=> cnorm x < a.
+
 op [lossless uniform] dRq_ : int -> Rq distr.
-axiom supp_dRq x a : 1 <= a => x \in dRq_ a <=> cnorm x < a.
+axiom supp_dRq x a : 0 <= a => x \in dRq_ a <=> cnorm x <= a.
 
 op [uniform] dC : int -> Rq distr.
 (* This was a [lossless] tag.
