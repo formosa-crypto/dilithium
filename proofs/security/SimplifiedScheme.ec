@@ -608,26 +608,85 @@ local module HVZK_Hops = {
     z <- y + c ** s1;
     if(check_znorm z) {
       w' <- mA *^ y - c ** s2;
-      resp <- if gamma2 - b <= inf_normv w' then None else Some z;
+      resp <- if gamma2 - b <= inf_normv (lowBitsV w') then None else Some z;
     } else {
       resp <- None;
     }
     return if resp = None then None else Some (recover pk c (oget resp), c, oget resp);
   }
+
+  (* TODO copy other hops over from HVZK.eca *)
 }.
+
+lemma sk_size mA s1 s2 :
+  (exists pk, (pk, (mA, s1, s2)) \in keygen) => size s1 = l /\ size s2 = k.
+proof.
+move => [pk valid_keys].
+rewrite /keygen in valid_keys.
+rewrite supp_dlet /= in valid_keys.
+case valid_keys => [mA' [mA_supp valid_keys]].
+rewrite supp_dlet /= in valid_keys.
+case valid_keys => [s1' [s1_supp valid_keys]].
+rewrite supp_dmap /= in valid_keys.
+case valid_keys => [s2' [s2_supp [?[?[??]]]]]; subst.
+smt(size_dvector Top.gt0_l Top.gt0_k).
+qed.
 
 local equiv hop1_correct pk sk :
   HonestExecutionWithRecover.get_trans ~ HVZK_Hops.game1 :
-  arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res}.
+  (pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res}.
 proof.
+case sk => mA' s1' s2'.
 proc; inline*.
-admitted.
+swap{1} 1 1.
+swap{2} [1..2] 1.
+seq 1 1: (#pre /\ ={c}).
+- by rnd; auto.
+swap{2} [1..2] 1.
+seq 1 1: (#pre /\ st{1} = y{2} /\ size y{2} = l).
+- rnd (fun wst => let (w, st) = wst in st) (fun y => (highBitsV (mA' *^ y), y)).
+  auto => /> _.
+  split.
+  + move => y supp_y.
+    rewrite /commit /=.
+    rewrite (dmap1E (dvector (dRq_ (gamma1 - 1)) l)) /(\o).
+    suff: (fun x => pred1 (highBitsV (mA' *^ y), y) (highBitsV (mA' *^ x), x)) = pred1 y by smt().
+    by apply fun_ext => x /#.
+  move => _ wst; case wst => w st /=.
+  move => wst_supp.
+  rewrite /commit /= in wst_supp.
+  rewrite supp_dmap /= in wst_supp.
+  case wst_supp => y [supp_y [??]]; subst.
+  split => [|_] ; first smt().
+  smt(size_dvector Top.gt0_l).
+seq 0 1: (#pre /\ mA{2} = mA' /\ s1{2} = s1' /\ s2{2} = s2').
+- by auto.
+seq 0 2: #pre; first by auto.
+seq 1 2: (#pre /\ oz{1} = resp{2}).
+- conseq />.
+  auto => />.
+  move => &2 valid_keys size_y.
+  split; first smt().
+  rewrite /respond /= /check_znorm.
+  rewrite size_addv size_scalarv.
+  suff: size s1' = l by smt().
+  smt(sk_size).
+by auto => />.
+qed.
 
 lemma HVZK_Sim_correct k :
   equiv[DID.Honest_Execution(OpBased.P, OpBased.V).get_trans ~ HVZK_Sim_Inst.get_trans :
         k \in keygen /\ arg{1} = k /\ arg{2} = k.`1 ==> ={res}].
 proof.
-case k => pk sk /=.
+transitivity HonestExecutionWithRecover.get_trans
+             (k \in keygen /\ arg{1} = k /\ arg{2} = k  ==> ={res})
+             (k \in keygen /\ arg{1} = k /\ arg{2} = k.`1 ==> ={res}); 1, 2: smt().
+- exact recover_correct.
+case k => pk sk.
+transitivity HVZK_Hops.game1
+             ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res})
+             ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res}); 1, 2: smt().
+- exact hop1_correct.
 admitted.
 
 end section OpBasedHVZK.
