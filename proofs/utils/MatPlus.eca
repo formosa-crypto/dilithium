@@ -30,3 +30,59 @@ apply eq_vectorP; rewrite /= rows_mulmx //= size_scalarv /= => i Hi.
 rewrite get_offunv // get_mulmx /dotp /= lez_maxr //=.
 by rewrite (Big.BAdd.big_int1 0) /= get_matrixc 1:/# mulrC.
 qed.
+
+lemma get_scalarv (s: t) (v: vector) (i : int) :
+  (s ** v).[i] = s * v.[i].
+proof.
+(* TODO Rewrite the following lemma and proof: *)
+(*
+lemma get_mulvs (v: vector) (s: t) (i: int): (mulvs v s).[i] = v.[i] * s.
+proof.
+case (0 <= i < size v) => bound; 1: by rewrite get_offunv.
+by rewrite offunv0E // getv0E // mul0r.
+qed.
+*)
+admitted.
+
+(* TODO finish this *)
+lemma mulmsv (m : matrix) (s : t) (v : vector) :
+  cols m = size v =>
+  m *^ (s ** v) = s ** (m *^ v).
+proof.
+move => size_valid.
+apply eq_vectorP.
+split => [|i rg_i].
+- rewrite size_scalarv size_mulmxv.
+  + by rewrite size_scalarv.
+  by rewrite size_mulmxv //.
+rewrite size_col rows_mulmx in rg_i.
+- by rewrite rows_colmx size_scalarv //.
+(* Simplify LHS *)
+rewrite {1} /Matrices.( * ).
+have -> /=: cols m = rows (colmx (s ** v)).
+- by rewrite rows_colmx size_scalarv.
+rewrite get_offunm /= //.
+(* Simplify RHS *)
+rewrite get_scalarv.
+rewrite /( * ).
+have -> /=: cols m = rows (colmx v).
+- by rewrite rows_colmx.
+rewrite get_offunm //.
+(* TODO fix interface and use `dotp_mulvs` *)
+admitted.
+
+(* Proof doesn't even exist for `mulvs`? *)
+(* This probably still holds even if sizes aren't equal? *)
+lemma scalarvDr s (v1 v2 : vector) :
+  size v1 = size v2 =>
+  s ** (v1 + v2) = s ** v1 + s ** v2.
+proof.
+move => eq_size.
+apply eq_vectorP.
+split => [|i rg_i].
+- rewrite size_scalarv !size_addv !size_scalarv //.
+rewrite get_scalarv !get_addv //.
+- by rewrite !size_scalarv.
+rewrite !get_scalarv.
+by rewrite mulrDr.
+qed.

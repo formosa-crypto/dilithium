@@ -596,7 +596,7 @@ local module HVZK_Hops = {
     return result;
   }
 
-  (* Hopefully just unfolding everything *)
+  (* unfolding everything *)
   proc game2(pk: PK, sk: SK) : (commit_t * challenge_t * response_t) option = {
     var mA, s1, s2, w, w', y, c, z, t, resp;
 
@@ -615,11 +615,52 @@ local module HVZK_Hops = {
     return if resp = None then None else Some (recover pk c (oget resp), c, oget resp);
   }
 
+  (* Compute w' using only public information *)
+  proc game3(pk: PK, sk: SK) : (commit_t * challenge_t * response_t) option = {
+    var mA, s1, s2, w, w', y, c, z, t, resp;
+
+    (mA, s1, s2) <- sk;
+    t <- mA *^ s1 + s2;
+    c <$ OpFSA.dC;
+    y <$ dy;
+    w <- mA *^ y;
+    z <- y + c ** s1;
+    if(check_znorm z) {
+      w' <- mA *^ z - c ** t;
+      resp <- if gamma2 - b <= inf_normv (lowBitsV w') then None else Some z;
+    } else {
+      resp <- None;
+    }
+    return if resp = None then None else Some (recover pk c (oget resp), c, oget resp);
+  }
+
+  (* Change conditional on `oz` *)
+  proc game4(pk: PK, sk: SK) : (commit_t * challenge_t * response_t) option = {
+    var mA, s1, s2, w, w', y, c, z, t, resp;
+    var oz;
+
+    (mA, s1, s2) <- sk;
+    t <- mA *^ s1 + s2;
+    c <$ OpFSA.dC;
+    y <$ dy;
+    w <- mA *^ y;
+    z <- y + c ** s1;
+    oz <- if check_znorm z then Some z else None;
+    if(oz <> None) {
+      z <- oget oz;
+      w' <- mA *^ z - c ** t;
+      resp <- if gamma2 - b <= inf_normv (lowBitsV w') then None else Some z;
+    } else {
+      resp <- None;
+    }
+    return if resp = None then None else Some (recover pk c (oget resp), c, oget resp);
+  }
+
   (* TODO copy other hops over from HVZK.eca *)
 }.
 
 lemma sk_size mA s1 s2 :
-  (exists pk, (pk, (mA, s1, s2)) \in keygen) => size s1 = l /\ size s2 = k.
+  (exists pk, (pk, (mA, s1, s2)) \in keygen) => size mA = (k, l) /\ size s1 = l /\ size s2 = k.
 proof.
 move => [pk valid_keys].
 rewrite /keygen in valid_keys.
@@ -629,7 +670,7 @@ rewrite supp_dlet /= in valid_keys.
 case valid_keys => [s1' [s1_supp valid_keys]].
 rewrite supp_dmap /= in valid_keys.
 case valid_keys => [s2' [s2_supp [?[?[??]]]]]; subst.
-smt(size_dvector Top.gt0_l Top.gt0_k).
+smt(size_dmatrix size_dvector Top.gt0_l Top.gt0_k).
 qed.
 
 local equiv hop1_correct pk sk :
@@ -688,6 +729,39 @@ seq 1 2: (#pre /\ oz{1} = resp{2}).
   smt(sk_size).
 by auto => />.
 qed.
+
+local equiv hop3_correct :
+  HVZK_Hops.game2 ~ HVZK_Hops.game3 :
+  ={arg} /\ arg{1} \in keygen ==> ={res}.
+proof.
+proc.
+seq 6 6: (#pre /\ ={mA, s1, s2, t, c, y, w, z} /\
+          mA{1} *^ y{1} - c{1} ** s2{1} = mA{2} *^ z{2} - c{2} ** t{2}); 2: by auto => /#.
+auto => />.
+move => &2 valid_key c c_valid y y_valid.
+have [size_mA [size_s1 size_s2]]:
+  size (sk{2}.`1) = (k, l) /\ size (sk{2}.`2) = l /\ size (sk{2}.`3) = k.
+- apply (sk_size (sk{2}.`1) (sk{2}.`2) (sk{2}.`3)).
+  by exists pk{2} => /#.
+(* Annoying proof of some simple vector calculations below... *)
+rewrite mulmxvDr.
+- rewrite size_scalarv.
+  rewrite /dy in y_valid.
+  smt(size_dvector).
+rewrite -addvA; congr.
+rewrite mulmsv => [/#|].
+rewrite scalarvDr.
+- by rewrite size_mulmxv => /#.
+rewrite oppvD addvA addvN.
+have ->: size (c ** (sk{2}.`1 *^ sk{2}.`2)) = size (- c ** sk{2}.`3).
+- by rewrite size_oppv !size_scalarv size_mulmxv => /#.
+by rewrite add0v //.
+qed.
+
+local equiv hop4_correct :
+  HVZK_Hops.game3 ~ HVZK_Hops.game4 :
+  ={arg} ==> ={res}.
+proof. proc; by auto => /#. qed.
 
 lemma HVZK_Sim_correct k :
   equiv[DID.Honest_Execution(OpBased.P, OpBased.V).get_trans ~ HVZK_Sim_Inst.get_trans :
