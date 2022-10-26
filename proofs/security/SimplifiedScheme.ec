@@ -493,20 +493,79 @@ end section OpBasedCorrectness.
 
 (* -- OpBased is commitment recoverable -- *)
 (* Necessary for the simulator definition below to make sense *)
-(* There's a strong argument to put this in a separate file... *)
 
-hoare recover_correct (pk : PK) (sk : SK) :
-  DID.Honest_Execution(OpBased.P, OpBased.V).get_trans :
-  ((pk, sk) \in keygen /\ arg = (pk, sk)) ==>
-  (res <> None => let (w, c, z) = oget res in w = recover pk c z).
+axiom gt0_b : 0 < b.
+axiom b_gamma1_lt : b < gamma1.
+axiom b_round_gamma2_lt : b < 2 * gamma2 %/ 2.
+
+lemma pk_decomp mA' t' mA s1 s2 :
+  ((mA', t'), (mA, s1, s2)) \in keygen =>
+  mA' = mA /\ t' = mA *^ s1 + s2.
+proof. admitted.
+
+lemma sk_size mA s1 s2 :
+  (exists pk, (pk, (mA, s1, s2)) \in keygen) => size mA = (k, l) /\ size s1 = l /\ size s2 = k.
 proof.
-(* TODO *)
-print hide_lowV.
-(* rv = Ay, sv = -cs2 *)
-admitted.
+move => [pk valid_keys].
+rewrite /keygen in valid_keys.
+rewrite supp_dlet /= in valid_keys.
+case valid_keys => [mA' [mA_supp valid_keys]].
+rewrite supp_dlet /= in valid_keys.
+case valid_keys => [s1' [s1_supp valid_keys]].
+rewrite supp_dmap /= in valid_keys.
+case valid_keys => [s2' [s2_supp [?[?[??]]]]]; subst.
+smt(size_dmatrix size_dvector Top.gt0_l Top.gt0_k).
+qed.
+
+hoare recover_correct (pk_i : PK) (sk_i : SK) :
+  DID.Honest_Execution(OpBased.P, OpBased.V).get_trans :
+  ((pk_i, sk_i) \in keygen /\ arg = (pk_i, sk_i)) ==>
+  (res <> None => let (w, c, z) = oget res in w = recover pk_i c z).
+proof.
+case pk_i => mA' t'.
+case sk_i => mA s1 s2.
+proc; inline *.
+auto => />.
+move => valid_keys.
+have sk_sizes: size mA = (k, l) /\ size s1 = l /\ size s2 = k.
+- apply sk_size.
+  by exists (mA', t').
+apply pk_decomp in valid_keys.
+case valid_keys => [??]; subst.
+move => wy; case wy => w y /=.
+move => wy_supp.
+rewrite /commit /= supp_dmap in wy_supp.
+case wy_supp => [y' [y'_supp [??]]]; subst.
+move => c c_supp /=.
+move => H.
+have ?: (respond (mA, s1, s2) c y' <> None) by smt().
+clear H.
+move => w c' z.
+have -> /=: (respond (mA, s1, s2) c y' = None) = false by smt().
+move => [H [? H']].
+rewrite eq_sym in H.
+rewrite eq_sym in H'.
+subst.
+rewrite /respond /=.
+have -> /= : (gamma1 - b <= inf_normv (y' + c' ** s1) \/
+              gamma2 - b <= inf_normv (lowBitsV (mA *^ y' - c' ** s2))) = false by smt().
+rewrite /recover /=.
+have ->: mA *^ (y' + c' ** s1) - c' ** (mA *^ s1 + s2) = mA *^ y' - c' ** s2.
+- admit. (* more annoying vector stuff again... *)
+have ->: highBitsV (mA *^ y') = highBitsV (mA *^ y' - c' ** s2 + c' ** s2).
+- congr.
+  admit. (* vectors... *)
+apply (hide_lowV _ _ b).
+- admit. (* vector size stuff *)
+- smt(gt0_b).
+- smt(b_round_gamma2_lt).
+- (* Need to prove inf_norm cs2 upper-bound... *)
+  (* should first bound inf-norm of (1-norm poly * inf-norm poly). *)
+  admit.
+smt().
+qed.
 
 (* -- OpBased is indeed zero-knowledge -- *)
-(* TODO Maybe refactor into separate file? *)
 
 op check_znorm (v : vector) = (size v = l) /\ (inf_normv v < gamma1 - b).
 op dy = dvector (dRq_ (gamma1 - 1)) l.
@@ -525,8 +584,6 @@ proof.
 apply dvector_ll.
 exact dRq_open_ll.
 qed.
-
-axiom b_gamma1_lt : b < gamma1.
 
 lemma dsimz_supp :
   support dsimz = check_znorm.
@@ -658,20 +715,6 @@ local module HVZK_Hops = {
 
   (* TODO copy other hops over from HVZK.eca *)
 }.
-
-lemma sk_size mA s1 s2 :
-  (exists pk, (pk, (mA, s1, s2)) \in keygen) => size mA = (k, l) /\ size s1 = l /\ size s2 = k.
-proof.
-move => [pk valid_keys].
-rewrite /keygen in valid_keys.
-rewrite supp_dlet /= in valid_keys.
-case valid_keys => [mA' [mA_supp valid_keys]].
-rewrite supp_dlet /= in valid_keys.
-case valid_keys => [s1' [s1_supp valid_keys]].
-rewrite supp_dmap /= in valid_keys.
-case valid_keys => [s2' [s2_supp [?[?[??]]]]]; subst.
-smt(size_dmatrix size_dvector Top.gt0_l Top.gt0_k).
-qed.
 
 local equiv hop1_correct pk sk :
   DID.Honest_Execution(OpBased.P, OpBased.V).get_trans ~ HVZK_Hops.game1 :
