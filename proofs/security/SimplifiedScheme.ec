@@ -1,4 +1,6 @@
 require import AllCore Distr List DistrExtras.
+require import Finite DBool.
+import Biased.
 require DigitalSignaturesRO.
 require MatPlus.
 (* require import PolyReduce. *)
@@ -393,17 +395,22 @@ end section PROOF.
 
 (* -- Operator-based -- *)
 
+op ds1 = dvector (dRq_ e) l.
+op ds2 = dvector (dRq_ e) k.
+
 op keygen : (PK * SK) distr =
   dlet (dmatrix dRq k l) (fun mA =>
-  dlet (dvector (dRq_ e) l) (fun s1 =>
-  dmap (dvector (dRq_ e) k) (fun s2 =>
+  dlet ds1 (fun s1 =>
+  dmap ds2 (fun s2 =>
   let pk = (mA, mA *^ s1 + s2) in
   let sk = (mA, s1, s2) in
   (pk, sk)))).
 
+op dy = dvector (dRq_ (gamma1 - 1)) l.
+
 op commit (sk : SK) : (commit_t * pstate_t) distr =
   let (mA, s1, s2) = sk in
-  dmap (dvector (dRq_ (gamma1 - 1)) l) (fun y =>
+  dmap dy (fun y =>
   let w1 = highBitsV (mA *^ y) in
   (w1, y)).
 
@@ -501,7 +508,15 @@ axiom b_round_gamma2_lt : b < 2 * gamma2 %/ 2.
 lemma pk_decomp mA' t' mA s1 s2 :
   ((mA', t'), (mA, s1, s2)) \in keygen =>
   mA' = mA /\ t' = mA *^ s1 + s2.
-proof. admitted.
+proof.
+rewrite /keygen.
+move => H.
+rewrite supp_dlet /= in H.
+case H => x [? H].
+rewrite supp_dlet /= in H.
+case H => y [? H].
+by rewrite supp_dmap /= in H => /#.
+qed.
 
 lemma sk_size mA s1 s2 :
   (exists pk, (pk, (mA, s1, s2)) \in keygen) => size mA = (k, l) /\ size s1 = l /\ size s2 = k.
@@ -568,55 +583,7 @@ qed.
 (* -- OpBased is indeed zero-knowledge -- *)
 
 op check_znorm (v : vector) = (size v = l) /\ (inf_normv v < gamma1 - b).
-op dy = dvector (dRq_ (gamma1 - 1)) l.
 op dsimz = dvector (dRq_open (gamma1 - b)) l.
-
-lemma dsimz_uni :
-  is_uniform dsimz.
-proof.
-apply dvector_uni.
-exact dRq_open_uni.
-qed.
-
-lemma dsimz_ll :
-  is_lossless dsimz.
-proof.
-apply dvector_ll.
-exact dRq_open_ll.
-qed.
-
-lemma dsimz_supp :
-  support dsimz = check_znorm.
-proof.
-apply fun_ext => v.
-rewrite supp_dvector; first smt(Top.gt0_l).
-case (size v = l); last by smt().
-move => ? /=.
-rewrite /check_znorm.
-have -> /=: (size v = l) = true by smt().
-rewrite ltr_ofnat.
-have -> /=: (0 <= gamma1 - b) = true by smt(b_gamma1_lt).
-rewrite /inf_norm /=.
-rewrite -ltr_bigmax /=; first rewrite ofintK; smt(b_gamma1_lt).
-rewrite eq_iff; split => ?.
-- move => x supp_x _.
-  rewrite /(\o) ltr_ofint.
-  split => [|_]; first exact cnorm_ge0.
-  rewrite mem_tolist in supp_x.
-  case supp_x => [i [rg_i ?]]; subst.
-  rewrite -supp_dRq_open; smt(b_gamma1_lt).
-- move => i rg_i.
-  rewrite supp_dRq_open; first smt(b_gamma1_lt).
-  have ?: v.[i] \in tolist v.
-  + rewrite mem_tolist.
-    exists i => /#.
-  have H: (\o) Nat.ofint cnorm v.[i] < (ofint (gamma1 - b))%Nat by smt().
-  rewrite /(\o) in H.
-  smt(ofintK b_gamma1_lt).
-qed.
-
-require import Finite DBool.
-import Biased.
 
 op line12_magic_number = (size (to_seq check_znorm))%r / (size (to_seq (support dy)))%r.
 op dsimoz : response_t option distr = dlet (dbiased line12_magic_number) (fun b => if b then dmap dsimz Some else dunit None).
@@ -641,6 +608,151 @@ module HVZK_Sim_Inst : DID.HVZK_Sim = {
 }.
 
 section OpBasedHVZK.
+
+local lemma dsimz_uni :
+  is_uniform dsimz.
+proof.
+apply dvector_uni.
+exact dRq_open_uni.
+qed.
+
+local lemma dsimz_ll :
+  is_lossless dsimz.
+proof.
+apply dvector_ll.
+exact dRq_open_ll.
+qed.
+
+local lemma dsimz_supp : support dsimz = check_znorm.
+proof.
+apply fun_ext => z.
+rewrite /dsimz /check_znorm.
+rewrite supp_dvector; first smt(Top.gt0_l).
+rewrite inf_normv_ltr; first smt(b_gamma1_lt).
+case (size z = l) => /= [size_z|]; last by auto.
+smt(supp_dRq_open b_gamma1_lt).
+qed.
+
+local lemma dsimz1E z :
+  check_znorm z =>
+  mu1 dsimz z = inv (size (to_seq check_znorm))%r.
+proof.
+  move => ?.
+  rewrite mu1_uni_ll ?dsimz_uni ?dsimz_ll; smt(dsimz_supp).
+qed.
+
+local lemma masking_range c s1 z:
+  c \in OpFSA.dC => s1 \in ds1 => check_znorm z =>
+  z - c ** s1 \in dy.
+proof. admitted.
+
+local lemma mask_size :
+  size (to_seq check_znorm) < size (to_seq (support dy)).
+proof. admitted.
+
+(* Is this still necessary to begin with? *)
+local lemma mask_nonzero :
+  0 < size (to_seq check_znorm).
+proof. admitted.
+
+local lemma dy_ll :
+  is_lossless dy.
+proof. admitted.
+
+local lemma dy_uni :
+  is_uniform dy.
+proof. admitted.
+
+local op transz (c : Rq) s1 =
+  dmap dy (fun y =>
+    let z' = y + c ** s1 in
+    if check_znorm z' then Some z' else None).
+
+local lemma line12_magic_some :
+  forall c s1 z0, c \in OpFSA.dC => s1 \in ds1 => check_znorm z0 =>
+    mu1 (transz c s1) (Some z0) = 1%r / (size (to_seq (support dy)))%r.
+proof.
+  move => c s1 z0 c_valid s1_valid z0_valid.
+  rewrite /transz dmap1E /pred1 /(\o) => /=.
+  rewrite (mu_eq _ _ (fun y => y + c ** s1 = z0)).
+  - move => y /#.
+  have -> : (fun y => y + c ** s1 = z0) = pred1 (z0 - c ** s1).
+    apply fun_ext => y. rewrite /pred1.
+    admit. (* vector calculation... *)
+  rewrite mu1_uni_ll ?dy_uni ?dy_ll.
+  suff -> : (z0 - c ** s1) \in dy by trivial.
+  exact masking_range.
+qed.
+
+local lemma line12_outofbound :
+  forall c s1 z0, c \in OpFSA.dC => s1 \in ds1 => ! (check_znorm z0) =>
+    (Some z0) \notin (transz c s1).
+proof.
+move => c s1 z0 c_valid s1_valid z0_invalid.
+rewrite /transz /pred1 /(\o) => /=.
+rewrite supp_dmap => /#.
+qed.
+
+(* TODO Move to top of file *)
+require import RealSeries Supplementary Finite.
+
+local lemma line12_magic_none :
+  forall c s1, c \in OpFSA.dC => s1 \in ds1 =>
+    mu1 (transz c s1) None = 1%r - (size (to_seq check_znorm))%r / (size (to_seq (support dy)))%r.
+proof.
+move => c s1 c_valid s1_valid.
+have sumz : (sum (fun z => mu1 (transz c s1) z) = 1%r).
+  by rewrite - weightE; apply dmap_ll; apply dy_ll.
+rewrite sumD1_None /= in sumz.
+  by apply summable_mu1.
+suff: sum (fun (y : vector) => mu1 (transz c s1) (Some y)) = 
+  (size (to_seq check_znorm))%r / (size (to_seq (support dy)))%r by smt().
+clear sumz.
+have -> :
+  (fun z => mu1 (transz c s1) (Some z)) =
+  (fun z => if check_znorm z then 1%r / (size (to_seq (support dy)))%r else 0%r).
+  apply fun_ext => z; case (check_znorm z).
+  + move => z_good.
+    rewrite line12_magic_some => /#.
+  + move => z_out.
+    apply supportPn.
+    apply line12_outofbound => //.
+apply sum_characteristic.
+apply (finite_leq predT<:vector> check_znorm) => //.
+(* TODO Need to prove new vector type is finite... *)
+admit.
+qed.
+
+local lemma line12_magic :
+  forall c s1, c \in OpFSA.dC => s1 \in ds1 =>
+  transz c s1 = dsimoz.
+proof.
+move => c s1 c_valid s1_valid.
+apply eq_distr => z.
+case z.
+- rewrite line12_magic_none //.
+  apply eq_sym; rewrite dlet1E sum_over_bool /=.
+  rewrite dmap1E /pred1 /(\o) mu0 /=.
+  rewrite dunit1E dbiased1E /line12_magicnumber /=.
+  rewrite clamp_id; smt(mask_nonzero mask_size).
+- move => z.
+  case (check_znorm z).
+  + move => z_valid.
+    rewrite line12_magic_some //.
+    rewrite eq_sym /line12_magicnumber dlet1E sum_over_bool /=.
+    rewrite dunit1E /=.
+    rewrite dmap1E /pred1 /(\o) /=.
+    rewrite dsimz1E //=.
+    rewrite dbiased1E /=.
+    rewrite clamp_id; smt(mask_nonzero mask_size).
+  + move => z_invalid.
+    have -> : mu1 (transz c s1) (Some z) = 0%r.
+      apply supportPn; apply line12_outofbound; by assumption.
+    apply eq_sym; apply supportPn.
+    rewrite supp_dlet.
+    (* abuse of smt? *)
+    smt(supp_dmap supp_dunit dsimz_supp).
+qed.
 
 local module HVZK_Hops = {
   (* Switch to commitment-recoverable *)
@@ -714,6 +826,7 @@ local module HVZK_Hops = {
   }
 
   (* TODO copy other hops over from HVZK.eca *)
+
 }.
 
 local equiv hop1_correct pk sk :
