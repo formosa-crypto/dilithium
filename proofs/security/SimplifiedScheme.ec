@@ -825,7 +825,47 @@ local module HVZK_Hops = {
     return if resp = None then None else Some (recover pk c (oget resp), c, oget resp);
   }
 
-  (* TODO copy other hops over from HVZK.eca *)
+  (* Rewrite relevant parts of above as operator *)
+  proc game5(pk: PK, sk: SK) : (commit_t * challenge_t * response_t) option = {
+    var mA, s1, s2, w', y, c, z, t, resp;
+    var oz;
+
+    (mA, s1, s2) <- sk;
+    t <- mA *^ s1 + s2;
+    c <$ OpFSA.dC;
+    y <$ dy;
+    oz <$ transz c s1;
+    if(oz <> None) {
+      z <- oget oz;
+      w' <- mA *^ z - c ** t;
+      resp <- if gamma2 - b <= inf_normv (lowBitsV w') then None else Some z;
+    } else {
+      resp <- None;
+    }
+    return if resp = None then None else Some (recover pk c (oget resp), c, oget resp);
+  }
+
+  (**
+local module Game4 = {
+  (* Get (a, t) from public key *)
+  proc main(sk: sk_t, pk: pk_t) = {
+    var a, a', s1, s2, oz, z, z', c, t, t0, w';
+    (a', s1, s2) <- sk;
+    (a, t) <- pk;
+    t0 <- lowbits t;
+    c <$ dC;
+    oz <$ transz c s1;
+    if(oz <> None) {
+      z' <- oget oz;
+      w' <- a *^ z' - c * t;
+      z <- resp_second_half z' c w' t0;
+    } else {
+      z <- failed_znorm;
+    }
+    return trans_of c z;
+  }
+}.
+**)
 
 }.
 
@@ -918,6 +958,92 @@ local equiv hop4_correct :
   HVZK_Hops.game3 ~ HVZK_Hops.game4 :
   ={arg} ==> ={res}.
 proof. proc; by auto => /#. qed.
+
+local equiv hop5_correct pk_i sk_i :
+  HVZK_Hops.game4 ~ HVZK_Hops.game5 :
+  ={arg} /\ arg{1} = (pk_i, sk_i) /\ (pk_i, sk_i) \in keygen ==> ={res}.
+proof.
+proc.
+(* proof most definitely out of date... *)
+seq 3 3: (#pre /\ ={mA, s1, s2, t, c} /\ (mA{1}, s1{1}, s2{1}) = sk_i).
+- by auto => /#.
+seq 0 1: #pre.
+- conseq />.
+  islossless.
+  exact dy_ll.
+seq 4 1: (#pre /\ ={oz}); last by auto => /#.
+rnd: *0 *0.
+auto => /> &2.
+case sk_i => mA' s1' s2'.
+case pk_i => mA'' t'.
+move => valid_keys.
+have ?: size mA{2} = (k, l) /\ size s1{2} = l /\ size s2{2} = k.
+- apply sk_size.
+  by exists (mA'', t') => //.
+have [??]: mA'' = mA{2} /\ t' = mA{2} *^ s1{2} + s2{2}.
+- by apply pk_decomp => //.
+subst.
+split => [oz oz_valid | _ oz oz_valid].
+- by rewrite dmap_id /transz /#.
+rewrite supp_dmap in oz_valid.
+case oz_valid => y /= [#] y_valid ?; subst => /=.
+rewrite dmap_id.
+rewrite /transz.
+rewrite supp_dmap /=.
+by exists y => /#.
+qed.
+
+(**
+
+local lemma hop4 :
+  equiv[Game3.main ~ Game4.main : ={sk} /\ (pk{2}, sk{2}) \in keygen ==> ={res}].
+proof.
+proc.
+seq 2 2: (#pre /\ ={a, s1, s2, t} /\ a{2} = a'{2}).
+- by auto => />; smt(pk_decomp).
+by auto => /#.
+qed.
+
+local lemma hop5 :
+  equiv[Game4.main ~ Simulator.main : (pk{1}, sk{1}) \in keygen /\ ={pk} ==> ={res}].
+proof.
+proc.
+seq 4 3 : (#pre /\ ={a, t, t0, c} /\ a{1} = a'{1} /\ sk{1} = (a'{1}, s1{1}, s2{1}) /\ pk{1} = (a{1}, t{1}) /\ c{1} \in dC).
+  auto; smt(pk_decomp).
+seq 1 1 : (#pre /\ ={oz}).
+  rnd; auto => //= &1 &2.
+
+  move => [#] valid_keys ? ? ? ? ? ? ? ? c_valid; subst.
+  have a_supp : a{2} \in dA by smt(keys_supp).
+  have s1_supp : s1{1} \in ds1 by smt(keys_supp).
+  have s2_supp : s2{1} \in ds2 by smt(keys_supp).
+  apply pk_decomp in valid_keys.
+  case valid_keys => [#] ? ?; subst.
+
+  (* Now comes the actual proof *)
+  split.
+  rewrite line12_magic //=.
+  move => H oz ?.
+  split; 1: smt(line12_magic).
+  move => _.
+  split.
+  split; 2: trivial.
+    (* keygen support... *)
+    rewrite /keygen.
+    apply supp_dlet => /=.
+    exists a{2}.
+    split; 1: assumption.
+    apply supp_dlet => /=.
+    exists s1{1}.
+    split; 1: assumption.
+    apply supp_dlet => /=.
+    exists s2{1}.
+    split; 1: assumption.
+    by apply supp_dunit.
+  smt().
+by auto => /#.
+qed.
+*)
 
 lemma HVZK_Sim_correct k :
   equiv[DID.Honest_Execution(OpBased.P, OpBased.V).get_trans ~ HVZK_Sim_Inst.get_trans :
