@@ -3,6 +3,7 @@ require import Finite DBool.
 import Biased.
 require DigitalSignaturesRO.
 require MatPlus.
+require import RealSeries Supplementary Finite.
 (* require import PolyReduce. *)
 require import IntDiv.
 (* require ZqRounding. *)
@@ -590,10 +591,9 @@ op dsimoz : response_t option distr = dlet (dbiased line12_magic_number) (fun b 
 
 module HVZK_Sim_Inst : DID.HVZK_Sim = {
   proc get_trans(pk : PK) = {
-    var mA, t, t0, w', c, oz, z;
+    var mA, t, w', c, oz, z;
     var resp;
     (mA, t) <- pk;
-    t0 <- lowBitsV t;
     c <$ OpFSA.dC;
     oz <$ dsimoz;
     if(oz <> None) {
@@ -692,9 +692,6 @@ move => c s1 z0 c_valid s1_valid z0_invalid.
 rewrite /transz /pred1 /(\o) => /=.
 rewrite supp_dmap => /#.
 qed.
-
-(* TODO Move to top of file *)
-require import RealSeries Supplementary Finite.
 
 local lemma line12_magic_none :
   forall c s1, c \in OpFSA.dC => s1 \in ds1 =>
@@ -827,13 +824,12 @@ local module HVZK_Hops = {
 
   (* Rewrite relevant parts of above as operator *)
   proc game5(pk: PK, sk: SK) : (commit_t * challenge_t * response_t) option = {
-    var mA, s1, s2, w', y, c, z, t, resp;
+    var mA, s1, s2, w', (* y, *) c, z, t, resp;
     var oz;
 
     (mA, s1, s2) <- sk;
     t <- mA *^ s1 + s2;
     c <$ OpFSA.dC;
-    y <$ dy;
     oz <$ transz c s1;
     if(oz <> None) {
       z <- oget oz;
@@ -845,28 +841,24 @@ local module HVZK_Hops = {
     return if resp = None then None else Some (recover pk c (oget resp), c, oget resp);
   }
 
-  (**
-local module Game4 = {
   (* Get (a, t) from public key *)
-  proc main(sk: sk_t, pk: pk_t) = {
-    var a, a', s1, s2, oz, z, z', c, t, t0, w';
-    (a', s1, s2) <- sk;
-    (a, t) <- pk;
-    t0 <- lowbits t;
-    c <$ dC;
+  proc game6(pk: PK, sk: SK) : (commit_t * challenge_t * response_t) option = {
+    var mA, mA', s1, s2, w', c, z, t, resp;
+    var oz;
+
+    (mA', s1, s2) <- sk;
+    (mA, t) <- pk;
+    c <$ OpFSA.dC;
     oz <$ transz c s1;
     if(oz <> None) {
-      z' <- oget oz;
-      w' <- a *^ z' - c * t;
-      z <- resp_second_half z' c w' t0;
+      z <- oget oz;
+      w' <- mA *^ z - c ** t;
+      resp <- if gamma2 - b <= inf_normv (lowBitsV w') then None else Some z;
     } else {
-      z <- failed_znorm;
+      resp <- None;
     }
-    return trans_of c z;
+    return if resp = None then None else Some (recover pk c (oget resp), c, oget resp);
   }
-}.
-**)
-
 }.
 
 local equiv hop1_correct pk sk :
@@ -964,13 +956,8 @@ local equiv hop5_correct pk_i sk_i :
   ={arg} /\ arg{1} = (pk_i, sk_i) /\ (pk_i, sk_i) \in keygen ==> ={res}.
 proof.
 proc.
-(* proof most definitely out of date... *)
 seq 3 3: (#pre /\ ={mA, s1, s2, t, c} /\ (mA{1}, s1{1}, s2{1}) = sk_i).
 - by auto => /#.
-seq 0 1: #pre.
-- conseq />.
-  islossless.
-  exact dy_ll.
 seq 4 1: (#pre /\ ={oz}); last by auto => /#.
 rnd: *0 *0.
 auto => /> &2.
@@ -993,28 +980,29 @@ rewrite supp_dmap /=.
 by exists y => /#.
 qed.
 
-(**
-
-local lemma hop4 :
-  equiv[Game3.main ~ Game4.main : ={sk} /\ (pk{2}, sk{2}) \in keygen ==> ={res}].
+local equiv hop6_correct pk_i sk_i :
+  HVZK_Hops.game5 ~ HVZK_Hops.game6 :
+  ={arg} /\ arg{1} = (pk_i, sk_i) /\ (pk_i, sk_i) \in keygen ==> ={res}.
 proof.
 proc.
-seq 2 2: (#pre /\ ={a, s1, s2, t} /\ a{2} = a'{2}).
+seq 2 2: (#pre /\ ={mA, s1, s2, t} /\ mA{2} = mA'{2}).
 - by auto => />; smt(pk_decomp).
-by auto => /#.
+by sim.
 qed.
 
-local lemma hop5 :
-  equiv[Game4.main ~ Simulator.main : (pk{1}, sk{1}) \in keygen /\ ={pk} ==> ={res}].
+local equiv final_hop_correct :
+  HVZK_Hops.game6 ~ HVZK_Sim_Inst.get_trans :
+  (pk{1}, sk{1}) \in keygen /\ ={pk} ==> ={res}.
 proof.
 proc.
-seq 4 3 : (#pre /\ ={a, t, t0, c} /\ a{1} = a'{1} /\ sk{1} = (a'{1}, s1{1}, s2{1}) /\ pk{1} = (a{1}, t{1}) /\ c{1} \in dC).
-  auto; smt(pk_decomp).
+seq 3 2 : (#pre /\ ={mA, t, c} /\ mA{1} = mA'{1} /\ sk{1} = (mA'{1}, s1{1}, s2{1}) /\ pk{1} = (mA{1}, t{1}) /\ c{1} \in OpFSA.dC).
+- by auto; smt(pk_decomp).
 seq 1 1 : (#pre /\ ={oz}).
   rnd; auto => //= &1 &2.
-
-  move => [#] valid_keys ? ? ? ? ? ? ? ? c_valid; subst.
-  have a_supp : a{2} \in dA by smt(keys_supp).
+  move => [#] valid_keys ??????? c_valid; subst.
+(* Proof outdated; TODO fix me *)
+(*
+  have a_supp : mA{2} \in dA by smt(keys_supp).
   have s1_supp : s1{1} \in ds1 by smt(keys_supp).
   have s2_supp : s2{1} \in ds2 by smt(keys_supp).
   apply pk_decomp in valid_keys.
@@ -1042,8 +1030,8 @@ seq 1 1 : (#pre /\ ={oz}).
     by apply supp_dunit.
   smt().
 by auto => /#.
-qed.
 *)
+admitted.
 
 lemma HVZK_Sim_correct k :
   equiv[DID.Honest_Execution(OpBased.P, OpBased.V).get_trans ~ HVZK_Sim_Inst.get_trans :
@@ -1058,7 +1046,24 @@ transitivity HVZK_Hops.game2
              ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res})
              ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res}); 1, 2: smt().
 - exact hop2_correct.
-admitted.
+transitivity HVZK_Hops.game3
+             ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res})
+             ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res}); 1, 2: smt().
+- by conseq hop3_correct.
+transitivity HVZK_Hops.game4
+             ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res})
+             ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res}); 1, 2: smt().
+- by conseq hop4_correct.
+transitivity HVZK_Hops.game5
+             ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res})
+             ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res}); 1, 2: smt().
+- by conseq (hop5_correct pk sk).
+transitivity HVZK_Hops.game6
+             ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res})
+             ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res}); 1, 2: smt().
+- by conseq (hop6_correct pk sk).
+by conseq final_hop_correct.
+qed.
 
 end section OpBasedHVZK.
 
