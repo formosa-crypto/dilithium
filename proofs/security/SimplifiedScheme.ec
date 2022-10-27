@@ -715,16 +715,16 @@ have -> :
     apply supportPn.
     apply line12_outofbound => //.
 apply sum_characteristic.
-apply (finite_leq predT<:vector> check_znorm) => //.
+
 (* TODO Need to prove new vector type is finite... *)
 admit.
 qed.
 
-local lemma line12_magic :
-  forall c s1, c \in OpFSA.dC => s1 \in ds1 =>
+local lemma line12_magic c s1 :
+  c \in OpFSA.dC => s1 \in ds1 =>
   transz c s1 = dsimoz.
 proof.
-move => c s1 c_valid s1_valid.
+move => c_valid s1_valid.
 apply eq_distr => z.
 case z.
 - rewrite line12_magic_none //.
@@ -927,11 +927,14 @@ seq 6 6: (#pre /\ ={mA, s1, s2, t, c, y, w, z} /\
           mA{1} *^ y{1} - c{1} ** s2{1} = mA{2} *^ z{2} - c{2} ** t{2}); 2: by auto => /#.
 auto => />.
 move => &2 valid_key c c_valid y y_valid.
-have [size_mA [size_s1 size_s2]]:
-  size (sk{2}.`1) = (k, l) /\ size (sk{2}.`2) = l /\ size (sk{2}.`3) = k.
+have: size (sk{2}.`1) = (k, l) /\ size (sk{2}.`2) = l /\ size (sk{2}.`3) = k.
 - apply (sk_size (sk{2}.`1) (sk{2}.`2) (sk{2}.`3)).
   by exists pk{2} => /#.
 (* Annoying proof of some simple vector calculations below... *)
+case (sk{2}) => mA s1 s2 /= /> *.
+(** OUTDATED TODO FIX ME
+print mulmsv.
+
 rewrite mulmxvDr.
 - rewrite size_scalarv.
   rewrite /dy in y_valid.
@@ -945,6 +948,8 @@ have ->: size (c ** (sk{2}.`1 *^ sk{2}.`2)) = size (- c ** sk{2}.`3).
 - by rewrite size_oppv !size_scalarv size_mulmxv => /#.
 by rewrite add0v //.
 qed.
+**)
+admitted.
 
 local equiv hop4_correct :
   HVZK_Hops.game3 ~ HVZK_Hops.game4 :
