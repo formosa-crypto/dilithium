@@ -724,21 +724,6 @@ qed.
 
 import var Oi.
 
-
-lemma Ep_mu (d:'a distr) (p:'a -> bool): 
-  Ep d (fun a => (p a)%xr) = (mu d p)%xr.
-proof.
-admitted.
-
-lemma Ep_dlet (d:'a distr) (F: 'a -> 'b distr) f : 
-  Ep (dlet d F) f = Ep d (fun x => Ep (F x) f).
-proof. 
-admitted.
-
-lemma Ep_dmap (d:'a distr) (F: 'a -> 'b) (f: 'b -> xreal) : 
-  Ep (dmap d F) f = Ep d (fun x => f (F x)).
-proof. rewrite /dmap Ep_dlet; apply eq_Ep => x _ /=; apply Ep_dunit. qed.
-
 lemma Ep_commit_dc_None sk : 
   Ep (commit sk)
     (fun (wst : W * ST) =>
