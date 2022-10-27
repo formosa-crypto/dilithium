@@ -333,18 +333,18 @@ seq 6 7 : (={sig,PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in
     move: (supp_A) => /size_dmatrix /(_ _ _) /=; 1,2: smt(Top.gt0_k Top.gt0_l).
     move: (supp_t) => /size_dvector. rewrite lez_maxr; 1:smt(Top.gt0_k). move => s_t [r_A c_A].
     (* case => /supp_dmatrix_Rqkl /= [[r_A c_A] Rq_A] /supp_dvector_Rqk [s_t Rq_t]. *)
-    rewrite r_A c_A s_t /= -{2}r_A -{2}c_A subm_catmcCl /= 1:/#.
-    rewrite col_catmcR /= ?r_A ?c_A ?s_t // subrr. 
-    rewrite colN oppmK colK /=; apply supp_dmatrix_catmc => //;1,2: smt(Top.gt0_k Top.gt0_l).
+    rewrite r_A c_A s_t /= -{2}r_A -{2}c_A subm_catmrCl /= 1:/#.
+    rewrite col_catmrR /= ?r_A ?c_A ?s_t // subrr. 
+    rewrite colN oppmK colK /=; apply supp_dmatrix_catmr => //;1,2: smt(Top.gt0_k Top.gt0_l).
     rewrite supp_dmatrix_full ?dRq_fu //; smt(Top.gt0_k Top.gt0_l). 
   call (: ={PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in dC tau){1}).
     proc; inline*; auto => />; smt(get_setE get_set_sameE).
   auto => /> &1 &2 RO_dC r_mA c_mA s_t. split => [|E1 E2]. 
-  + rewrite -r_mA -c_mA subm_catmcCl /= 1:/#. 
-    rewrite col_catmcR //= 1:/#. 
+  + rewrite -r_mA -c_mA subm_catmrCl /= 1:/#. 
+    rewrite col_catmrR //= 1:/#. 
     by rewrite colN oppmK colK. 
   move => _ _.     
-  by rewrite -E1 -E2 /= rows_catmc //=; smt(Top.gt0_k Top.gt0_l).
+  by rewrite -E1 -E2 /= rows_catmr //=; smt(Top.gt0_k Top.gt0_l).
 inline S1(H').verify. sp 5 1. 
 if; 1,3: by (try inline*); auto.
 inline H'.get. wp. sp 1 1. 
@@ -358,17 +358,17 @@ wp; skip => &1 &2. case: (sig0{1}) => // -[? ?].
 move => />. case. move => /> _. (* why is case needed? *)
 (* recover names / definitions *)
 move: (mA0{2}) (t{2}) (z{1}) (c{1}) => A t z c.
-pose w := (_ - MatRq.(**) _ _). (* FIXME: why is XInt.(**) in scope? *)
+pose w := (_ - Vectors.(**) _ _). (* FIXME: why is XInt.(**) in scope? *)
 pose w1 := highBitsV _. 
 pose e := - lowBitsV _.
 move => r_mA c_mA size_t size_z normv_z. 
-have size_w : size w = k. rewrite size_addv /= size_scalarv /= rows_mulmx /= /#.
+have size_w : size w = k by rewrite size_addv /= size_scalarv size_mulmxv /#. 
 have size_e : size e = k by rewrite size_oppv size_lowBitsV.
 split => [|? c_dC]; last split.
 - rewrite mulmxv_cat.
   + smt(gt0_k). 
-  + rewrite cols_catmc /= 1:/# size_catv /=. smt().
-  + rewrite rows_catmc /=; smt(). 
+  + rewrite cols_catmr /= 1:/# size_catv /=. smt().
+  + rewrite rows_catmr /=; smt(). 
   rewrite -size_e mulmx1v mulmxv_cat;  1..3: smt().
   rewrite colmxN colmxc scalarvN.  
   rewrite addvC -sub_eqv 2://; 1: by rewrite size_shiftV size_highBitsV /#.
