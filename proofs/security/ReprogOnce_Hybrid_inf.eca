@@ -1072,10 +1072,14 @@ local clone import Analysis1 as A.
 lemma GReal_GSet_inf &m :  
   Pr[Game(Adv, Count(OReal)).main() @ &m : res] <= 
    Pr[Game(Adv, CountBound(OSet1_inf)).main() @ &m : res] + 
-    qs%r * (qh%r * eps) / (1%r - p) + 
-    qs%r * eps * ((qs%r + 1.0)/ (2.0 * (1.0 - p)^2) + qh%r / (1.0 - p)).
+    2%r * qs%r * qh%r * eps / (1%r - p) + 
+    qs%r * eps * (qs%r + 1.0) / (2.0 * (1.0 - p)^2).
 proof.
   have hp : -1%r < p < 1%r by smt(p_bounded).
+  apply (ler_trans (Pr[Game(Adv, CountBound(OSet1_inf)).main() @ &m : res] + 
+                        qs%r * (qh%r * eps) / (1%r - p) + 
+                        qs%r * eps * ((qs%r + 1.0)/ (2.0 * (1.0 - p)^2) + qh%r / (1.0 - p))));
+   last by apply lerr_eq; ring.
   have hc : RealSeq.converge (fun (x : int) => 2%r * qs%r * p ^ x).
   + by apply/cnvZ/cnv_pow/hp. 
   apply (ler_trans (lim (fun kappa => 
