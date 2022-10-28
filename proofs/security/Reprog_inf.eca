@@ -5,8 +5,8 @@
   /!\ Some refactoring is needed 
  
 *)
-require import AllCore Distr DBool PROM List StdOrder Xreal StdOrder.
-(*---*) import StdBigop.Bigreal.BRA RealOrder.
+require import AllCore Distr DBool PROM List StdOrder Xreal StdBigop.
+(*---*) import Bigreal BRA RealOrder RField.
 
 require import Dexcepted.
 require import Dfilter.
@@ -16,6 +16,8 @@ require import DistrExtras.
 import Biased.
 import SmtMap.
 import FSet.
+
+(* TODO Remove StdBigop Bigreal RealOrder *)
 
 (* Define some necessary abstract stuff *)
 
@@ -61,7 +63,7 @@ proof *.
 
 module type Oracle = {
   proc h(w: W, m: M) : C
-  proc sign(m: M) : (W * C * Z) option
+  proc sign(m: M) : (W * C * Z)
 }.
 
 module type Oracle_i = {
@@ -144,7 +146,7 @@ module OReal : Oracle_i = {
       oz <- respond sk st c;
       i <- i + 1;
     }
-    return if oz <> None then Some (w, c, oget oz) else None;
+    return (w, c, oget oz);
   }
 }.
 
@@ -168,7 +170,7 @@ module OSet : Oracle_i = {
       RO.set((w, m), c); 
       i <- i + 1;
     }
-    return if oz <> None then Some (w, c, oget oz) else None;
+    return if oz <> None then (w, c, oget oz) else witness;
   }
 }.
 
@@ -195,70 +197,6 @@ module Game_k (Adv: Adversary) (O: Oracle_i) = {
     return b;
   }
 }.
-
-(* This lemma should be moved to EC *)
-lemma hybrid_sum_up (f: int -> real) (m n:int) : m <= n =>
-  f(m) - f(n) = bigi predT (fun i => f(i) - f(i+1)) m n.
-proof.
-  move=> /IntOrder.ler_eqVlt [<<- | hmn].
-  + by rewrite big_geq 1://; ring.
-  rewrite -sumrB (big_ltn m n f) 1:// /=.
-  have heq: n = n - 1 + 1 by ring.
-  rewrite heq (big_int_recr (n-1) m) 1:/# -heq /=; ring.
-  rewrite (big_reindex _ _ (fun x=> x - 1) (fun x=> x + 1) (range m (n - 1))) //.
-  have ->: (transpose Int.(+) 1) = ((+) 1).
-  + by apply: fun_ext=> x; ring.
-  have ->: predT \o transpose Int.(+) (-1) = predT by done.
-  by rewrite /(\o) /= -(range_addl m n 1).
-qed. 
-
-(* Move this to EC *)
-lemma sum_pow (p:real) (n : int) : 0 <= n => p <> 1%r =>
-  bigi predT (fun i => p^i) 0 n = (1%r - p^n) / (1%r - p).
-proof.
-  move=> hn hp; have := StdBigop.Bigreal.subrXX 1%r p n hn.
-  rewrite RField.expr1z -(eq_big_int _ _ (fun (i : int) => p ^ i)).
-  + by move=> i hi /=; rewrite RField.expr1z.
-  move=> ->; field => /#.
-qed.
-
-(* Move this to EC ? *)
-lemma sum_pow_le (p:real) (n : int) : 0 <= n => 0%r <= p < 1%r =>
-  bigi predT (fun i => p^i) 0 n <= 1%r / (1%r - p).
-proof.
-  move=> hn hp; rewrite sum_pow // 1:/#.
-  smt(RealOrder.expr_ge0  RealOrder.exprn_ilt1 sum_pow).
-qed.
-
-lemma sum_ipow_le (p:real) (n : int) : 0%r <= p < 1%r =>
-  bigi predT (fun (i:int) => i%r*p^i) 0 n <= 1%r / (1%r - p)^2.
-proof.
-  move=> hp.
-  have ? : 0%r < (1%r - p) by smt(). 
-  have ? : 0%r < (1%r - p)^2 by smt(RField.expr2). 
-  have ? : 0%r < 1%r / (1%r - p)^2 by smt().
-  elim/natind: n.
-  + by move=> *; rewrite big_geq /#.
-  move=> n hn hrec; rewrite big_ltn 1:/# /=.
-  case: (p = 0%r) => [-> | ?]. 
-  + by rewrite RField.expr2 big1_seq //= => i [_ /mem_range]; smt(RField.expr0z).
-  rewrite (eq_big_int _ _ _ (fun (i0:int) => p^i0 + p * ((i0 - 1)%r * p^(i0 - 1)))).
-  + move=> /= i hi; rewrite (RField.mulrC p) -RField.mulrA. 
-    by rewrite -{4}(RField.expr1 p) -RField.exprD 1:// /=; ring.
-  rewrite -sumrD -mulr_sumr.
-  apply (ler_trans (1%r / (1%r - p) + p / (1%r - p)^2));
-    last by apply lerr_eq; field; smt(RField.expr2). 
-  apply ler_add.
-  + have -> : bigi predT (fun (i:int) => p^i) 1 (n+1) = bigi predT (fun (i:int) => p^i) 0 (n+1) - 1%r.
-    + by rewrite (big_ltn 0) 1:/# /= RField.expr0; ring.
-    by have /# := sum_pow_le p (n+1).
-  apply ler_wpmul2l; 1: smt().
-  rewrite (big_reindex _ _ (fun x=> x + 1) (fun x=> x - 1) (range 1 (n + 1))) //=.
-  apply (ler_trans _ _ _ _ hrec).
-  have -> : n + 1 = n - (-1) by ring.
-  have ->: (fun (x:int) => x - 1) = ((+) (-1)) by apply fun_ext => ?; ring.
-  by rewrite -(range_addl 1 n (-1)).
-qed.
 
 lemma Ep_commit_dc_None sk : 
   Ep (commit sk) (fun (w0st : W * ST) =>
@@ -356,15 +294,17 @@ module Oi : Oracle_i_i = {
       (w,c,oz) <@ sign_i_r(m);
       j <- j + 1;
     }
-    return if oz <> None then Some (w, c, oget oz) else None;
+    return (w, c, oget oz);
   }
 
   proc sign(m : M) = {
-    var r;
+    var or, r;
     r <- witness;
     if (countS < qs) {
-      if (countS < i_) r <@ sign_l(m);
-      else r <@ sign_r(m);
+      if (countS < i_) {
+         or <@ sign_l(m);
+         r <- oget or; 
+      } else r <@ sign_r(m);
       countS <- countS + 1;
     }
     return r;
@@ -383,7 +323,7 @@ module Oij : Oracle_i_ij = {
     countH <- 0;
   }
 
-  proc sign_i (m:M): (W * C * Z) option = {
+  proc sign_i (m:M) : W * C * Z = {
     var w, c, oz, j;
     w <- witness;
     c <- witness;
@@ -395,15 +335,17 @@ module Oij : Oracle_i_ij = {
       else (w, c, oz) <@ Oi.sign_i_r (m); 
       j <- j + 1;
     }
-    return if oz <> None then Some (w, c, oget oz) else None;
+    return (w, c, oget oz);
   }
   
   proc sign(m:M) = {
-    var r;
+    var or, r;
     r <- witness;
     if (countS < qs) {
-      if (countS < i_) r <@ Oi.sign_l(m);
-      else { if (i_ = countS) r <@ sign_i(m);
+      if (countS < i_) {
+        or <@ Oi.sign_l(m);
+        r <- oget or; 
+      } else { if (i_ = countS) r <@ sign_i(m);
       else r <@ Oi.sign_r(m); }
       countS <- countS + 1;
     }
@@ -597,8 +539,6 @@ proof. by rewrite Pr_Game_GameI Pr_Count_CountBad1 -CB2_CB Pr_CB1_CB2. qed.
 
 end section C.
 
-
-
 (* ----------------------------------------------------------------- *)
 declare op kappa_ : int.
 declare axiom kappa_gt0 : 0 < kappa_.
@@ -617,7 +557,7 @@ proof.
   + proc; sp; if => //; rcondf{2} ^if; 1: auto => /#.  
     wp; conseq (: y{1} = r{2} /\ OReal.sk{1} = Oi.sk{2} /\ ={RO.m}); 1: smt().
     call (: ={arg, RO.m} /\ OReal.sk{1} = Oi.sk{2} ==> ={res, RO.m} /\ OReal.sk{1} = Oi.sk{2}); 2: by auto.
-    by proc; inline Oi.sign_i_r; sim.
+    proc; inline Oi.sign_i_r. sim.
   inline *; auto.
 qed.
   
@@ -632,8 +572,10 @@ proof.
   + proc; sp; if => //.
     rcondt{2} ^if; 1: auto => /#.
     wp; call (: ={arg, RO.m, OReal.kappa} /\ OReal.sk{1} = Oi.sk{2} ==> 
-                ={res, RO.m, OReal.kappa} /\ OReal.sk{1} = Oi.sk{2}); 2: by auto.
-    proc; inline Oi.sign_i_l; sim.
+                ={RO.m, OReal.kappa} /\ res{1} = oget res{2} /\
+                 OReal.sk{1} = Oi.sk{2}); 2: by auto.
+    proc; inline Oi.sign_i_l; wp. 
+    by conseq (: ={RO.m, oz, w, c}) => //; 1: smt(); sim.
   by inline *; auto.
 qed.
 
@@ -643,13 +585,12 @@ local lemma GReal_GSet_aux &m :
      bigi predT (fun (i : int) => Pr[Hi(Adv, Oi).main(kappa_, i) @ &m : res] - 
                                     Pr[Hi(Adv, Oi).main(kappa_, i+1) @ &m : res]) 0 qs.
 proof.
-  have /= <- := hybrid_sum_up (fun i => Pr[Hi(Adv, Oi).main(kappa_, i) @ &m : res]) 0 qs qs_ge0.
+  have /= <- := telescoping_sum (fun i => Pr[Hi(Adv, Oi).main(kappa_, i) @ &m : res]) 0 qs qs_ge0.
   rewrite -GReal_Hi -GSet_Hi.
   have /# := Pr_Count_CountBound OReal &m.
 qed.
 
 (* We focus on Pr[Hi(Adv, Oi).main(kappa_, i) @ &m : res ] - Pr[Hi(Adv, Oi).main(kappa_, i+1) @ &m : res] *)
-
 section I.
 
 declare op i : int.
@@ -660,15 +601,20 @@ local module OiB1 : Oracle_i_i = {
   var badj : bool
 
   proc sign(m : M) = {
-    var r;
+    var or, r;
     r <- witness;
     if (countS < qs) {
-      if (countS < i_ - 1) r <@ sign_l(m);
-      else { 
+      if (countS < i_ - 1) { 
+        or <@ sign_l(m);
+        r <- oget or; 
+      } else { 
         if (countS = i_ - 1) { 
-          r <@ sign_l(m);
-          if (r = None) { 
+          or <@ sign_l(m);
+          if (or = None) { 
             badj <- true;
+            r <- oget or; 
+          } else {
+            r <- oget or;
           }
         } else r <@ sign_r(m);
       }
@@ -697,8 +643,8 @@ proof.
   + by sim.
   + proc; sp; if => //.
     if{2}; 1: by rcondt{1} ^if; [auto => /# | sim].
-    if{2}; 1: by rcondt{1} ^if; [auto => /# | sim].
-    rcondf{1} ^if; [auto => /# | sim].
+    if{2}; 1: by rcondt{1} ^if; [auto => /# | wp; sim />].
+    by rcondf{1} ^if; [auto => /# | sim].
   inline *; auto.
 qed.
 
@@ -706,17 +652,19 @@ local module OiB2 : Oracle_i_i = {
   include var Oi [-sign]
 
   proc sign(m : M) = {
-    var r;
+    var or, r;
     r <- witness;
     if (countS < qs) {
-      if (countS < i_ - 1) r <@ sign_l(m);
-      else { 
+      if (countS < i_ - 1) { 
+        or <@ sign_l(m);
+        r <- oget or;
+      } else { 
         if (countS = i_ - 1) { 
-          r <@ sign_l(m);
-          if (r = None) { 
+          or <@ sign_l(m);
+          if (or = None) { 
             OiB1.badj <- true;
             r <@ sign_r(m); 
-          }
+          } else r <- oget or;
         } else r <@ sign_r(m);
       }
       countS <- countS + 1;
@@ -753,15 +701,15 @@ local ehoare sign_l_None : Oi.sign_l : (valid_sk Oi.sk /\ OReal.kappa = kappa_) 
 proof.
   proc.
   while ( (valid_sk Oi.sk /\ j <= OReal.kappa) `|` (oz=None)%xr * (p^(OReal.kappa - j))%xr).
-  + by move=> &hr /=; apply xle_cxr_r => |>; smt(RField.expr0).
+  + by move=> &hr /=; apply xle_cxr_r => |>; smt(expr0).
   + wp => /=. 
     call /(fun x => (valid_sk Oi.sk /\ j + 1 <= OReal.kappa) `|`x * (p ^ (OReal.kappa - (j + 1)))%xr)  
          sign_i_l_None.
     auto => &hr /=; apply xle_cxr => |> *; split; 1: smt().
     rewrite !to_pos_pos; 1..3: smt(p_bounded expr_ge0).
     case: (p = 0%r) => [-> /= | ?].
-    + by rewrite !RField.expr0z; case (OReal.kappa{hr} - j{hr} = 0).
-    by rewrite -{1}(RField.expr1 p) -RField.exprD; smt(p_bounded).
+    + by rewrite !expr0z; case (OReal.kappa{hr} - j{hr} = 0).
+    by rewrite -{1}(expr1 p) -exprD; smt(p_bounded).
   by auto => &hr /=; apply xle_cxr => |>; smt (kappa_ge0).
 qed.
 
@@ -778,17 +726,17 @@ proof.
   + proc; seq 1: #pre; 1: auto.
     if; wp => /=; 2: by auto => &hr /=; apply xle_cxr => />.
     if. 
-    + by conseq /(fun x => (valid_sk Oi.sk /\ OReal.kappa = kappa_ /\ (Oi.countS + 1 < Oi.i_ => !OiB1.badj)) `|`
+    + by wp; conseq /(fun x => (valid_sk Oi.sk /\ OReal.kappa = kappa_ /\ (Oi.countS + 1 < Oi.i_ => !OiB1.badj)) `|`
               if Oi.countS + 1 < Oi.i_ then (p ^ kappa_)%xr else OiB1.badj%xr) 
            (: 0%xr ==> 0%xr) => //= => &hr; apply xle_cxr => /> * /#.
     if.
-    + seq 1 : ((valid_sk Oi.sk /\ OReal.kappa = kappa_ /\ Oi.countS = Oi.i_ - 1 /\ !OiB1.badj) `|` (r = None)%xr).
-      + conseq (: (r = None)%xr).
+    + seq 1 : ((valid_sk Oi.sk /\ OReal.kappa = kappa_ /\ Oi.countS = Oi.i_ - 1 /\ !OiB1.badj) `|` (or = None)%xr).
+      + conseq (: (or = None)%xr).
         + by move=> &hr /=; apply xle_cxr => |> *; apply xle_cxr_l => // /#. 
         + move=> &hr /=; apply xle_cxr. 
           by case: (valid_sk Oi.sk{hr} /\ OReal.kappa{hr} = kappa_ /\ Oi.countS{hr} = Oi.i_{hr} - 1 /\ !OiB1.badj{hr}).
         by call sign_l_None; auto => &hr /=; apply xle_cxr => |> /#.
-      by auto => &hr /=; apply xle_cxr_r => |>; case:(r{hr} = None).
+      by auto => &hr /=; apply xle_cxr_r => |>; case:(or{hr} = None).
     conseq /(fun x => (valid_sk Oi.sk /\ OReal.kappa = kappa_ /\ (Oi.countS + 1 < Oi.i_ => !OiB1.badj)) `|`
               if Oi.countS + 1 < Oi.i_ then (p ^ kappa_)%xr else OiB1.badj%xr) 
            (: 0%xr ==> 0%xr) => //=.
@@ -814,8 +762,8 @@ proof.
               if Oi.countS + 1 < Oi.i_ then (p ^ kappa_)%xr else OiB1.badj%xr) 
            (: 0%xr ==> 0%xr) => //= &hr; apply xle_cxr => /> * /#.
     if.
-    + seq 1 : ((valid_sk Oi.sk /\ OReal.kappa = kappa_ /\ Oi.countS = Oi.i_ - 1 /\ !OiB1.badj) `|` (r = None)%xr).
-      + conseq (: (r = None)%xr).
+    + seq 1 : ((valid_sk Oi.sk /\ OReal.kappa = kappa_ /\ Oi.countS = Oi.i_ - 1 /\ !OiB1.badj) `|` (or = None)%xr).
+      + conseq (: (or = None)%xr).
         + by move=> &hr /=; apply xle_cxr => |> *; apply xle_cxr_l => // /#. 
         + move=> &hr /=; apply xle_cxr. 
           by case: (valid_sk Oi.sk{hr} /\ OReal.kappa{hr} = kappa_ /\ Oi.countS{hr} = Oi.i_{hr} - 1 /\ !OiB1.badj{hr}).
@@ -851,7 +799,7 @@ proof.
     splitwhile{2} ^while : (j < OReal.kappa).
     seq 7 6 : (={Oi.sk, Oi.countS, Oi.countH, RO.m, OReal.kappa} /\ Oi.i_{1} = Oi.i_{2} + 1 /\ Oi.j_{2} = OReal.kappa{2} /\
               (oz = None => j = OReal.kappa){2} /\ m{1} = m0{2} /\
-              r{1} = if oz{2} <> None then Some (w{2}, c{2}, oget oz{2}) else None).
+              or{1} = if oz{2} <> None then Some (w{2}, c{2}, oget oz{2}) else None).
     + wp.
       while (={m0, w, c, oz, RO.m, Oi.sk, j, OReal.kappa} /\ Oi.j_{2} = OReal.kappa{2} /\ (j <= OReal.kappa){2}); 2: by auto => /> /#.
       inline RO.set; rcondt{2} ^if; auto; smt().
@@ -886,7 +834,7 @@ local lemma HiHi1 &m :
     p^kappa_ + bigi predT (fun (j : int) => Pr[Hij(Adv, Oij).main(kappa_,i,j) @ &m : res] - Pr[Hij(Adv, Oij).main(kappa_, i, j+1) @ &m : res]) 0 kappa_.
 proof.
   have := HiB1_HiB2 &m; have := HiB1_badj &m; have := HiB2_badj &m.
-  have /= <- := (hybrid_sum_up (fun j => Pr[Hij(Adv, Oij).main(kappa_,i, j) @ &m : res]) 0 kappa_).
+  have /= <- := (telescoping_sum (fun j => Pr[Hij(Adv, Oij).main(kappa_,i, j) @ &m : res]) 0 kappa_).
   + by apply kappa_ge0.
   rewrite Hi_HiB1 Hi_Hij Hi1_Hij /#.
 qed.
@@ -903,7 +851,7 @@ local module OijB1 : Oracle_i_ij = {
 
   var badRO : bool
 
-  proc sign_i (m:M): (W * C * Z) option = {
+  proc sign_i (m:M): (W * C * Z) = {
     var w, c, oz, st, j;
     w <- witness;
     c <- witness;
@@ -928,16 +876,20 @@ local module OijB1 : Oracle_i_ij = {
       }
       j <- j + 1;
     }
-    return if oz <> None then Some (w, c, oget oz) else None;
+    return if oz <> None then (w, c, oget oz) else witness;
   }
   
   proc sign(m:M) = {
-    var r;
+    var or, r;
     r <- witness;
     if (countS < qs) {
-      if (countS < i_) r <@ Oi.sign_l(m);
-      else { if (i_ = countS) r <@ sign_i(m);
-      else r <@ Oi.sign_r(m); }
+      if (countS < i_) { 
+         or <@ Oi.sign_l(m); 
+         r <- oget or;
+      } else {
+        if (i_ = countS) r <@ sign_i(m);
+        else r <@ Oi.sign_r(m); 
+      }
       countS <- countS + 1;
     }
     return r;
@@ -949,7 +901,7 @@ local module OijB2 : Oracle_i_ij = {
   include Oij [init, h]
   import var Oi
 
-  proc sign_i (m:M): (W * C * Z) option = {
+  proc sign_i (m:M): (W * C * Z) = {
     var w, c, oz, st, j;
     w <- witness;
     c <- witness;
@@ -975,16 +927,20 @@ local module OijB2 : Oracle_i_ij = {
       }
       j <- j + 1;
     }
-    return if oz <> None then Some (w, c, oget oz) else None;
+    return if oz <> None then (w, c, oget oz) else witness;
   }
   
   proc sign(m:M) = {
-    var r;
+    var or, r;
     r <- witness;
     if (countS < qs) {
-      if (countS < i_) r <@ Oi.sign_l(m);
-      else { if (i_ = countS) r <@ sign_i(m);
-      else r <@ Oi.sign_r(m); }
+      if (countS < i_) { 
+        or <@ Oi.sign_l(m);
+        r <- oget or;
+      } else { 
+        if (i_ = countS) r <@ sign_i(m);
+        else r <@ Oi.sign_r(m); 
+      }
       countS <- countS + 1;
     }
     return r;
@@ -1014,8 +970,8 @@ proof.
   proc; sp; if => //; wp.
   if => //; 1: by sim.
   if => //; 2: by sim.
-  call (: ={RO.m, Oi.countS, Oi.countH, Oi.sk, OReal.kappa, Oi.i_, Oi.j_}); 2: by auto.
-  while (={RO.m, Oi.countS, Oi.sk, OReal.kappa, Oi.j_, w, c, oz, j, m}); 2: by auto.
+  wp; call (: ={RO.m, Oi.countS, Oi.countH, Oi.sk, OReal.kappa, Oi.i_, Oi.j_}); 2: by auto.
+  while (={RO.m, Oi.countS, Oi.sk, OReal.kappa, Oi.j_, w, c, oz, j, m}); 2: by auto => /#.
   wp; if => //; 1: by sim.
   inline Oi.sign_i_r; if{2}; 2: by sim.
   seq 2 1 : (#{/ ~{w{2}}}pre /\ m0{1} = m{1} /\ w0{1} = w{2} /\ ={st}); 1: by auto.
@@ -1034,7 +990,7 @@ proof.
   if => //; 1: by sim.
   if => //; 2: by sim.
   call (: ={RO.m, Oi.countS, Oi.countH, Oi.sk, OReal.kappa, Oi.i_} /\ Oi.j_{1} = Oi.j_{2} + 1); 2: by auto.
-  while (={RO.m, Oi.countS, Oi.sk, OReal.kappa, w, c, oz, j, m} /\ Oi.j_{1} = Oi.j_{2} + 1); 2: by auto.
+  while (={RO.m, Oi.countS, Oi.sk, OReal.kappa, w, c, oz, j, m} /\ Oi.j_{1} = Oi.j_{2} + 1); 2: by auto => /#.
   wp; conseq (: ={RO.m, w, c, oz}) => //.
   if{2}; 1: by rcondt{1} ^if; [auto => /# | sim].
   if{2}; 2: by rcondf{1} ^if; [auto => /# | sim].
@@ -1077,7 +1033,7 @@ proof.
     rewrite -EpsZ; apply le_Ep => C _ /=.
     have ? /#: (card (fdom RO.m{hr}.[x0.`1, m{hr} <- C]))%r%pos <= (card (fdom RO.m{hr}))%r%pos + 1%r.
     by rewrite fdom_set fcardU1 mem_fdom /#. 
-  rewrite Ep_commit_dc_None /= RField.mulrC; apply RealOrder.ler_pmul => //; smt(p_bounded).
+  rewrite Ep_commit_dc_None /= mulrC; apply ler_pmul => //; smt(p_bounded).
 qed.
 
 local ehoare e_sign_i_l_l  (c:real) : Oi.sign_i_l : 
@@ -1095,8 +1051,8 @@ proof.
     rewrite dC_ll /= => <-; rewrite -EpsZ -EpD; apply le_Ep => C _ /=.
     by rewrite fdom_set fcardU1 mem_fdom /#. 
   rewrite EpD EpC commit_ll /= EpsZ /= Ep_commit_dc_None /=; apply xle_cxr_r => /p_def ? /=.
-  apply RealOrder.ler_add => //; rewrite RField.mulrC.
-  apply RealOrder.ler_wpmul2r; 1: smt(). 
+  apply ler_add => //; rewrite mulrC.
+  apply ler_wpmul2r; 1: smt(). 
   rewrite to_pos_pos //; smt(p_bounded).
 qed.
 
@@ -1108,7 +1064,7 @@ proof.
            (oz = None)%xr * (bigi predT (fun j => (p^j)) 0 (kappa_ - j))%xr); last first.
   + auto => /= &hr; apply xle_cxr => |> _.
     have /= ? := sum_pow_le p kappa_ kappa_ge0 p_bounded.
-    apply RealOrder.ler_add => //.
+    apply ler_add => //.
     by rewrite inv_pos; apply le_pos.
   + by move=> &hr /=; apply xle_cxr_r => /> /#.
   wp.
@@ -1118,9 +1074,9 @@ proof.
      (: valid_sk sk  `|` ((card (fdom RO.m))%xr + 1%xr + p%xr * sum%xr) ==>
         (card (fdom RO.m))%xr + (oz=None)%xr * sum%xr).
   + move=> &hr /=; apply xle_cxr => /> *.
-    rewrite -RField.addrA; apply RealOrder.ler_add => //.
+    rewrite -addrA; apply ler_add => //.
     rewrite (big_ltn 0 (kappa_ -j{hr})) 1:/#.
-    rewrite RField.expr0.
+    rewrite expr0.
     rewrite (big_reindex _ _ (fun x=> x - 1) (fun x=> x + 1) (range 0 (kappa_ - (j{hr} + 1)))) //.
     have ->: (transpose Int.(+) 1) = ((+) 1).
     + by apply: fun_ext=> x; ring.
@@ -1128,11 +1084,11 @@ proof.
     rewrite -(range_addl 0 (kappa_-j{hr}) 1) /(\o).
     have ? : 0%r <= p by smt(p_bounded).
     rewrite /predT !to_pos_pos //. 
-    + by apply StdBigop.Bigreal.sumr_ge0 => /= *; apply RealOrder.expr_ge0.
-    + by apply RealOrder.addr_ge0 => //; apply StdBigop.Bigreal.sumr_ge0 => /= *; apply RealOrder.expr_ge0.
-    rewrite mulr_sumr /=; apply RealOrder.ler_add => //.
-    apply StdBigop.Bigreal.ler_sum_seq => i /mem_range /= *.
-    by rewrite -RField.exprS 1:/#.
+    + by apply sumr_ge0 => /= *; apply expr_ge0.
+    + by apply addr_ge0 => //; apply sumr_ge0 => /= *; apply expr_ge0.
+    rewrite mulr_sumr /=; apply ler_add => //.
+    apply ler_sum_seq => i /mem_range /= *.
+    by rewrite -exprS 1:/#.
   + by move=> &hr; apply xle_cxr_r => />.
   call (e_sign_i_l_l sum); auto.
 qed.
@@ -1145,7 +1101,7 @@ local lemma Pr_bad &m :
 proof.
   have ? := p_bounded.
   have ? : 0.0 <= (1.0 - p) by smt().
-  have ? : 0.0 <= p ^ j by smt (RealOrder.expr_ge0).
+  have ? : 0.0 <= p ^ j by smt (expr_ge0).
   have ? := i_bounded; have ? := j_bounded; have ? := qh_ge0; have ? := eps_ge0.
   byehoare (: (arg = (Analysis.kappa_, i, j)) `|` (p^j)%xr * (i%xr / (1.0 - p)%xr + qh%xr + j%xr) * eps%xr ==>
                OijB1.badRO%xr) => //; 2: by rewrite /= /#.
@@ -1174,7 +1130,7 @@ proof.
     if; auto; 2: by move=> &hr;apply xle_cxr => />.
     if.
     (* countS < i_ *) 
-    + move=> /=.
+    + move=> /=; wp.
       call /(fun x => 
        ((countS + 1 <= i_ => !OijB1.badRO) /\ j_ = j /\ i_ = i /\ valid_sk sk /\ OReal.kappa = kappa_) `|`
          if countS + 1 <= i_ then
@@ -1221,7 +1177,7 @@ proof.
           have /> * : !OijB1.badRO{hr} /\ j{hr} + 1 <= kappa_ /\ j{hr} + 1 <= Analysis.j /\ j{hr} <= Analysis.j by smt().
           have -> : (Analysis.j - j{hr})%r%pos = (Analysis.j - (j{hr} + 1))%r%pos + 1%r by smt().
           have -> : (Analysis.j - j{hr}) = (Analysis.j - (j{hr} + 1)) + 1 by ring.
-          by rewrite RField.exprS /#.
+          by rewrite exprS /#.
         + move=> &hr; apply xle_cxr => |> *. 
           case: (j{hr} + 1 <= Analysis.j) => // /#.
         exlim (Analysis.j - (j + 1))%r => j0.
@@ -1239,7 +1195,7 @@ proof.
           by have /> : !(Analysis.j + 1 <= Analysis.j) by smt().
         + by move=> &hr; apply xle_cxr_r => h; apply h.
         auto => &hr; apply xle_cxr_r => |> *.
-        rewrite RField.expr0 /=.
+        rewrite expr0 /=.
         apply (xle_trans (mu (dfst (commit sk{hr})) (fun w => w \in map fst (elems (fdom RO.m{hr}))))%xr).
         + rewrite -Ep_mu Ep_dlet; apply le_Ep => wst _ /=.
           rewrite EpC dC_ll /= Ep_dunit /=; case: ((wst.`1, m{hr}) \in RO.m{hr}) => /= ?;
@@ -1292,19 +1248,19 @@ lemma concl_i &m :
   Pr[Hi(Adv, Oi).main(kappa_, i) @ &m : res] - Pr[Hi(Adv, Oi).main(kappa_, i+1) @ &m : res] <=
      p^kappa_ + ((i%r / (1%r - p) + qh%r) * eps / (1.0 - p) + eps / (1.0 - p)^2).
 proof.
-  apply (RealOrder.ler_trans _ _ _ (HiHi1 &m)).
+  apply (ler_trans _ _ _ (HiHi1 &m)).
   rewrite ler_add2l.
-  apply (RealOrder.ler_trans 
+  apply (ler_trans 
             (bigi predT (fun (j : int) =>  ((i%r / (1.0 - p) + qh%r) * eps) * p^j + eps * (j%r*p^j))
                   0 kappa_)).
-  + apply StdBigop.Bigreal.ler_sum_seq => j /mem_range hj _ /=.
+  + apply ler_sum_seq => j /mem_range hj _ /=.
     by have /# := concl_j j hj &m.
   rewrite -sumrD -!mulr_sumr.
-  apply RealOrder.ler_add.
-  + rewrite RealOrder.ler_wpmul2l.
+  apply ler_add.
+  + rewrite ler_wpmul2l.
     + smt(i_bounded p_bounded qh_ge0 eps_ge0).
     by apply (sum_pow_le p kappa_ kappa_ge0 p_bounded).
-  rewrite RealOrder.ler_wpmul2l 1:eps_ge0.
+  rewrite ler_wpmul2l 1:eps_ge0.
   apply (sum_ipow_le p kappa_ p_bounded).
 qed.
 
@@ -1316,19 +1272,19 @@ lemma GReal_GSet &m:
   (qs%r * p^kappa_ + (qs%r * eps * ((qs%r + 1.0)/ (2.0 * (1.0 - p)^2) + qh%r / (1.0 - p)))).
 proof.
   have ? : (1%r - p) <> 0%r by smt(p_bounded).
-  have ? : 1%r + (- 2%r) * p + p ^ 2 <> 0%r by smt(RField.expr2).
-  apply  (RealOrder.ler_trans _ _ _ (GReal_GSet_aux &m)).
-  apply ler_add2l; apply (RealOrder.ler_trans 
+  have ? : 1%r + (- 2%r) * p + p ^ 2 <> 0%r by smt(expr2).
+  apply/(ler_trans _ _ _ (GReal_GSet_aux &m))/ler_add2l. 
+  apply (ler_trans 
      (bigi predT (fun (i : int) => p^kappa_ + (i%r * eps / (1.0 -p)^2 + eps * (qh%r / (1.0 - p) + 1.0 / (1.0 - p)^2)))
         0 qs)).
-  + apply StdBigop.Bigreal.ler_sum_seq => i /mem_range hi _ /=.
-    apply (RealOrder.ler_trans _ _ _ (concl_i i hi &m)).
-    by apply RealOrder.lerr_eq; field. 
-  rewrite -sumrD sumri_const 1:qs_ge0 RField.intmulr /=.
-  apply ler_add; 1: by rewrite RField.mulrC.
-  rewrite -sumrD sumri_const 1:qs_ge0 /= RField.intmulr.
-  rewrite -!mulr_suml StdBigop.Bigreal.sumidE 1:qs_ge0.
-  apply RealOrder.lerr_eq; field => // /#. 
+  + apply ler_sum_seq => i /mem_range hi _ /=.
+    apply (ler_trans _ _ _ (concl_i i hi &m)).
+    by apply lerr_eq; field. 
+  rewrite -sumrD sumri_const 1:qs_ge0 intmulr /=.
+  apply ler_add; 1: by rewrite mulrC.
+  rewrite -sumrD sumri_const 1:qs_ge0 /= intmulr.
+  rewrite -!mulr_suml sumidE 1:qs_ge0.
+  apply lerr_eq; field => // /#. 
 qed.
 
 end section Analysis.
