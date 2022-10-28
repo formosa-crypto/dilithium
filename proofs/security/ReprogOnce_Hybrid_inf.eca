@@ -1,5 +1,5 @@
 require import AllCore Distr DBool PROM List StdOrder StdBigop FelTactic Xreal.
-(*---*) import Bigreal BRA RField.
+(*---*) import Bigreal.BRA Bigreal RField.
 
 require import Dexcepted.
 require import Real RealSeries RealSeq.
@@ -781,13 +781,13 @@ proof.
         + wp; inline *; wp 4.
           rndsem 1.
           rnd (fun (wscoz: _ * _ * _ * _) => wscoz.`4 = None).
-          auto => |> &hr _ hv _; apply (RealOrder.ler_trans _ _ _ _ (p_def Oi.sk{hr} hv)).
+          auto => |> &hr _ hv _; apply (ler_trans _ _ _ _ (p_def Oi.sk{hr} hv)).
           apply mu_dlet_le => w_st _ /=; apply mu_dlet_le => c.
           by rewrite dunitE dunit1E.
         + by conseq hw => />. 
         + by conseq hw => /#.
-        move=> /> *; rewrite -RField.exprS /#. 
-      by auto => />; smt (RField.expr0 j_bounded).
+        move=> /> *; rewrite -exprS /#. 
+      by auto => />; smt (expr0 j_bounded).
     by rcondf^if; 1: auto => />; conseq />.
   + move=> c; proc; rcondt^if => //; wp.
     by conseq (:true) => />; auto.
@@ -826,7 +826,7 @@ lemma concl_i &m :
   Pr[Hi(Adv, Oi).main(kappa_, i+1) @ &m : res] - Pr[Hi(Adv, Oi).main(kappa_, i) @ &m : res] <=
     (qh%r * eps) / (1%r - p).
 proof.
-  apply (RealOrder.ler_trans (bigi predT (fun (j : int) =>  p^j * (qh%r * eps)) 0 kappa_)).
+  apply (ler_trans (bigi predT (fun (j : int) =>  p^j * (qh%r * eps)) 0 kappa_)).
   + rewrite (HiHi1 &m); apply ler_sum_seq => j /mem_range hj _ /=.
     by apply concl_j.
   rewrite -mulr_suml; have := sum_pow_le p kappa_ _ _; smt(kappa_gt0 p_bounded qh_ge0 eps_ge0).
@@ -839,7 +839,7 @@ lemma GSet_GSet1 &m:
   Pr[Game_k(Adv, CountBound(OSet1)).main(kappa_) @ &m : res] <= 
      qs%r * (qh%r * eps) / (1%r - p).
 proof.
-  apply (RealOrder.ler_trans (bigi predT (fun (j : int) =>  (qh%r * eps)/(1%r - p)) 0 qs)).
+  apply (ler_trans (bigi predT (fun (j : int) =>  (qh%r * eps)/(1%r - p)) 0 qs)).
   rewrite GSet_GSet1_aux; apply ler_sum_seq => i /mem_range hi _ /=.
   apply (concl_i i hi).
   rewrite sumri_const 1:qs_ge0 //.
@@ -995,7 +995,7 @@ proof.
     + by auto => &hr /=; case: (oz{hr} = None) => ?; apply xle_cxr => |> /#. 
     while ((valid_sk OReal.sk /\ OReal.kappa = kappa_ /\ i <= kappa_) `|` 
              ((oz = None)%xr * (p^(kappa_ - i))%xr)).
-    + by move=> &hr /=; apply xle_cxr_r => |>; smt(RField.expr0).
+    + by move=> &hr /=; apply xle_cxr_r => |>; smt(expr0).
     + wp 3 => /=.
       conseq /(fun x =>  (valid_sk OReal.sk /\ OReal.kappa = kappa_ /\ i + 1 <= kappa_) `|`
                 (x * (p ^ (kappa_ - (i + 1)))%xr))
@@ -1003,8 +1003,8 @@ proof.
       + move=> &hr /=; apply xle_cxr => |> *; split; 1: smt().
         rewrite !to_pos_pos; 1..3: smt(p_bounded expr_ge0).      
         case: (p = 0%r) => [-> /= | ?].
-        + by rewrite !RField.expr0z; case (kappa_ - i{hr} = 0).
-        by rewrite -{1}(RField.expr1 p) -RField.exprD; smt(p_bounded).
+        + by rewrite !expr0z; case (kappa_ - i{hr} = 0).
+        by rewrite -{1}(expr1 p) -exprD; smt(p_bounded).
       auto => &hr; apply xle_cxr_r => *; rewrite Ep_commit_dc_None /=.
       rewrite to_pos_pos;1: smt(p_bounded).
       by apply p_def.
