@@ -1051,7 +1051,7 @@ declare axiom A_bound : forall (O <: Oracle_i{-Adv, -Count}),
 
 local clone import Analysis1 as A.
 
-lemma GReal_GSet_inf &m :  
+lemma GReal_GSet_inf_aux &m :  
   Pr[Game(Adv, Count(OReal)).main() @ &m : res] <= 
    Pr[Game(Adv, CountBound(OSet1_inf)).main() @ &m : res] + 
     2%r * qs%r * qh%r * eps / (1%r - p) + 
@@ -1073,5 +1073,34 @@ proof.
     apply cnvD => //; apply cnvC.
   by rewrite limD 1:// 1:cnvC limZ lim_pow //= limC.
 qed.
+
+
+lemma GReal_GSet1 &m : 
+  Pr[Game(Adv, OReal).main() @ &m : res] <= 
+   Pr[Game(Adv, OSet1_inf).main() @ &m : res] + 
+    2%r * qs%r * qh%r * eps / (1%r - p) + 
+    qs%r * eps * (qs%r + 1.0) / (2.0 * (1.0 - p)^2).
+proof.
+have -> : Pr[Game(Adv, OReal).main() @ &m : res] = 
+          Pr[Game(Adv, Count(OReal)).main() @ &m : res].
+- byequiv => //; proc;call (: ={RO.m, OReal.sk}). 
+  + proc*. inline Count(OReal).h. wp. call(: ={RO.m}). sim. auto.
+  + proc. inline OReal.sign. wp. by sim. 
+  inline*; auto => />.
+have -> : Pr[Game(Adv, OSet1_inf).main() @ &m : res] = 
+          Pr[Game(Adv, CountBound(OSet1_inf)).main() @ &m : res].
+- byequiv => //; proc.
+  conseq (: _ ==> Count.countS{2} <= qs /\ Count.countH{2} <= qh => ={b}) _ 
+         (: _ ==> Count.countS <= qs /\ Count.countH <= qh). smt(). 
+  + (* need to go to [Adv(Count(CountBound(OSet1_inf)))] with disjoint counters ... *)
+    admit.
+  call (: Count.countS{2} <= qs /\ Count.countH{2} <= qh => ={RO.m, OReal.sk}).
+  + admit.
+  + admit.
+  inline*; auto => />.
+exact GReal_GSet_inf_aux.
+qed.
+
+
 
 end section.

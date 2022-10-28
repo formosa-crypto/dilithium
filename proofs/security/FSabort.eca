@@ -14,17 +14,12 @@ op [lossless uniform] dC : C distr.   (* Challenge Distribution *)
 
 abstract theory Generic.
 
-type Sig = (W*Z) option.       (* Signatures *)
+type Sig = W*Z.                       (* Signatures *)
 
 const qS : int. (* allowed number of sig queries *)
 const qH : int. (* allowed number of ro  queries *)
 axiom qS_ge0 : 0 <= qS.
 axiom qH_ge0 : 0 <= qH.
-
-(* maximal number of iterations allowed for signing *)
-op kappa : { int | 0 < kappa } as kappa_gt0.
-(* Signature that is output when loop bound is exceeded *)
-
 
 (* clone RO signature theory, 
    setting oracle distribution to uniform challenges *)
@@ -55,25 +50,21 @@ module (IDS_Sig (P: Prover, V:Verifier) : SchemeRO) (H: Hash) = {
     var w  : W <- witness;
     var c  : C <- witness;
     var oz : Z option <- None;
-    var k  : int <- 0;
 
-    while (oz = None /\ k < kappa) { 
+    while (oz = None) { 
       w <@ P.commit(sk);
       c <@ H.get((w,m));
       oz <@ P.response(sk,c);
-      k <- k + 1;
     }
-    return if oz <> None then Some (w,oget oz) else None; 
+    return (w,oget oz);
   }
   
   proc verify(pk:PK, m:M, s:Sig):bool = {
     var c,w,z;
     var result <- false;
-    if (s <> None) { 
-      (w,z) <- oget s;
-      c <@ H.get((w,m));
-      result <@ V.verify(pk,w,c,z);
-    }
+    (w,z) <- s;
+    c <@ H.get((w,m));
+    result <@ V.verify(pk,w,c,z);
     return result; 
   }
 }.
