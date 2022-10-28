@@ -35,7 +35,9 @@ type DS.msg_t <- M,
 type DS.sig_t <- Sig,
 type PRO.in_t <= W*M,
 type PRO.out_t <= C, 
-op   PRO.dout <= fun _ => dC.
+op   PRO.dout <= fun _ => dC,
+op   EFCMA.q_efcma <= qS
+proof* by smt(qS_ge0).
 
 import DSS.PRO.
 import DSS.DS.Stateless.
@@ -97,8 +99,6 @@ axiom qH_ge0 : 0 <= qH.
 
 (* maximal number of iterations allowed for signing *)
 op kappa : { int | 0 < kappa } as kappa_gt0.
-(* Signature that is output when loop bound is exceeded *)
-op sig0 : Sig.
 
 (* clone RO signature theory, 
    setting oracle distribution to uniform challenges *)
@@ -109,7 +109,9 @@ type DS.msg_t <- M,
 type DS.sig_t <- Sig,
 type PRO.in_t <= W*M,
 type PRO.out_t <= C, 
-op   PRO.dout <= fun _ => dC.
+op   PRO.dout <= fun _ => dC,
+op   EFCMA.q_efcma <= qS
+proof* by smt(qS_ge0).
 
 import DSS.PRO.
 import DSS.DS.Stateless.

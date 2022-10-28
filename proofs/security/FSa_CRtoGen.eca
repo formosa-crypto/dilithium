@@ -14,8 +14,8 @@ clone FSa.Generic as FSaG.
 
 (* Commitment Recoverable FS+abort construction (i.e. Sig = C*Z option *)
 clone FSa.CommRecov as FSaCR with
-  op DSS.DS.Stateless.q_efcma <- FSaG.DSS.DS.Stateless.q_efcma, 
-  op kappa <- FSaG.kappa.
+  op qS <= FSaG.qS,
+  op kappa <= FSaG.kappa.
 
 module (RedFSaG (A : FSaCR.DSS.Adv_EFCMA_RO) : FSaG.DSS.Adv_EFCMA_RO) 
   (H : FSaG.DSS.Hash)

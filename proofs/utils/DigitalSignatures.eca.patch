@@ -1,0 +1,772 @@
+diff --git a/DigitalSignatures.eca b/DigitalSignatures.eca
+index 0bf815d..a5ccf97 100644
+--- a/DigitalSignatures.eca
++++ b/DigitalSignatures.eca
+@@ -30,8 +30,7 @@ type sk_t.
+ 
+ 
+ (* -- Distributions -- *)
+-(* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
+-op [lossless] dmsg : msg_t distr.
++
+ 
+ 
+ 
+@@ -108,7 +107,12 @@ theory Stateless.
+     with forging a signature for the given message
+     - 
+   *)
++  abstract theory UFKOA.
+   (* Class of adversaries against UF-KOA *)
++  
++  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
++  op [lossless] dmsg : msg_t distr.
++
+   module type Adv_UFKOA = {
+     proc forge(pk : pk_t, m : msg_t) : sig_t
+   }.
+@@ -141,7 +145,7 @@ theory Stateless.
+       return is_valid;
+     }
+   }.
+-
++  end UFKOA.
+   
+   (*
+     - 
+@@ -150,7 +154,7 @@ theory Stateless.
+     with forging a signature for the picked message
+     -
+   *)
+-  (* Class of adversaries SF-KOA *)
++  (* Class of adversaries against SF-KOA *)
+   module type Adv_SFKOA = {
+     proc pick() : msg_t
+     proc forge(pk : pk_t) : sig_t 
+@@ -246,8 +250,11 @@ theory Stateless.
+     public/verification key
+     -
+   *)
++  abstract theory TBRMA.
+   (* Number of messages the adversary obtains signatures for in TB-RMA game *)
+   const n_tbrma : { int | 0 <= n_tbrma } as ge0_ntbrma.
++  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
++  op [lossless] dmsg : msg_t distr.
+   
+   (* Class of adversaries against TB-RMA *)
+   module type Adv_TBRMA = {
+@@ -293,7 +300,7 @@ theory Stateless.
+       return sk' = sk;
+     }
+   }.
+-  
++  end TBRMA.
+   
+   (* 
+     - 
+@@ -303,8 +310,11 @@ theory Stateless.
+     the given (latter) message
+     -
+   *)
++  abstract theory UFRMA.
+   (* Number of messages the adversary obtains signatures for in UF-RMA game *)
+   const n_ufrma : { int | 0 <= n_ufrma } as ge0_nufrma.
++  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
++  op [lossless] dmsg : msg_t distr.
+   
+   (* Class of adversaries against UF-RMA *)
+   module type Adv_UFRMA = {
+@@ -371,7 +381,7 @@ theory Stateless.
+       return is_valid /\ is_fresh;
+     }
+   }.
+-  
++  end UFRMA.
+ 
+   (*
+     -
+@@ -381,8 +391,11 @@ theory Stateless.
+     with forging a signature for the picked message
+     -
+   *)
++  abstract theory SFRMA.
+   (* Number of messages the adversary obtains signatures for in SF-RMA game *)
+   const n_sfrma : { int | 0 <= n_sfrma } as ge0_nsfrma.
++  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
++  op [lossless] dmsg : msg_t distr.
+   
+   (* Class of adversaries against SF-RMA *)
+   module type Adv_SFRMA = {
+@@ -450,7 +463,7 @@ theory Stateless.
+       return is_valid /\ is_fresh;
+     }
+   }.
+-
++  end SFRMA.
+   
+   (*
+     -
+@@ -459,14 +472,17 @@ theory Stateless.
+     the adversary is tasked with forging a signature for any fresh message
+     -
+   *)
++  abstract theory EFRMA.
+   (* Number of messages the adversary obtains signatures for in EF-RMA game *)
+   const n_efrma : { int | 0 <= n_efrma } as ge0_nefrma.
++  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
++  op [lossless] dmsg : msg_t distr.
+   
+   (* Class of adversaries against EF-RMA *)
+   module type Adv_EFRMA = {
+     proc forge(pk : pk_t, msigl : (msg_t * sig_t) list) : msg_t * sig_t
+-  }.
+-  
++  }. 
++
+   (* EF-RMA game *)
+   module EF_RMA(S : Scheme, A : Adv_EFRMA) = {   
+     proc main() : bool = {
+@@ -525,7 +541,7 @@ theory Stateless.
+       return is_valid /\ is_fresh;
+     }
+   }.
+-  
++  end EFRMA.
+ 
+   (*
+     -- 
+@@ -545,10 +561,11 @@ theory Stateless.
+     computing the secret key corresponding to the public/verification key
+     -
+   *)
++  abstract theory TBGCMA.
+   (* Number of messages the adversary obtains signatures for in TB-GCMA game *)
+   const n_tbgcma : { int | 0 <= n_tbgcma } as ge0_ntbgcma.
+   
+-  (* Class of adversaries against TB-CMA *)
++  (* Class of adversaries against TB-GCMA *)
+   module type Adv_TBGCMA = {
+     proc choose() : msg_t list
+     proc break(pk : pk_t, sigl : sig_t list) : sk_t 
+@@ -598,7 +615,7 @@ theory Stateless.
+       return sk' = sk;
+     }
+   }.
+-  
++  end TBGCMA.
+   
+   (*
+     - 
+@@ -608,8 +625,11 @@ theory Stateless.
+     the adversary is tasked with forging a signature for the given (latter) message
+     -
+   *)
++  abstract theory UFGCMA.
+   (* Number of messages the adversary obtains signatures for in UF-GCMA game *)
+   const n_ufgcma : { int | 0 <= n_ufgcma } as ge0_nufgcma.
++  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
++  op [lossless] dmsg : msg_t distr.
+   
+   (* Class of adversaries against UF-GCMA *)
+   module type Adv_UFGCMA = {
+@@ -682,7 +702,7 @@ theory Stateless.
+       return is_valid /\ is_fresh;
+     }
+   }.
+-
++  end UFGCMA.
+   
+   (* 
+     - 
+@@ -692,6 +712,7 @@ theory Stateless.
+     of the public key, and is tasked with forging a signature for the picked message
+     -
+   *)
++  abstract theory SFGCMA.
+   (* Number of messages the adversary obtains signatures for in SF-GCMA game *)
+   const n_sfgcma : { int | 0 <= n_sfgcma } as ge0_nsfgcma.
+   
+@@ -767,7 +788,7 @@ theory Stateless.
+       return is_valid /\ is_fresh;   
+     }
+   }.
+-
++  end SFGCMA.
+   
+   (*
+     -
+@@ -777,8 +798,9 @@ theory Stateless.
+     with forging a signature for any fresh message
+     -
+   *)
++  abstract theory EFGCMA.
+   (* Number of messages the adversary obtains signatures for in EF-GCMA game *)
+-  const n_efgcma : { int | 0 <= n_efgcma } as ge0_negcrma.
++  const n_efgcma : { int | 0 <= n_efgcma } as ge0_nefgcma.
+   
+   (* Class of adversaries against EF-GCMA *)
+   module type Adv_EFGCMA = {
+@@ -821,8 +843,8 @@ theory Stateless.
+       }
+       
+       (*
+-        Ask the adversary to forge a signature for the any message (and provide both
+-        the message and the signature)  given the public key pk and a list of 
++        Ask the adversary to forge a signature for any message (and provide both
++        the message and the signature) given the public key pk and a list of 
+         signatures sigl for the messages previously chosen by the adversary 
+         (i.e., the messages in list ml) 
+       *)
+@@ -849,7 +871,7 @@ theory Stateless.
+       return is_valid /\ is_fresh;   
+     }  
+   }.
+-
++  end EFGCMA.
+   
+   (*
+     -- 
+@@ -869,6 +891,7 @@ theory Stateless.
+     corresponding to the public/verification key
+     -
+   *)
++  abstract theory TBNACMA.
+   (* Number of messages the adversary obtains signatures for in TB-RMA game *)
+   const n_tbnacma : { int | 0 <= n_tbnacma } as ge0_ntbnacma.
+ 
+@@ -925,7 +948,7 @@ theory Stateless.
+       return sk' = sk;
+     }
+   }.
+-  
++  end TBNACMA.
+   
+   (*
+     - 
+@@ -935,8 +958,11 @@ theory Stateless.
+     a signature for the given (latter) message
+     -
+   *)
++  abstract theory UFNACMA.
+   (* Number of messages the adversary obtains signatures for in UF-RMA game *)
+   const n_ufnacma : { int | 0 <= n_ufnacma } as ge0_nufnacma.
++  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
++  op [lossless] dmsg : msg_t distr.
+   
+   (* Class of adversaries against UF-NACMA *)
+   module type Adv_UFNACMA = {
+@@ -1012,7 +1038,7 @@ theory Stateless.
+       return is_valid /\ is_fresh;
+     }
+   }.
+-
++  end UFNACMA.
+   
+   (* 
+     - 
+@@ -1022,6 +1048,7 @@ theory Stateless.
+     forging a signature for the picked message
+     -
+   *)
++  abstract theory SFNACMA.
+   (* Number of messages the adversary obtains signatures for in SF-RMA game *)
+   const n_sfnacma : { int | 0 <= n_sfnacma } as ge0_nsfnacma.
+   
+@@ -1100,7 +1127,7 @@ theory Stateless.
+       return is_valid /\ is_fresh;
+     }
+   }.
+-
++  end SFNACMA.
+   
+   (*
+     -
+@@ -1109,6 +1136,7 @@ theory Stateless.
+     chosen messages the adversary is tasked with forging a signature for any fresh message
+     -
+   *)
++  abstract theory EFNACMA.
+   (* Number of messages the adversary obtains signatures for in EF-RMA game *)
+   const n_efnacma : { int | 0 <= n_efnacma } as ge0_nefnacma.
+   
+@@ -1184,7 +1212,7 @@ theory Stateless.
+       return is_valid /\ is_fresh; 
+     }  
+   }.  
+-  
++  end EFNACMA.
+   
+   (*
+     -- 
+@@ -1268,6 +1296,7 @@ theory Stateless.
+     corresponding to the public/verification key
+     -
+   *)
++  abstract theory TBCMA.
+   (* Maximum number of oracle queries the adversary is allowed to make in TB-CMA game *)
+   const q_tbcma : { int | 0 <= q_tbcma } as ge0_qtbcma.
+  
+@@ -1341,7 +1370,7 @@ theory Stateless.
+       return sk' = sk; 
+     }
+   }.
+-  
++  end TBCMA.
+   
+   (*
+     - 
+@@ -1351,8 +1380,11 @@ theory Stateless.
+     a signature for the given (latter) message
+     -
+   *)
++  abstract theory UFCMA.
+   (* Maximum number of oracle queries the adversary is allowed to make in UF-CMA game *)
+   const q_ufcma : { int | 0 <= q_ufcma } as ge0_qufcma.
++  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
++  op [lossless] dmsg : msg_t distr.
+   
+   (* Class of adversaries against UF-CMA *)
+   module type Adv_UFCMA(O : SOracle_CMA) = {
+@@ -1467,7 +1499,7 @@ theory Stateless.
+       return is_valid /\ is_fresh; 
+     }
+   }.
+-  
++  end UFCMA.
+   
+   (*
+     -
+@@ -1477,6 +1509,7 @@ theory Stateless.
+     forging a signature for the picked message
+     -
+   *)
++  abstract theory SFCMA.
+   (* Maximum number of oracle queries the adversary is allowed to make in SF-CMA game *)
+   const q_sfcma : { int | 0 <= q_sfcma } as ge0_qsfcma.
+ 
+@@ -1594,7 +1627,7 @@ theory Stateless.
+       return is_valid /\ is_fresh; 
+     }
+   }.
+-  
++  end SFCMA.
+ 
+   (*
+     -
+@@ -1603,6 +1636,7 @@ theory Stateless.
+     chosen messages, the adversary is tasked with forging a signature for any fresh message
+     -
+   *)
++  abstract theory EFCMA.
+   (* Maximum number of oracle queries the adversary is allowed to make in EF-CMA game *)
+   const q_efcma : { int | 0 <= q_efcma } as ge0_qefcma.
+   
+@@ -1710,8 +1744,8 @@ theory Stateless.
+       return is_valid /\ is_fresh; 
+     }
+   }.
++  end EFCMA.
+ 
+-  
+   (*
+     - 
+     Strong Existential Forgery under Chosen-Message Attack (SEF-CMA).
+@@ -1719,6 +1753,7 @@ theory Stateless.
+     chosen messages, the adversary is tasked with forging a fresh signature for any message
+     -
+   *)
++  abstract theory SEFCMA.
+   (* Maximum number of oracle queries the adversary is allowed to make in SEF-CMA game *)
+   const q_sefcma : { int | 0 <= q_sefcma } as ge0_qsefcma.
+   
+@@ -1859,7 +1894,7 @@ theory Stateless.
+       var m : msg_t;
+       var sig : sig_t;
+       var is_valid, is_fresh : bool;
+-            
++      
+       (* Generate a key pair using the considered signature scheme *)
+       (pk, sk) <@ S.keygen();
+       
+@@ -1894,6 +1929,8 @@ theory Stateless.
+       return is_valid /\ is_fresh; 
+     }
+   }.
++  end SEFCMA.
++
+ end Stateless.
+ 
+ 
+@@ -1908,7 +1945,6 @@ theory KeyUpdating.
+     proc verify(pk : pk_t, m : msg_t, sig : sig_t) : bool
+   }.
+ 
+-  
+   (* -- Correctness -- *)
+ 
+   
+@@ -1956,7 +1992,12 @@ theory KeyUpdating.
+     with forging a signature for the given message
+     - 
+   *)
++  abstract theory UFKOA.
+   (* Class of adversaries against UF-KOA *)
++  
++  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
++  op [lossless] dmsg : msg_t distr.
++
+   module type Adv_UFKOA = {
+     proc forge(pk : pk_t, m : msg_t) : sig_t
+   }.
+@@ -1989,7 +2030,7 @@ theory KeyUpdating.
+       return is_valid;
+     }
+   }.
+-
++  end UFKOA.
+   
+   (*
+     - 
+@@ -2088,14 +2129,17 @@ theory KeyUpdating.
+   *)  
+   (* 
+     - 
+-    Total Break under Known-Message Attack (TB-RMA). 
++    Total Break under Random-Message Attack (TB-RMA). 
+     Given the public/verification key and the signatures for a set of known random messages, 
+     the adversary is tasked with computing the secret key corresponding to the 
+     public/verification key
+     -
+   *)
++  abstract theory TBRMA.
+   (* Number of messages the adversary obtains signatures for in TB-RMA game *)
+   const n_tbrma : { int | 0 <= n_tbrma } as ge0_ntbrma.
++  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
++  op [lossless] dmsg : msg_t distr.
+   
+   (* Class of adversaries against TB-RMA *)
+   module type Adv_TBRMA = {
+@@ -2141,7 +2185,7 @@ theory KeyUpdating.
+       return sk' = sk;
+     }
+   }.
+-  
++  end TBRMA.
+   
+   (* 
+     - 
+@@ -2151,8 +2195,11 @@ theory KeyUpdating.
+     the given (latter) message
+     -
+   *)
++  abstract theory UFRMA.
+   (* Number of messages the adversary obtains signatures for in UF-RMA game *)
+   const n_ufrma : { int | 0 <= n_ufrma } as ge0_nufrma.
++  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
++  op [lossless] dmsg : msg_t distr.
+   
+   (* Class of adversaries against UF-RMA *)
+   module type Adv_UFRMA = {
+@@ -2219,7 +2266,7 @@ theory KeyUpdating.
+       return is_valid /\ is_fresh;
+     }
+   }.
+-  
++  end UFRMA.
+ 
+   (*
+     -
+@@ -2229,8 +2276,11 @@ theory KeyUpdating.
+     with forging a signature for the picked message
+     -
+   *)
++  abstract theory SFRMA.
+   (* Number of messages the adversary obtains signatures for in SF-RMA game *)
+   const n_sfrma : { int | 0 <= n_sfrma } as ge0_nsfrma.
++  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
++  op [lossless] dmsg : msg_t distr.
+   
+   (* Class of adversaries against SF-RMA *)
+   module type Adv_SFRMA = {
+@@ -2298,17 +2348,20 @@ theory KeyUpdating.
+       return is_valid /\ is_fresh;
+     }
+   }.
+-
++  end SFRMA.
+   
+   (*
+     -
+-    Existential Forgery under Known-Message Attack (EF-RMA)
++    Existential Forgery under Random-Message Attack (EF-RMA)
+     Given the public/verification key and the signatures for a set of known random messages,
+     the adversary is tasked with forging a signature for any fresh message
+     -
+   *)
++  abstract theory EFRMA.
+   (* Number of messages the adversary obtains signatures for in EF-RMA game *)
+   const n_efrma : { int | 0 <= n_efrma } as ge0_nefrma.
++  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
++  op [lossless] dmsg : msg_t distr.
+   
+   (* Class of adversaries against EF-RMA *)
+   module type Adv_EFRMA = {
+@@ -2373,7 +2426,7 @@ theory KeyUpdating.
+       return is_valid /\ is_fresh;
+     }
+   }.
+-  
++  end EFRMA.
+ 
+   (*
+     -- 
+@@ -2393,6 +2446,7 @@ theory KeyUpdating.
+     computing the secret key corresponding to the public/verification key
+     -
+   *)
++  abstract theory TBGCMA.
+   (* Number of messages the adversary obtains signatures for in TB-GCMA game *)
+   const n_tbgcma : { int | 0 <= n_tbgcma } as ge0_ntbgcma.
+   
+@@ -2446,7 +2500,7 @@ theory KeyUpdating.
+       return sk' = sk;
+     }
+   }.
+-  
++  end TBGCMA.
+   
+   (*
+     - 
+@@ -2456,8 +2510,11 @@ theory KeyUpdating.
+     the adversary is tasked with forging a signature for the given (latter) message
+     -
+   *)
++  abstract theory UFGCMA.
+   (* Number of messages the adversary obtains signatures for in UF-GCMA game *)
+   const n_ufgcma : { int | 0 <= n_ufgcma } as ge0_nufgcma.
++  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
++  op [lossless] dmsg : msg_t distr.
+   
+   (* Class of adversaries against UF-GCMA *)
+   module type Adv_UFGCMA = {
+@@ -2530,7 +2587,7 @@ theory KeyUpdating.
+       return is_valid /\ is_fresh;
+     }
+   }.
+-
++  end UFGCMA.
+   
+   (* 
+     - 
+@@ -2540,6 +2597,7 @@ theory KeyUpdating.
+     of the public key, and is tasked with forging a signature for the picked message
+     -
+   *)
++  abstract theory SFGCMA.
+   (* Number of messages the adversary obtains signatures for in SF-GCMA game *)
+   const n_sfgcma : { int | 0 <= n_sfgcma } as ge0_nsfgcma.
+   
+@@ -2615,7 +2673,7 @@ theory KeyUpdating.
+       return is_valid /\ is_fresh;   
+     }
+   }.
+-
++  end SFGCMA.
+   
+   (*
+     -
+@@ -2625,6 +2683,7 @@ theory KeyUpdating.
+     with forging a signature for any fresh message
+     -
+   *)
++  abstract theory EFGCMA.
+   (* Number of messages the adversary obtains signatures for in EF-GCMA game *)
+   const n_efgcma : { int | 0 <= n_efgcma } as ge0_nefgcma.
+   
+@@ -2697,7 +2756,7 @@ theory KeyUpdating.
+       return is_valid /\ is_fresh;   
+     }  
+   }.
+-  
++  end EFGCMA.
+   
+   (*
+     -- 
+@@ -2708,7 +2767,7 @@ theory KeyUpdating.
+     messages may depend on the public key; i.e., the adversary is given the public key
+     when asked to provide the messages
+     --
+-  *)  
++  *) 
+   (* 
+     - 
+     Total Break under Non-Adaptive Chosen-Message Attack (TB-NACMA). 
+@@ -2717,9 +2776,10 @@ theory KeyUpdating.
+     corresponding to the public/verification key
+     -
+   *)
++  abstract theory TBNACMA.
+   (* Number of messages the adversary obtains signatures for in TB-RMA game *)
+   const n_tbnacma : { int | 0 <= n_tbnacma } as ge0_ntbnacma.
+-  
++
+   (* Class of adversaries against TB-NACMA *)
+   module type Adv_TBNACMA = {
+     proc choose(pk : pk_t) : msg_t list
+@@ -2773,7 +2833,7 @@ theory KeyUpdating.
+       return sk' = sk;
+     }
+   }.
+-  
++  end TBNACMA.
+   
+   (*
+     - 
+@@ -2783,8 +2843,11 @@ theory KeyUpdating.
+     a signature for the given (latter) message
+     -
+   *)
++  abstract theory UFNACMA.
+   (* Number of messages the adversary obtains signatures for in UF-RMA game *)
+   const n_ufnacma : { int | 0 <= n_ufnacma } as ge0_nufnacma.
++  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
++  op [lossless] dmsg : msg_t distr.
+   
+   (* Class of adversaries against UF-NACMA *)
+   module type Adv_UFNACMA = {
+@@ -2860,7 +2923,7 @@ theory KeyUpdating.
+       return is_valid /\ is_fresh;
+     }
+   }.
+-
++  end UFNACMA.
+   
+   (* 
+     - 
+@@ -2870,6 +2933,7 @@ theory KeyUpdating.
+     forging a signature for the picked message
+     -
+   *)
++  abstract theory SFNACMA.
+   (* Number of messages the adversary obtains signatures for in SF-RMA game *)
+   const n_sfnacma : { int | 0 <= n_sfnacma } as ge0_nsfnacma.
+   
+@@ -2948,7 +3012,7 @@ theory KeyUpdating.
+       return is_valid /\ is_fresh;
+     }
+   }.
+-
++  end SFNACMA.
+   
+   (*
+     -
+@@ -2957,6 +3021,7 @@ theory KeyUpdating.
+     chosen messages the adversary is tasked with forging a signature for any fresh message
+     -
+   *)
++  abstract theory EFNACMA.
+   (* Number of messages the adversary obtains signatures for in EF-RMA game *)
+   const n_efnacma : { int | 0 <= n_efnacma } as ge0_nefnacma.
+   
+@@ -3032,7 +3097,7 @@ theory KeyUpdating.
+       return is_valid /\ is_fresh; 
+     }  
+   }.  
+-  
++  end EFNACMA.
+   
+   (*
+     -- 
+@@ -3116,9 +3181,10 @@ theory KeyUpdating.
+     corresponding to the public/verification key
+     -
+   *)
++  abstract theory TBCMA.
+   (* Maximum number of oracle queries the adversary is allowed to make in TB-CMA game *)
+   const q_tbcma : { int | 0 <= q_tbcma } as ge0_qtbcma.
+-  
++ 
+   (* Class of adversaries against TB-CMA *)
+   module type Adv_TBCMA(O : SOracle_CMA) = {
+     proc break(pk : pk_t) : sk_t
+@@ -3189,7 +3255,7 @@ theory KeyUpdating.
+       return sk' = sk; 
+     }
+   }.
+-  
++  end TBCMA.
+   
+   (*
+     - 
+@@ -3199,8 +3265,11 @@ theory KeyUpdating.
+     a signature for the given (latter) message
+     -
+   *)
++  abstract theory UFCMA.
+   (* Maximum number of oracle queries the adversary is allowed to make in UF-CMA game *)
+   const q_ufcma : { int | 0 <= q_ufcma } as ge0_qufcma.
++  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
++  op [lossless] dmsg : msg_t distr.
+   
+   (* Class of adversaries against UF-CMA *)
+   module type Adv_UFCMA(O : SOracle_CMA) = {
+@@ -3315,7 +3384,7 @@ theory KeyUpdating.
+       return is_valid /\ is_fresh; 
+     }
+   }.
+-  
++  end UFCMA.
+   
+   (*
+     -
+@@ -3325,9 +3394,10 @@ theory KeyUpdating.
+     forging a signature for the picked message
+     -
+   *)
++  abstract theory SFCMA.
+   (* Maximum number of oracle queries the adversary is allowed to make in SF-CMA game *)
+   const q_sfcma : { int | 0 <= q_sfcma } as ge0_qsfcma.
+-  
++
+   (* Class of adversaries against SF-CMA *)
+   module type Adv_SFCMA(O : SOracle_CMA) = {
+     proc pick() : msg_t
+@@ -3442,7 +3512,7 @@ theory KeyUpdating.
+       return is_valid /\ is_fresh; 
+     }
+   }.
+-  
++  end SFCMA.
+ 
+   (*
+     -
+@@ -3451,6 +3521,7 @@ theory KeyUpdating.
+     chosen messages, the adversary is tasked with forging a signature for any fresh message
+     -
+   *)
++  abstract theory EFCMA.
+   (* Maximum number of oracle queries the adversary is allowed to make in EF-CMA game *)
+   const q_efcma : { int | 0 <= q_efcma } as ge0_qefcma.
+   
+@@ -3563,6 +3634,7 @@ theory KeyUpdating.
+       return is_valid /\ is_fresh; 
+     }
+   }.
++  end EFCMA.
+ 
+   (*
+     - 
+@@ -3571,6 +3643,7 @@ theory KeyUpdating.
+     chosen messages, the adversary is tasked with forging a fresh signature for any message
+     -
+   *)
++  abstract theory SEFCMA.
+   (* Maximum number of oracle queries the adversary is allowed to make in SEF-CMA game *)
+   const q_sefcma : { int | 0 <= q_sefcma } as ge0_qsefcma.
+   
+@@ -3746,4 +3819,5 @@ theory KeyUpdating.
+       return is_valid /\ is_fresh; 
+     }
+   }.
++  end SEFCMA.
+ end KeyUpdating.

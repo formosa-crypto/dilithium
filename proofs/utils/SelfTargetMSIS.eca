@@ -12,7 +12,8 @@ op dC : R distr.
 clone import PROM.FullRO as PRO with 
   type in_t <- vector*M,
   type out_t <- R,
-  op dout <- (fun _ => dC).
+  op dout <- (fun _ => dC) 
+proof*.
 
 op inf_norm : vector -> int.
 

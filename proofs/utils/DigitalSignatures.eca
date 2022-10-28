@@ -1,0 +1,3826 @@
+(**************************************************************************)
+(* File containing everything related to (public-key/digital) signatures. *)
+(* This file is based on the material from the following references:      *)
+(* - "A Digital Signature Scheme Secure Against Adaptive                  *)
+(*    Chosen-Message Attack"                                              *)
+(*   DOI: 10.1137/0217017                                                 *)
+(* - "Digital Signatures"                                                 *) 
+(*   DOI: 10.1007/978-0-387-27712-7.                                      *)
+(* This File was copied from the verifiyhashbased repo                    *)
+(*   Authors: Matthias Meijers and Andreas Hülsing                        *)
+(*   (* TODO: proper reference *)                                         *)
+(**************************************************************************)
+
+
+(********** TODO *************)
+(* Currently the module definitions in EF_CMA are inlined. Want to do this everywhere *)
+
+(* --- Require/Import Theories --- *)
+(* -- Built-in (i.e, standard library) -- *)
+require import AllCore List.
+
+
+
+(* --- General --- *)
+(* -- Types -- *)
+(* Types for to-be-signed artifacts ('messages') and signatures, respectively *)
+type msg_t.
+type sig_t.
+
+(* Types for public/verification keys and secret/private/signing keys, respectively *)
+type pk_t.
+type sk_t.
+
+
+(* -- Distributions -- *)
+
+
+
+
+(* --- Stateless Signature Schemes --- *)
+theory Stateless.
+  (* -- General -- *)
+  (* Module type for stateless signature schemes *)
+  module type Scheme = {
+    proc keygen() : pk_t * sk_t
+    proc sign(sk : sk_t, m : msg_t) : sig_t
+    proc verify(pk : pk_t, m : msg_t, s : sig_t) : bool
+  }.
+  
+  
+  (* -- Correctness -- *)
+  (* Probabilistic program formalizing the correctness of stateless signature schemes *)
+  module Correctness(S : Scheme) = {
+    proc main(m : msg_t) : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var sig : sig_t;
+      var is_valid : bool;
+      
+      (pk, sk) <@ S.keygen();
+      sig <@ S.sign(sk, m);
+      is_valid <@ S.verify(pk, m, sig); 
+      
+      return is_valid;
+    }
+  }.
+  
+  
+  (*
+    -- 
+    Key-Only Attack (KOA).
+    Attacks in which the adversary is only given the public/verification key
+    -- 
+  *)
+  (*
+    - 
+    Total Break under Key-Only Attack (TB-KOA). 
+    Given the public/verification key, the adversary is tasked with computing the
+    corresponding secret key
+    -
+  *)
+  (* Class of adversaries against TB-KOA *)
+  module type Adv_TBKOA = {
+    proc break(pk : pk_t) : sk_t 
+  }.
+  
+  (* TB-KOA game *)
+  module TB_KOA(S : Scheme, A : Adv_TBKOA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk, sk' : sk_t;
+      var sig : sig_t;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* Ask adversary to compute the secret key sk given the public key pk *) 
+      sk' <@ A.break(pk);
+      
+      (* Success iff the adversary correctly computed the secret key *)
+      return sk' = sk;
+    }
+  }.
+  
+  
+  (* 
+    - 
+    Universal Forgery under Key-Only Attack (UF-KOA).
+    Given the public/verification key and an arbitrary message, the adversary is tasked 
+    with forging a signature for the given message
+    - 
+  *)
+  abstract theory UFKOA.
+  (* Class of adversaries against UF-KOA *)
+  
+  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
+  op [lossless] dmsg : msg_t distr.
+
+  module type Adv_UFKOA = {
+    proc forge(pk : pk_t, m : msg_t) : sig_t
+  }.
+  
+  (* UF-KOA game *)
+  module UF_KOA(S : Scheme, A : Adv_UFKOA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var is_valid : bool;
+      
+      (* Sample message for which the adversary must produce a forgery *)
+      m <$ dmsg;
+
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+  
+      (* Ask the adversary to forge a signature for m given the public key pk (and m) *)
+      sig <@ A.forge(pk, m);
+      
+      (* 
+        Verify (w.r.t. message m) the signature sig provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m, sig);
+
+      (* Success iff the signature provided by the adversary is valid *)
+      return is_valid;
+    }
+  }.
+  end UFKOA.
+  
+  (*
+    - 
+    Selective Forgery under Key-Only Attack (SF-KOA).
+    After picking a message, the adversary is given the public/verification key and tasked
+    with forging a signature for the picked message
+    -
+  *)
+  (* Class of adversaries against SF-KOA *)
+  module type Adv_SFKOA = {
+    proc pick() : msg_t
+    proc forge(pk : pk_t) : sig_t 
+  }.
+
+  (* SF-KOA game *)
+  module SF_KOA(S : Scheme, A : Adv_SFKOA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var is_valid : bool;
+
+      (* Ask the adversary to pick a message to forge a signature for *)
+      m <@ A.pick();
+
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+
+      (* 
+        Ask the adversary to forge a signature for the previously picked message m
+        given the public key pk
+      *)
+      sig <@ A.forge(pk);
+
+      (* 
+        Verify (w.r.t. message m) the signature sig provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m, sig);
+
+      (* Success iff the signature provided by the adversary is valid *)
+      return is_valid;
+    }
+  }.
+
+  
+  (*
+    -
+    Existential Forgery under Key-Only Attack (EF-KOA).
+    Given the public/verification key, the adversary is tasked with forging a signature
+    for any fresh message
+    -
+  *)
+  (* Class of adversaries against EF-KOA *)
+  module type Adv_EFKOA = {
+    proc forge(pk : pk_t) : msg_t * sig_t 
+  }.
+
+  (* EF-KOA game *)
+  module EF_KOA(S : Scheme, A : Adv_EFKOA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var is_valid: bool;
+
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+
+      (* 
+        Ask adversary to forge a signature on any message (and provide both the
+        message and the signature) given the public key pk 
+      *)
+      (m, sig) <@ A.forge(pk);
+
+      (* 
+        Verify (w.r.t. message m) the signature sig provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m, sig);
+
+      (* Success iff the signature provided by the adversary is valid *)
+      return is_valid;
+    }
+  }.
+
+
+  (* 
+    -- 
+    Random-Message Attack (RMA).
+    Attacks in which the adversary is given the public/verification key as well as 
+    the signatures for a set of random messages *known* to it, but not *chosen* by it
+    -- 
+  *)  
+  (* 
+    - 
+    Total Break under Random-Message Attack (TB-RMA). 
+    Given the public/verification key and the signatures for a set of known random messages, 
+    the adversary is tasked with computing the secret key corresponding to the 
+    public/verification key
+    -
+  *)
+  abstract theory TBRMA.
+  (* Number of messages the adversary obtains signatures for in TB-RMA game *)
+  const n_tbrma : { int | 0 <= n_tbrma } as ge0_ntbrma.
+  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
+  op [lossless] dmsg : msg_t distr.
+  
+  (* Class of adversaries against TB-RMA *)
+  module type Adv_TBRMA = {
+    proc break(pk : pk_t, msigl : (msg_t * sig_t) list) : sk_t 
+  }.
+  
+  (* TB-RMA game *)
+  module TB_RMA(S : Scheme, A : Adv_TBRMA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk, sk' : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var msig : msg_t * sig_t;
+      var msigl : (msg_t * sig_t) list;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* 
+        Construct a list of n_tbrma (message, signature) pairs. To this end,
+        for each pair, randomly sample a message and, subsequently, create
+        (with the previously generated secret key) a corresponding signature by 
+        using the signing algorithm of the considered signature scheme.
+      *)
+      msigl <- [];
+      while (size msigl < n_tbrma) {
+        m <$ dmsg;
+        
+        sig <@ S.sign(sk, m);
+        
+        msig <- (m, sig);
+        msigl <- rcons msigl msig;
+      }
+      
+      (* 
+        Ask adversary to compute the secret key sk given the public key pk and list
+        of (message, signature) pairs msigl
+      *) 
+      sk' <@ A.break(pk, msigl);
+      
+      (* Success iff the adversary correctly computed the secret key sk *)
+      return sk' = sk;
+    }
+  }.
+  end TBRMA.
+  
+  (* 
+    - 
+    Universal Forgery under Random-Message Attack (UF-RMA).
+    Given the public/verification key, the signatures for a set of known random messages, 
+    and an arbitrary message, the adversary is tasked with forging a signature for 
+    the given (latter) message
+    -
+  *)
+  abstract theory UFRMA.
+  (* Number of messages the adversary obtains signatures for in UF-RMA game *)
+  const n_ufrma : { int | 0 <= n_ufrma } as ge0_nufrma.
+  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
+  op [lossless] dmsg : msg_t distr.
+  
+  (* Class of adversaries against UF-RMA *)
+  module type Adv_UFRMA = {
+    proc forge(pk : pk_t, msigl : (msg_t * sig_t) list, m : msg_t) : sig_t
+  }.
+  
+  (* UF-RMA game *)
+  module UF_RMA(S : Scheme, A : Adv_UFRMA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk, sk' : sk_t;
+      var m, m' : msg_t;
+      var sig, sig' : sig_t;
+      var msig : msg_t * sig_t;
+      var msigl : (msg_t * sig_t) list;
+      var is_valid, is_fresh : bool;
+      
+      (* Sample message for which the adversary must produce a forgery *)
+      m' <$ dmsg;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+
+      (* 
+        Construct a list of n_ufrma (message, signature) pairs. To this end,
+        for each pair, randomly sample a message and, subsequently, create
+        (with the previously generated secret key) a corresponding signature by 
+        using the signing algorithm of the considered signature scheme.
+      *)
+      msigl <- [];
+      while (size msigl < n_ufrma) {
+        m <$ dmsg;
+
+        sig <@ S.sign(sk, m);
+
+        msig <- (m, sig);
+        msigl <- rcons msigl msig;
+      }
+
+      (* 
+        Ask the adversary to forge a signature for m' given the public key pk, a list
+        of (message, signature) pairs msigl, and m'
+      *)
+      sig' <@ A.forge(pk, msigl, m');
+      
+      (* 
+        Verify (w.r.t. message m') the signature sig' provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m', sig');
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the set of messages for which 
+        the adversary received signatures)
+      *)
+      is_fresh <- ! m' \in (map fst msigl);
+      
+      (* 
+        Success iff 
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh;
+    }
+  }.
+  end UFRMA.
+
+  (*
+    -
+    Selective Forgery under Random-Message Attack (SF-RMA).
+    After picking a message, the adversary is given the public/verification key, 
+    the signatures for a set of known random messages, and an arbitrary message, and is tasked
+    with forging a signature for the picked message
+    -
+  *)
+  abstract theory SFRMA.
+  (* Number of messages the adversary obtains signatures for in SF-RMA game *)
+  const n_sfrma : { int | 0 <= n_sfrma } as ge0_nsfrma.
+  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
+  op [lossless] dmsg : msg_t distr.
+  
+  (* Class of adversaries against SF-RMA *)
+  module type Adv_SFRMA = {
+    proc pick() : msg_t
+    proc forge(pk : pk_t, msigl : (msg_t * sig_t) list) : sig_t
+  }.
+
+  (* SF-RMA game *)
+  module SF_RMA(S : Scheme, A : Adv_SFRMA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk, sk' : sk_t;
+      var m, m' : msg_t;
+      var sig, sig' : sig_t;
+      var msig : msg_t * sig_t;
+      var msigl : (msg_t * sig_t) list;
+      var is_valid, is_fresh : bool;
+
+      (* Ask the adversary to pick a message to forge a signature for *)
+      m' <@ A.pick();
+
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+
+      (* 
+        Construct a list of n_sfrma (message, signature) pairs. To this end,
+        for each pair, randomly sample a message and, subsequently, create
+        (with the previously generated secret key) a corresponding signature by 
+        using the signing algorithm of the considered signature scheme.
+      *)
+      msigl <- [];
+      while (size msigl < n_sfrma) {
+        m <$ dmsg;
+
+        sig <@ S.sign(sk, m);
+
+        msig <- (m, sig);
+        msigl <- rcons msigl msig;
+      }
+
+      (* 
+        Ask the adversary to forge a signature for m' given the public key pk and 
+        a list of (message, signature) pairs msigl
+      *)
+      sig' <@ A.forge(pk, msigl);
+      
+      (* 
+        Verify (w.r.t. message m') the signature sig' provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m', sig');
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the set of messages for which 
+        the adversary received signatures)
+      *)
+      is_fresh <- ! m' \in (map fst msigl);
+      
+      (* 
+        Success iff 
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh;
+    }
+  }.
+  end SFRMA.
+  
+  (*
+    -
+    Existential Forgery under Random-Message Attack (EF-RMA)
+    Given the public/verification key and the signatures for a set of known random messages,
+    the adversary is tasked with forging a signature for any fresh message
+    -
+  *)
+  abstract theory EFRMA.
+  (* Number of messages the adversary obtains signatures for in EF-RMA game *)
+  const n_efrma : { int | 0 <= n_efrma } as ge0_nefrma.
+  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
+  op [lossless] dmsg : msg_t distr.
+  
+  (* Class of adversaries against EF-RMA *)
+  module type Adv_EFRMA = {
+    proc forge(pk : pk_t, msigl : (msg_t * sig_t) list) : msg_t * sig_t
+  }. 
+
+  (* EF-RMA game *)
+  module EF_RMA(S : Scheme, A : Adv_EFRMA) = {   
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m, m' : msg_t;
+      var sig, sig' : sig_t;
+      var msig : msg_t * sig_t;
+      var msigl : (msg_t * sig_t) list;
+      var is_valid, is_fresh : bool;
+
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+
+      (* 
+        Construct a list of n_efrma (message, signature) pairs. To this end,
+        for each pair, randomly sample a message and, subsequently, create
+        (with the previously generated secret key) a corresponding signature by 
+        using the signing algorithm of the considered signature scheme.
+      *)
+      msigl <- [];
+      while (size msigl < n_efrma) {
+        m <$ dmsg;
+
+        sig <@ S.sign(sk, m);
+
+        msig <- (m, sig);
+        msigl <- rcons msigl msig;
+      }
+
+      (* 
+        Ask the adversary to forge a signature for any message (and provide both the
+        message and signature) given the public key pk and a list of (message, signature) 
+        pairs msigl
+      *)
+      (m', sig') <@ A.forge(pk, msigl);
+      
+      (* 
+        Verify (w.r.t. message m') the signature sig' provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m', sig');
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the set of messages for which 
+        the adversary received signatures)
+      *)
+      is_fresh <- ! m' \in (map fst msigl);
+      
+      (* 
+        Success iff 
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh;
+    }
+  }.
+  end EFRMA.
+
+  (*
+    -- 
+    Generic Chosen-Message Attack (GCMA).
+    Attacks in which the adversary is given the public/verification key as well as
+    the signatures for a set of *chosen* messages. Here, all messages are chosen
+    (1) non-adaptively; that is, before obtaining any of the signatures, and
+    (2) independently of the public key; that is, without knowing the public key
+        at the time of choosing the messages
+    --
+  *)  
+  (* 
+    - 
+    Total Break under Generic Chosen-Message Attack (TB-GCMA). 
+    Given the public/verification key and the signatures for a set of messages chosen
+    non-adaptively and indepedently of the public key, the adversary is tasked with 
+    computing the secret key corresponding to the public/verification key
+    -
+  *)
+  abstract theory TBGCMA.
+  (* Number of messages the adversary obtains signatures for in TB-GCMA game *)
+  const n_tbgcma : { int | 0 <= n_tbgcma } as ge0_ntbgcma.
+  
+  (* Class of adversaries against TB-GCMA *)
+  module type Adv_TBGCMA = {
+    proc choose() : msg_t list
+    proc break(pk : pk_t, sigl : sig_t list) : sk_t 
+  }.
+  
+  (* TB-GCMA game *)
+  module TB_GCMA(S : Scheme, A : Adv_TBGCMA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk, sk' : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var ml : msg_t list;
+      var sigl : sig_t list;
+      
+      (* Ask adversary to choose a list of messages for which to receive signatures *)
+      ml <@ A.choose();
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* 
+        Construct a list sigl of at most n_tbgcma signatures. Here, the i-th signature is
+        a signature for the i-th message in the list ml previously provided by the
+        adversary. Naturally, the signatures are created using the signing algorithm
+        of the considered signature scheme with the previously generated secret key.
+        Note that, in case the adversary provided less than n messages in ml, the
+        resulting list of signatures will have the same size as ml (and, hence, less than n).
+      *)
+      sigl <- [];
+      while (size sigl < min (size ml) n_tbgcma) {
+        m <- nth witness ml (size sigl);
+        
+        sig <@ S.sign(sk, m);
+        
+        sigl <- rcons sigl sig;
+      }
+      
+      (* 
+        Ask adversary to compute the secret key sk given the public key pk and a list
+        of signatures sigl for the messages previously chosen by the adversary
+        (i.e., the messages in list ml) 
+      *) 
+      sk' <@ A.break(pk, sigl);
+      
+      (* Success iff the adversary correctly computed the secret key sk *)
+      return sk' = sk;
+    }
+  }.
+  end TBGCMA.
+  
+  (*
+    - 
+    Universal Forgery under Generic Chosen-Message Attack (UF-GCMA).
+    Given the public/verification key, the signatures for a set of messages chosen
+    non-adaptively and indepedently of the public key, and an arbitrary message, 
+    the adversary is tasked with forging a signature for the given (latter) message
+    -
+  *)
+  abstract theory UFGCMA.
+  (* Number of messages the adversary obtains signatures for in UF-GCMA game *)
+  const n_ufgcma : { int | 0 <= n_ufgcma } as ge0_nufgcma.
+  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
+  op [lossless] dmsg : msg_t distr.
+  
+  (* Class of adversaries against UF-GCMA *)
+  module type Adv_UFGCMA = {
+    proc choose() : msg_t list
+    proc forge(pk : pk_t, sigl : sig_t list, m : msg_t) : sig_t
+  }.
+
+  (* UF-GCMA game *)
+  module UF_GCMA(S : Scheme, A : Adv_UFGCMA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m, m' : msg_t;
+      var sig, sig' : sig_t;
+      var ml : msg_t list;
+      var sigl : sig_t list;
+      var is_valid, is_fresh : bool;
+      
+      (* Sample message for which the adversary must forge a signature *) 
+      m' <$ dmsg;
+      
+      (* Ask adversary to choose a list of messages for which to receive signatures *)
+      ml <@ A.choose();
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* 
+        Construct a list sigl of at most n_ufgcma signatures. Here, the i-th signature is
+        a signature for the i-th message in the list ml previously provided by the
+        adversary. Naturally, the signatures are created using the signing algorithm
+        of the considered signature scheme with the previously generated secret key.
+        Note that, in case the adversary provided less than n messages in ml, the
+        resulting list of signatures will have the same size as ml (and, hence, less than n).
+      *)
+      sigl <- [];
+      while (size sigl < min (size ml) n_ufgcma) {
+        m <- nth witness ml (size sigl);
+        
+        sig <@ S.sign(sk, m);
+        
+        sigl <- rcons sigl sig;
+      }
+      
+      (*
+        Ask the adversary to forge a signature for message m' given the public key pk 
+        and a list of signatures sigl for the messages previously chosen by the adversary
+        (i.e., the messages in list ml) 
+      *)
+      sig' <@ A.forge(pk, sigl, m');
+      
+      (* 
+        Verify (w.r.t. message m') the signature sig' provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m', sig');
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the set of messages for which 
+        the adversary received signatures)
+      *)
+      is_fresh <- ! m' \in (take (size sigl) ml);
+      
+      (* 
+        Success iff
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh;
+    }
+  }.
+  end UFGCMA.
+  
+  (* 
+    - 
+    Selective Forgery under Generic Chosen-Message Attack (SF-GCMA).
+    After picking a message, the adversary is given the public/verification key and
+    the signatures for a set of messages chosen non-adaptively and indepedently 
+    of the public key, and is tasked with forging a signature for the picked message
+    -
+  *)
+  abstract theory SFGCMA.
+  (* Number of messages the adversary obtains signatures for in SF-GCMA game *)
+  const n_sfgcma : { int | 0 <= n_sfgcma } as ge0_nsfgcma.
+  
+  (* Class of adversaries against SF-GCMA *)
+  module type Adv_SFGCMA = {
+    proc pick() : msg_t
+    proc choose() : msg_t list
+    proc forge(pk : pk_t, sigl : sig_t list) : sig_t
+  }.
+
+  (* SF-GCMA game *)
+  module SF_GCMA(S : Scheme, A : Adv_SFGCMA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m, m' : msg_t;
+      var ml : msg_t list;
+      var sigl : sig_t list;
+      var sig, sig': sig_t;
+      var is_valid, is_fresh : bool;
+      
+      (* Ask the adversary to pick a message to forge a signature for *)
+      m' <@ A.pick();
+
+      (* Ask adversary to choose a list of messages for which to receive signatures *)
+      ml <@ A.choose();
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* 
+        Construct a list sigl of at most n_sfgcma signatures. Here, the i-th signature is
+        a signature for the i-th message in the list ml previously provided by the
+        adversary. Naturally, the signatures are created using the signing algorithm
+        of the considered signature scheme with the previously generated secret key.
+        Note that, in case the adversary provided less than n messages in ml, the
+        resulting list of signatures will have the same size as ml (and, hence, less than n).
+      *)
+      sigl <- [];
+      while (size sigl < min (size ml) n_sfgcma) {
+        m <- nth witness ml (size sigl);
+        
+        sig <@ S.sign(sk, m);
+        
+        sigl <- rcons sigl sig;
+      }
+      
+      (*
+        Ask the adversary to forge a signature for the previously picked message m' 
+        given the public key pk and a list of signatures sigl for the messages 
+        previously chosen by the adversary (i.e., the messages in list ml) 
+      *)
+      sig' <@ A.forge(pk, sigl);
+      
+      (* 
+        Verify (w.r.t. message m') the signature sig' provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m', sig');
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the set of messages for which 
+        the adversary received signatures)
+      *)
+      is_fresh <- ! m' \in (take (size sigl) ml);
+      
+      (* 
+        Success iff
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh;   
+    }
+  }.
+  end SFGCMA.
+  
+  (*
+    -
+    Existential Forgery under Generic Chosen-Message Attack (EF-GCMA)
+    Given the public/verification key and the signatures for a set of messages 
+    chosen non-adaptively and indepedently of the public key, the adversary is tasked 
+    with forging a signature for any fresh message
+    -
+  *)
+  abstract theory EFGCMA.
+  (* Number of messages the adversary obtains signatures for in EF-GCMA game *)
+  const n_efgcma : { int | 0 <= n_efgcma } as ge0_nefgcma.
+  
+  (* Class of adversaries against EF-GCMA *)
+  module type Adv_EFGCMA = {
+    proc choose() : msg_t list
+    proc forge(pk : pk_t, sigl : sig_t list) : msg_t * sig_t
+  }.
+  
+  (* EF-GCMA game *)
+  module EF_GCMA(S : Scheme, A : Adv_EFGCMA) = {   
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m, m' : msg_t;
+      var ml : msg_t list;
+      var sigl : sig_t list;
+      var sig, sig': sig_t;
+      var is_valid, is_fresh : bool;   
+    
+      (* Ask adversary to choose a list of messages for which to receive signatures *)
+      ml <@ A.choose();
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* 
+        Construct a list sigl of at most n_efgcma signatures. Here, the i-th signature is
+        a signature for the i-th message in the list ml previously provided by the
+        adversary. Naturally, the signatures are created using the signing algorithm
+        of the considered signature scheme with the previously generated secret key.
+        Note that, in case the adversary provided less than n messages in ml, the
+        resulting list of signatures will have the same size as ml (and, hence, less than n).
+      *)
+      sigl <- [];
+      while (size sigl < min (size ml) n_efgcma) {
+        m <- nth witness ml (size sigl);
+        
+        sig <@ S.sign(sk, m);
+        
+        sigl <- rcons sigl sig;
+      }
+      
+      (*
+        Ask the adversary to forge a signature for any message (and provide both
+        the message and the signature) given the public key pk and a list of 
+        signatures sigl for the messages previously chosen by the adversary 
+        (i.e., the messages in list ml) 
+      *)
+      (m', sig') <@ A.forge(pk, sigl);
+      
+      (* 
+        Verify (w.r.t. message m') the signature sig' provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m', sig');
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the set of messages for which 
+        the adversary received signatures)
+      *)
+      is_fresh <- ! m' \in (take (size sigl) ml);
+      
+      (* 
+        Success iff
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh;   
+    }  
+  }.
+  end EFGCMA.
+  
+  (*
+    -- 
+    Non-Adaptive Chosen-Message Attack (NACMA)/Directed Chosen-Message Attack (DCMA).
+    Attacks in which the adversary is given the public/verification key as well as
+    the signatures for a set of *chosen* messages. Here, all messages are chosen
+    non-adaptively; that is, before obtaining any of the signatures. However, the chosen
+    messages may depend on the public key; i.e., the adversary is given the public key
+    when asked to provide the messages
+    --
+  *) 
+  (* 
+    - 
+    Total Break under Non-Adaptive Chosen-Message Attack (TB-NACMA). 
+    Given the public/verification key and the signatures for a set of non-adaptively
+    chosen messages, the adversary is tasked with computing the secret key 
+    corresponding to the public/verification key
+    -
+  *)
+  abstract theory TBNACMA.
+  (* Number of messages the adversary obtains signatures for in TB-RMA game *)
+  const n_tbnacma : { int | 0 <= n_tbnacma } as ge0_ntbnacma.
+
+  (* Class of adversaries against TB-NACMA *)
+  module type Adv_TBNACMA = {
+    proc choose(pk : pk_t) : msg_t list
+    proc break(sigl : sig_t list) : sk_t 
+  }.
+  
+  (* TB-NACMA game *)
+  module TB_NACMA(S : Scheme, A : Adv_TBNACMA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk, sk' : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var ml : msg_t list;
+      var sigl : sig_t list;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* 
+        Ask adversary to choose a list of messages for which to receive signatures
+        given the public key pk 
+      *)
+      ml <@ A.choose(pk);
+      
+      (* 
+        Construct a list sigl of at most n_tbnacma signatures. Here, the i-th signature is
+        a signature for the i-th message in the list ml previously provided by the
+        adversary. Naturally, the signatures are created using the signing algorithm
+        of the considered signature scheme with the previously generated secret key.
+        Note that, in case the adversary provided less than n messages in ml, the
+        resulting list of signatures will have the same size as ml (and, hence, less than n).
+      *)
+      sigl <- [];
+      while (size sigl < min (size ml) n_tbnacma) {
+        m <- nth witness ml (size sigl);
+        
+        sig <@ S.sign(sk, m);
+        
+        sigl <- rcons sigl sig;
+      }
+      
+      (* 
+        Ask adversary to compute the secret key sk given the public key pk (in the
+        call to A.choose(pk)) and a list of signatures sigl for the messages previously 
+        chosen by the adversary (i.e., the messages in list ml) 
+      *) 
+      sk' <@ A.break(sigl);
+      
+      (* Success iff the adversary correctly computed the secret key sk *)
+      return sk' = sk;
+    }
+  }.
+  end TBNACMA.
+  
+  (*
+    - 
+    Universal Forgery under Non-Adaptive Chosen-Message Attack (UF-NACMA).
+    Given the public/verification key, the signatures for a set of non-adaptively
+    chosen messages, and an arbitrary message, the adversary is tasked with forging 
+    a signature for the given (latter) message
+    -
+  *)
+  abstract theory UFNACMA.
+  (* Number of messages the adversary obtains signatures for in UF-RMA game *)
+  const n_ufnacma : { int | 0 <= n_ufnacma } as ge0_nufnacma.
+  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
+  op [lossless] dmsg : msg_t distr.
+  
+  (* Class of adversaries against UF-NACMA *)
+  module type Adv_UFNACMA = {
+    proc choose(pk : pk_t) : msg_t list
+    proc forge(sigl : sig_t list, m : msg_t) : sig_t
+  }.
+
+  (* UF-NACMA game *)
+  module UF_NACMA(S : Scheme, A : Adv_UFNACMA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m, m' : msg_t;
+      var sig, sig' : sig_t;
+      var ml : msg_t list;
+      var sigl : sig_t list;
+      var is_valid, is_fresh : bool;
+      
+      (* Sample message for which the adversary must forge a signature *) 
+      m' <$ dmsg;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* 
+        Ask adversary to choose a list of messages for which to receive signatures
+        given the public key pk 
+      *)
+      ml <@ A.choose(pk);
+      
+      (* 
+        Construct a list sigl of at most n_ufnacma signatures. Here, the i-th signature is
+        a signature for the i-th message in the list ml previously provided by the
+        adversary. Naturally, the signatures are created using the signing algorithm
+        of the considered signature scheme with the previously generated secret key.
+        Note that, in case the adversary provided less than n messages in ml, the
+        resulting list of signatures will have the same size as ml (and, hence, less than n).
+      *)
+      sigl <- [];
+      while (size sigl < min (size ml) n_ufnacma) {
+        m <- nth witness ml (size sigl);
+        
+        sig <@ S.sign(sk, m);
+        
+        sigl <- rcons sigl sig;
+      }
+      
+      (*
+        Ask the adversary to forge a signature for message m' given the public key pk
+        (in the call to A.choose(pk)) and a list of signatures sigl for the messages 
+        previously chosen by the adversary (i.e., the messages in list ml) 
+      *)
+      sig' <@ A.forge(sigl, m');
+      
+      (* 
+        Verify (w.r.t. message m') the signature sig' provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m', sig');
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the set of messages for which 
+        the adversary received signatures)
+      *)
+      is_fresh <- ! m' \in (take (size sigl) ml);
+      
+      (* 
+        Success iff
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh;
+    }
+  }.
+  end UFNACMA.
+  
+  (* 
+    - 
+    Selective Forgery under Non-Adaptive Chosen-Message Attack (SF-NACMA).
+    After picking a message, the adversary is given the public/verification key and
+    the signatures for a set of non-adaptively chosen messages, and is tasked with 
+    forging a signature for the picked message
+    -
+  *)
+  abstract theory SFNACMA.
+  (* Number of messages the adversary obtains signatures for in SF-RMA game *)
+  const n_sfnacma : { int | 0 <= n_sfnacma } as ge0_nsfnacma.
+  
+  (* Class of adversaries against SF-NACMA *)
+  module type Adv_SFNACMA = {
+    proc pick() : msg_t
+    proc choose(pk : pk_t) : msg_t list
+    proc forge(sigl : sig_t list) : sig_t
+  }.
+
+  (* SF-NACMA game *)
+  module SF_NACMA(S : Scheme, A : Adv_SFNACMA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m, m' : msg_t;
+      var ml : msg_t list;
+      var sigl : sig_t list;
+      var sig, sig': sig_t;
+      var is_valid, is_fresh : bool;
+      
+      (* Ask the adversary to pick a message to forge a signature for *)
+      m' <@ A.pick();
+
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* 
+        Ask adversary to choose a list of messages for which to receive signatures
+        given the public key pk 
+      *)
+      ml <@ A.choose(pk);
+      
+      (* 
+        Construct a list sigl of at most n_sfnacma signatures. Here, the i-th signature is
+        a signature for the i-th message in the list ml previously provided by the
+        adversary. Naturally, the signatures are created using the signing algorithm
+        of the considered signature scheme with the previously generated secret key.
+        Note that, in case the adversary provided less than n messages in ml, the
+        resulting list of signatures will have the same size as ml (and, hence, less than n).
+      *)
+      sigl <- [];
+      while (size sigl < min (size ml) n_sfnacma) {
+        m <- nth witness ml (size sigl);
+        
+        sig <@ S.sign(sk, m);
+        
+        sigl <- rcons sigl sig;
+      }
+      
+      (*
+        Ask the adversary to forge a signature for message m' given the public key pk
+        (in the call to A.choose(pk)) and a list of signatures sigl for the messages 
+        previously chosen by the adversary (i.e., the messages in list ml) 
+      *)
+      sig' <@ A.forge(sigl);
+      
+      (* 
+        Verify (w.r.t. message m') the signature sig' provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m', sig');
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the set of messages for which 
+        the adversary received signatures)
+      *)
+      is_fresh <- ! m' \in (take (size sigl) ml);
+      
+      (* 
+        Success iff
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh;
+    }
+  }.
+  end SFNACMA.
+  
+  (*
+    -
+    Existential Forgery under Non-Adaptive Chosen-Message Attack (EF-NACMA).
+    Given the public/verification key and the signatures for a set of non-adaptively
+    chosen messages the adversary is tasked with forging a signature for any fresh message
+    -
+  *)
+  abstract theory EFNACMA.
+  (* Number of messages the adversary obtains signatures for in EF-RMA game *)
+  const n_efnacma : { int | 0 <= n_efnacma } as ge0_nefnacma.
+  
+  (* Class of adversaries against EF-NACMA *)
+  module type Adv_EFNACMA = {
+    proc choose(pk : pk_t) : msg_t list
+    proc forge(sigl : sig_t list) : msg_t * sig_t
+  }.
+  
+  (* EF-NACMA game *)
+  module EF_NACMA(S : Scheme, A : Adv_EFNACMA) = {   
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m, m' : msg_t;
+      var ml : msg_t list;
+      var sigl : sig_t list;
+      var sig, sig': sig_t;
+      var is_valid, is_fresh : bool;   
+
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* 
+        Ask adversary to choose a list of messages for which to receive signatures
+        given the public key pk 
+      *)
+      ml <@ A.choose(pk);
+      
+      (* 
+        Construct a list sigl of at most n_efnacma signatures. Here, the i-th signature is
+        a signature for the i-th message in the list ml previously provided by the
+        adversary. Naturally, the signatures are created using the signing algorithm
+        of the considered signature scheme with the previously generated secret key.
+        Note that, in case the adversary provided less than n messages in ml, the
+        resulting list of signatures will have the same size as ml (and, hence, less than n).
+      *)
+      sigl <- [];
+      while (size sigl < min (size ml) n_efnacma) {
+        m <- nth witness ml (size sigl);
+        
+        sig <@ S.sign(sk, m);
+        
+        sigl <- rcons sigl sig;
+      }
+      
+      (*
+        Ask the adversary to forge a signature for the any message (and provide both
+        the message and the signature) given the public key pk (in the call to A.choose(pk))
+        and a list of signatures sigl for the messages previously chosen by the adversary 
+        (i.e., the messages in list ml) 
+      *)
+      (m', sig') <@ A.forge(sigl);
+      
+      (* 
+        Verify (w.r.t. message m') the signature sig' provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m', sig');
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the set of messages for which 
+        the adversary received signatures)
+      *)
+      is_fresh <- ! m' \in (take (size sigl) ml);
+      
+      (* 
+        Success iff
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh; 
+    }  
+  }.  
+  end EFNACMA.
+  
+  (*
+    -- 
+    (Adaptive) Chosen-Message Attack (CMA).
+    Attacks in which the adversary is given the public/verification key as well as
+    the signatures for a set of *chosen* messages. Here, all messages are chosen
+    adaptively and may depend on the public key; that is, the adversary 
+    (1) immediately receives a signature for a chosen message before choosing the 
+        subsequent message, and
+    (2) is given the public key when asked to provide the messages.
+    --
+  *)
+  (* - General - *)
+  (* 
+    Type for signing oracles used in (adaptive) CMA game, including procedures 
+    for initialization and auxiliary tasks 
+  *)
+  module type Oracle_CMA(S : Scheme) = {
+    proc init(sk_init : sk_t) : unit {}
+    proc sign(m : msg_t) : sig_t {S.sign}
+    proc fresh(m : msg_t) : bool {}
+    proc nr_queries() : int {}
+  }.
+
+  (* 
+    Type for signing oracles used in (adaptive) CMA games, only exposing the 
+    procedure for signing 
+  *)
+  module type SOracle_CMA = {
+    proc sign(m : msg_t) : sig_t
+  }.
+  
+  (* 
+    Default implementation of a signing oracle including procedures for 
+    initialization and auxiliary tasks 
+  *)
+  module (O_CMA_Default : Oracle_CMA) (S : Scheme) = {
+    var sk : sk_t
+    var qs : msg_t list
+    
+    (* Initialize secret/signing key and oracle query list qs *)
+    proc init(sk_init : sk_t) : unit = {
+      sk <- sk_init;
+      qs <- [];
+    }
+
+    (* 
+      Sign given message m using the considered signature scheme with the
+      secret/signing key sk and append m to the list of oracle queries qs
+    *)
+    proc sign(m : msg_t) : sig_t = {
+      var sig : sig_t;
+      
+      sig <@ S.sign(sk, m);
+
+      qs <- rcons qs m;
+            
+      return sig;
+    }
+
+    (* 
+      Check whether given message m is fresh, i.e., whether m is not contained in
+      the list of oracle queries qs 
+    *)
+    proc fresh(m : msg_t) : bool = {
+      return ! m \in qs;
+    }
+    
+    (* Get the number of oracle queries, i.e., the size of the oracle query list qs *)
+    proc nr_queries() : int = {
+      return size qs;
+    }
+  }.
+
+  
+  (* 
+    - 
+    Total Break under (Adaptive) Chosen-Message Attack (TB-CMA). 
+    Given the public/verification key and the signatures for a set of adaptively
+    chosen messages, the adversary is tasked with computing the secret key 
+    corresponding to the public/verification key
+    -
+  *)
+  abstract theory TBCMA.
+  (* Maximum number of oracle queries the adversary is allowed to make in TB-CMA game *)
+  const q_tbcma : { int | 0 <= q_tbcma } as ge0_qtbcma.
+ 
+  (* Class of adversaries against TB-CMA *)
+  module type Adv_TBCMA(O : SOracle_CMA) = {
+    proc break(pk : pk_t) : sk_t
+  }.
+
+  (* TB-CMA game *)
+  module TB_CMA(S : Scheme, A : Adv_TBCMA, O : Oracle_CMA) = {
+    (* Provide the signing oracle access to the considered scheme *)
+    module O = O(S)
+    
+    (* Provide the adversary access to the (sign procedure of) the signing oracle *)
+    module A = A(O)
+
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk, sk' : sk_t;
+      var nrqs : int;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* Initialize the signing oracle with the generated secret key *)
+      O.init(sk);
+
+      (* 
+        Ask adversary to compute the secret key sk given the public key pk and
+        access to a signing oracle that it can query at most q_tbcma times
+      *) 
+      sk' <@ A.break(pk);
+      
+      (* Get the total number of oracle queries that the adversary made *) 
+      nrqs <@ O.nr_queries();
+      
+      (* 
+        Success iff
+        (1) "nrqs <= q_tbcma": the adversary made at most q_tbcma oracle queries, and
+        (2) "sk' = sk": the adversary correctly computed the secret key sk.
+      *)
+      return nrqs <= q_tbcma /\ sk' = sk; 
+    }
+  }.
+
+  (* TB-CMA game with Unlimited oracle queries *)
+  module TB_CMA_U(S : Scheme, A : Adv_TBCMA, O : Oracle_CMA) = {
+    (* Provide the signing oracle access to the considered scheme *)
+    module O = O(S)
+    
+    (* Provide the adversary access to the (sign procedure of) the signing oracle *)
+    module A = A(O)
+
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk, sk' : sk_t;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* Initialize the signing oracle with the generated secret key *)
+      O.init(sk);
+
+      (* 
+        Ask adversary to compute the secret key sk given the public key pk and
+        access to a signing oracle that it can query an unlimited number of times
+      *) 
+      sk' <@ A.break(pk);
+      
+      (* Success iff the adversary correctly computed the secret key sk. *)
+      return sk' = sk; 
+    }
+  }.
+  end TBCMA.
+  
+  (*
+    - 
+    Universal Forgery under (Adaptive) Chosen-Message Attack (UF-CMA)
+    Given the public/verification key, the signatures for a set of adaptively
+    chosen messages, and an arbitrary message, the adversary is tasked with forging 
+    a signature for the given (latter) message
+    -
+  *)
+  abstract theory UFCMA.
+  (* Maximum number of oracle queries the adversary is allowed to make in UF-CMA game *)
+  const q_ufcma : { int | 0 <= q_ufcma } as ge0_qufcma.
+  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
+  op [lossless] dmsg : msg_t distr.
+  
+  (* Class of adversaries against UF-CMA *)
+  module type Adv_UFCMA(O : SOracle_CMA) = {
+    proc forge(pk : pk_t, m : msg_t) : sig_t
+  }.
+
+  (* UF-CMA game *)
+  module UF_CMA(S : Scheme, A : Adv_UFCMA, O : Oracle_CMA) = {
+    (* Provide the signing oracle access to the considered scheme *)
+    module O = O(S)
+    
+    (* Provide the adversary access to the (sign procedure of) the signing oracle *)
+    module A = A(O)
+
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var nrqs : int;
+      var is_valid, is_fresh : bool;
+      
+      (* Sample message for which the adversary must forge a signature *) 
+      m <$ dmsg;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* Initialize the signing oracle with the generated secret key *)
+      O.init(sk);
+
+      (*
+        Ask the adversary to forge a signature for message m given the public key pk 
+        and and access to a signing oracle that it can query at most q_ufcma times
+      *)
+      sig <@ A.forge(pk, m);
+
+      (* 
+        Verify (w.r.t. message m) the signature sig provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m, sig);
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the list of messages for which 
+        the adversary received signatures through an oracle query)
+      *)
+      is_fresh <@ O.fresh(m);
+      
+      (* Get the total number of oracle queries that the adversary made *) 
+      nrqs <@ O.nr_queries();
+          
+      (* 
+        Success iff
+        (1) "nrqs <= q_ufcma": the adversary made at most q_ufcma oracle queries, and
+        (2) "is_valid": the forged signature provided by the adversary is valid, and
+        (3) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return nrqs <= q_ufcma /\ is_valid /\ is_fresh; 
+    }
+  }.
+
+  (* UF-CMA game with Unlimited oracle queries *)
+  module UF_CMA_U(S : Scheme, A : Adv_UFCMA, O : Oracle_CMA) = {
+    (* Provide the signing oracle access to the considered scheme *)
+    module O = O(S)
+    
+    (* Provide the adversary access to the (sign procedure of) the signing oracle *)
+    module A = A(O)
+
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var is_valid, is_fresh : bool;
+      
+      (* Sample message for which the adversary must forge a signature *) 
+      m <$ dmsg;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* Initialize the signing oracle with the generated secret key *)
+      O.init(sk);
+
+      (*
+        Ask the adversary to forge a signature for message m given the public key pk 
+        and and access to a signing oracle that it can query an unlimited number of times
+      *)
+      sig <@ A.forge(pk, m);
+
+      (* 
+        Verify (w.r.t. message m) the signature sig provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m, sig);
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the list of messages for which 
+        the adversary received signatures through an oracle query)
+      *)
+      is_fresh <@ O.fresh(m);
+     
+      (* 
+        Success iff
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh; 
+    }
+  }.
+  end UFCMA.
+  
+  (*
+    -
+    Selective Forgery under Chosen-Message Attack (SF-CMA).
+    After picking a message, the adversary is given the public/verification key 
+    and the signatures for a set of adaptively chosen messages, and is tasked with 
+    forging a signature for the picked message
+    -
+  *)
+  abstract theory SFCMA.
+  (* Maximum number of oracle queries the adversary is allowed to make in SF-CMA game *)
+  const q_sfcma : { int | 0 <= q_sfcma } as ge0_qsfcma.
+
+  (* Class of adversaries against SF-CMA *)
+  module type Adv_SFCMA(O : SOracle_CMA) = {
+    proc pick() : msg_t
+    proc forge(pk : pk_t) : sig_t
+  }.
+
+  (* SF-CMA game *)
+  module SF_CMA(S : Scheme, A : Adv_SFCMA, O : Oracle_CMA) = {
+    (* Provide the signing oracle access to the considered scheme *)
+    module O = O(S)
+    
+    (* Provide the adversary access to the (sign procedure of) the signing oracle *)
+    module A = A(O)
+
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var nrqs : int;
+      var is_valid, is_fresh : bool;
+      
+      (* Ask the adversary to pick a message to forge a signature for *) 
+      m <@ A.pick();
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* Initialize the signing oracle with the generated secret key *)
+      O.init(sk);
+
+      (*
+        Ask the adversary to forge a signature for message m given the public key pk 
+        and and access to a signing oracle that it can query at most q_ufcma times
+      *)
+      sig <@ A.forge(pk);
+
+      (* 
+        Verify (w.r.t. message m) the signature sig provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m, sig);
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the list of messages for which 
+        the adversary received signatures through an oracle query)
+      *)
+      is_fresh <@ O.fresh(m);
+      
+      (* Get the total number of oracle queries that the adversary made *) 
+      nrqs <@ O.nr_queries();
+          
+      (* 
+        Success iff
+        (1) "nrqs <= q_sfcma": the adversary made at most q_sfcma oracle queries, and
+        (2) "is_valid": the forged signature provided by the adversary is valid, and
+        (3) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return nrqs <= q_sfcma /\ is_valid /\ is_fresh; 
+    }
+  }.
+
+  (* SF-CMA game with Unlimited oracle queries *)
+  module SF_CMA_U(S : Scheme, A : Adv_SFCMA, O : Oracle_CMA) = {
+    (* Provide the signing oracle access to the considered scheme *)
+    module O = O(S)
+    
+    (* Provide the adversary access to the (sign procedure of) the signing oracle *)
+    module A = A(O)
+
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var is_valid, is_fresh : bool;
+      
+      (* Ask the adversary to pick a message to forge a signature for *) 
+      m <@ A.pick();
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* Initialize the signing oracle with the generated secret key *)
+      O.init(sk);
+
+      (*
+        Ask the adversary to forge a signature for message m given the public key pk 
+        and and access to a signing oracle that it can query an unlimited number of times
+      *)
+      sig <@ A.forge(pk);
+
+      (* 
+        Verify (w.r.t. message m) the signature sig provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m, sig);
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the list of messages for which 
+        the adversary received signatures through an oracle query)
+      *)
+      is_fresh <@ O.fresh(m);
+     
+      (* 
+        Success iff
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh; 
+    }
+  }.
+  end SFCMA.
+
+  (*
+    -
+    Existential Forgery under Chosen-Message Attack (EF-CMA)
+    Given the public/verification key and the signatures for a set of adaptively 
+    chosen messages, the adversary is tasked with forging a signature for any fresh message
+    -
+  *)
+  abstract theory EFCMA.
+  (* Maximum number of oracle queries the adversary is allowed to make in EF-CMA game *)
+  const q_efcma : { int | 0 <= q_efcma } as ge0_qefcma.
+  
+  (* Class of adversaries against EF-CMA *)
+  module type Adv_EFCMA(O : SOracle_CMA) = {
+    proc forge(pk : pk_t) : msg_t * sig_t
+  }.
+
+  (* EF-CMA game *)
+  module EF_CMA(S : Scheme, A : Adv_EFCMA, O : Oracle_CMA) = {
+
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var nrqs : int;
+      var is_valid, is_fresh : bool;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* Initialize the signing oracle with the generated secret key *)
+      O(S).init(sk);
+
+      (*
+        Ask the adversary to forge a signature for any message (and provide both the
+        message and the signature) given the public key pk and access to a signing oracle 
+        that it can query at most q_efcma times
+      *)
+      (m, sig) <@  A(O(S)).forge(pk);
+
+      (* 
+        Verify (w.r.t. message m) the signature sig provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m, sig);
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the list of messages for which 
+        the adversary received signatures through an oracle query)
+      *)
+      is_fresh <@ O(S).fresh(m);
+      
+      (* Get the total number of oracle queries that the adversary made *) 
+      nrqs <@ O(S).nr_queries();
+          
+      (* 
+        Success iff
+        (1) "nrqs <= q_efcma": the adversary made at most q_efcma oracle queries, and
+        (2) "is_valid": the forged signature provided by the adversary is valid, and
+        (3) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return nrqs <= q_efcma /\ is_valid /\ is_fresh; 
+    }
+  }.
+
+  (* EF-CMA game with Unlimited oracle queries *)
+  module EF_CMA_U(S : Scheme, A : Adv_EFCMA, O : Oracle_CMA) = {
+    (* Provide the signing oracle access to the considered scheme *)
+    module O = O(S)
+    
+    (* Provide the adversary access to the (sign procedure of) the signing oracle *)
+    module A = A(O)
+
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var is_valid, is_fresh : bool;
+            
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* Initialize the signing oracle with the generated secret key *)
+      O.init(sk);
+
+      (*
+        Ask the adversary to forge a signature for any message (and provide both the
+        message and the signature) given the public key pk and access to a signing oracle 
+        that it can query an unlimited number of times
+      *)
+      (m, sig) <@ A.forge(pk);
+
+      (* 
+        Verify (w.r.t. message m) the signature sig provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m, sig);
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the list of messages for which 
+        the adversary received signatures through an oracle query)
+      *)
+      is_fresh <@ O.fresh(m);
+     
+      (* 
+        Success iff
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh; 
+    }
+  }.
+  end EFCMA.
+
+  (*
+    - 
+    Strong Existential Forgery under Chosen-Message Attack (SEF-CMA).
+    Given the public/verification key and the signatures for a set of adaptively 
+    chosen messages, the adversary is tasked with forging a fresh signature for any message
+    -
+  *)
+  abstract theory SEFCMA.
+  (* Maximum number of oracle queries the adversary is allowed to make in SEF-CMA game *)
+  const q_sefcma : { int | 0 <= q_sefcma } as ge0_qsefcma.
+  
+  (* 
+    Type for signing oracles used in the SEF-CMA game, including procedures 
+    for initialization and auxiliary tasks 
+  *)
+  module type Oracle_SEFCMA(S : Scheme) = {
+    proc init(sk_init : sk_t) : unit {}
+    proc sign(m : msg_t) : sig_t {S.sign}
+    proc fresh(msig : msg_t * sig_t) : bool {}
+    proc nr_queries() : int {}
+  }.
+
+  (* 
+    Type for signing oracles used in the SEF-CMA game, only exposing the 
+    procedure for signing 
+  *)
+  module type SOracle_SEFCMA = {
+    proc sign(m : msg_t) : sig_t
+  }.
+  
+  (* 
+    Default implementation of a signing oracle including procedures for 
+    initialization and auxiliary tasks 
+  *)
+  module (O_SEFCMA_Default : Oracle_SEFCMA) (S : Scheme) = {
+    var sk : sk_t
+    var qs : (msg_t * sig_t) list
+    
+    (* Initialize secret/signing key and oracle query list qs *)
+    proc init(sk_init : sk_t) : unit = {
+      sk <- sk_init;
+      qs <- [];
+    }
+
+    (* 
+      Sign given message m using the considered signature scheme with the
+      secret/signing key sk and append m to the list of oracle queries qs
+    *)
+    proc sign(m : msg_t) : sig_t = {
+      var sig : sig_t;
+      var msig : msg_t * sig_t;
+      
+      sig <@ S.sign(sk, m);
+
+      msig <- (m, sig);
+      qs <- rcons qs msig;
+            
+      return sig;
+    }
+
+    (* 
+      Check whether given (message, signature) pair msig is fresh, i.e., whether this pair
+      is not contained in the list of oracle queries qs 
+    *)
+    proc fresh(msig : msg_t * sig_t) : bool = {
+      return ! msig \in qs;
+    }
+    
+    (* Get the number of oracle queries, i.e., the size of the oracle query list qs *)
+    proc nr_queries() : int = {
+      return size qs;
+    }
+  }.
+
+  (* Class of adversaries against SEF-CMA *)
+  module type Adv_SEFCMA(O : SOracle_SEFCMA) = {
+    proc forge(pk : pk_t) : msg_t * sig_t
+  }.
+
+  (* SEF-CMA game *)
+  module SEF_CMA(S : Scheme, A : Adv_SEFCMA, O : Oracle_SEFCMA) = {
+    (* Provide the signing oracle access to the considered scheme *)
+    module O = O(S)
+    
+    (* Provide the adversary access to the (sign procedure of) the signing oracle *)
+    module A = A(O)
+
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var nrqs : int;
+      var is_valid, is_fresh : bool;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* Initialize the signing oracle with the generated secret key *)
+      O.init(sk);
+
+      (*
+        Ask the adversary to forge a signature for any message (and provide both the
+        message and the signature) given the public key pk and access to a signing oracle 
+        that it can query at most q_sefcma times
+      *)
+      (m, sig) <@ A.forge(pk);
+
+      (* 
+        Verify (w.r.t. message m) the signature sig provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m, sig);
+      
+      (* 
+        Check whether (message, signature) pair (m, sig) returned by the adversary is fresh
+        (i.e., check whether this pair is not included in the list of (message, signature)
+        pairs of the signing oracle)
+      *)
+      is_fresh <@ O.fresh((m, sig));
+      
+      (* Get the total number of oracle queries that the adversary made *) 
+      nrqs <@ O.nr_queries();
+          
+      (* 
+        Success iff
+        (1) "nrqs <= q_sefcma": the adversary made at most q_sefcma oracle queries, and
+        (2) "is_valid": the forged signature provided by the adversary is valid, and
+        (3) "is_fresh": the (message, signature) pair provided by the adversary is fresh.
+      *)
+      return nrqs <= q_sefcma /\ is_valid /\ is_fresh; 
+    }
+  }.
+
+  (* SEF-CMA game with Unlimited oracle queries *)
+  module SEF_CMA_U(S : Scheme, A : Adv_SEFCMA, O : Oracle_SEFCMA) = {
+    (* Provide the signing oracle access to the considered scheme *)
+    module O = O(S)
+    
+    (* Provide the adversary access to the (sign procedure of) the signing oracle *)
+    module A = A(O)
+
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var is_valid, is_fresh : bool;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* Initialize the signing oracle with the generated secret key *)
+      O.init(sk);
+
+      (*
+        Ask the adversary to forge a signature for any message (and provide both the
+        message and the signature) given the public key pk and access to a signing oracle 
+        that it can query an unlimited number of times
+      *)
+      (m, sig) <@ A.forge(pk);
+
+      (* 
+        Verify (w.r.t. message m) the signature sig provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m, sig);
+      
+      (* 
+        Check whether (message, signature) pair (m, sig) returned by the adversary is fresh
+        (i.e., check whether this pair is not included in the list of (message, signature)
+        pairs of the signing oracle)
+      *)
+      is_fresh <@ O.fresh((m, sig));
+     
+      (* 
+        Success iff
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the (message, signature) pair provided by the adversary is fresh.
+      *)
+      return is_valid /\ is_fresh; 
+    }
+  }.
+  end SEFCMA.
+
+end Stateless.
+
+
+
+(* --- Key-Updating (Stateful) Signature Schemes --- *)
+theory KeyUpdating.
+  (* -- General -- *)
+  (* Module type for key-updating signature schemes *)
+  module type Scheme = {
+    proc keygen() : pk_t * sk_t
+    proc sign(sk : sk_t, m : msg_t) : sig_t * sk_t
+    proc verify(pk : pk_t, m : msg_t, sig : sig_t) : bool
+  }.
+
+  (* -- Correctness -- *)
+
+  
+  (* 
+    -- 
+    Key-Only Attack (KOA).
+    Attacks in which the adversary is only given the public/verification key
+    -- 
+  *)
+  (* 
+    - 
+    Total Break under Key-Only Attack (TB-KOA). 
+    Given the public/verification key, the adversary is tasked with computing the
+    corresponding secret key
+    -
+  *)
+  (* Class of adversaries against TB-KOA *)
+  module type Adv_TBKOA = {
+    proc break(pk : pk_t) : sk_t 
+  }.
+  
+  (* TB-KOA game *)
+  module TB_KOA(S : Scheme, A : Adv_TBKOA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk, sk' : sk_t;
+      var sig : sig_t;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* Ask adversary to compute the secret key sk given the public key pk *) 
+      sk' <@ A.break(pk);
+      
+      (* Success iff the adversary correctly computed the secret key *)
+      return sk' = sk;
+    }
+  }.
+  
+  
+  (* 
+    - 
+    Universal Forgery under Key-Only Attack (UF-KOA).
+    Given the public/verification key and an arbitrary message, the adversary is tasked 
+    with forging a signature for the given message
+    - 
+  *)
+  abstract theory UFKOA.
+  (* Class of adversaries against UF-KOA *)
+  
+  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
+  op [lossless] dmsg : msg_t distr.
+
+  module type Adv_UFKOA = {
+    proc forge(pk : pk_t, m : msg_t) : sig_t
+  }.
+  
+  (* UF-KOA game *)
+  module UF_KOA(S : Scheme, A : Adv_UFKOA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var is_valid : bool;
+      
+      (* Sample message for which the adversary must produce a forgery *)
+      m <$ dmsg;
+
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+  
+      (* Ask the adversary to forge a signature for m given the public key pk (and m) *)
+      sig <@ A.forge(pk, m);
+      
+      (* 
+        Verify (w.r.t. message m) the signature sig provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m, sig);
+
+      (* Success iff the signature provided by the adversary is valid *)
+      return is_valid;
+    }
+  }.
+  end UFKOA.
+  
+  (*
+    - 
+    Selective Forgery under Key-Only Attack (SF-KOA).
+    After picking a message, the adversary is given the public/verification key and tasked
+    with forging a signature for the picked message
+    -
+  *)
+  (* Class of adversaries against SF-KOA *)
+  module type Adv_SFKOA = {
+    proc pick() : msg_t
+    proc forge(pk : pk_t) : sig_t 
+  }.
+
+  (* SF-KOA game *)
+  module SF_KOA(S : Scheme, A : Adv_SFKOA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var is_valid : bool;
+
+      (* Ask the adversary to pick a message to forge a signature for *)
+      m <@ A.pick();
+
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+
+      (* 
+        Ask the adversary to forge a signature for the previously picked message m
+        given the public key pk
+      *)
+      sig <@ A.forge(pk);
+
+      (* 
+        Verify (w.r.t. message m) the signature sig provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m, sig);
+
+      (* Success iff the signature provided by the adversary is valid *)
+      return is_valid;
+    }
+  }.
+
+  
+  (*
+    -
+    Existential Forgery under Key-Only Attack (EF-KOA).
+    Given the public/verification key, the adversary is tasked with forging a signature
+    for any fresh message
+    -
+  *)
+  (* Class of adversaries against EF-KOA *)
+  module type Adv_EFKOA = {
+    proc forge(pk : pk_t) : msg_t * sig_t 
+  }.
+
+  (* EF-KOA game *)
+  module EF_KOA(S : Scheme, A : Adv_EFKOA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var is_valid: bool;
+
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+
+      (* 
+        Ask adversary to forge a signature on any message (and provide both the
+        message and the signature) given the public key pk 
+      *)
+      (m, sig) <@ A.forge(pk);
+
+      (* 
+        Verify (w.r.t. message m) the signature sig provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m, sig);
+
+      (* Success iff the signature provided by the adversary is valid *)
+      return is_valid;
+    }
+  }.
+
+
+  (* 
+    -- 
+    Random-Message Attack (RMA).
+    Attacks in which the adversary is given the public/verification key as well as 
+    the signatures for a set of random messages *known* to it, but not *chosen* by it
+    -- 
+  *)  
+  (* 
+    - 
+    Total Break under Random-Message Attack (TB-RMA). 
+    Given the public/verification key and the signatures for a set of known random messages, 
+    the adversary is tasked with computing the secret key corresponding to the 
+    public/verification key
+    -
+  *)
+  abstract theory TBRMA.
+  (* Number of messages the adversary obtains signatures for in TB-RMA game *)
+  const n_tbrma : { int | 0 <= n_tbrma } as ge0_ntbrma.
+  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
+  op [lossless] dmsg : msg_t distr.
+  
+  (* Class of adversaries against TB-RMA *)
+  module type Adv_TBRMA = {
+    proc break(pk : pk_t, msigl : (msg_t * sig_t) list) : sk_t 
+  }.
+  
+  (* TB-RMA game *)
+  module TB_RMA(S : Scheme, A : Adv_TBRMA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk, sk' : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var msig : msg_t * sig_t;
+      var msigl : (msg_t * sig_t) list;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* 
+        Construct a list of n_tbrma (message, signature) pairs. To this end,
+        for each pair, randomly sample a message and, subsequently, create
+        (with the previously generated secret key) a corresponding signature by 
+        using the signing algorithm of the considered signature scheme.
+      *)
+      msigl <- [];
+      while (size msigl < n_tbrma) {
+        m <$ dmsg;
+        
+        (sig, sk) <@ S.sign(sk, m);
+        
+        msig <- (m, sig);
+        msigl <- rcons msigl msig;
+      }
+      
+      (* 
+        Ask adversary to compute the secret key sk given the public key pk and list
+        of (message, signature) pairs msigl
+      *) 
+      sk' <@ A.break(pk, msigl);
+      
+      (* Success iff the adversary correctly computed the secret key sk *)
+      return sk' = sk;
+    }
+  }.
+  end TBRMA.
+  
+  (* 
+    - 
+    Universal Forgery under Random-Message Attack (UF-RMA).
+    Given the public/verification key, the signatures for a set of known random messages, 
+    and an arbitrary message, the adversary is tasked with forging a signature for 
+    the given (latter) message
+    -
+  *)
+  abstract theory UFRMA.
+  (* Number of messages the adversary obtains signatures for in UF-RMA game *)
+  const n_ufrma : { int | 0 <= n_ufrma } as ge0_nufrma.
+  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
+  op [lossless] dmsg : msg_t distr.
+  
+  (* Class of adversaries against UF-RMA *)
+  module type Adv_UFRMA = {
+    proc forge(pk : pk_t, msigl : (msg_t * sig_t) list, m : msg_t) : sig_t
+  }.
+  
+  (* UF-RMA game *)
+  module UF_RMA(S : Scheme, A : Adv_UFRMA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk, sk' : sk_t;
+      var m, m' : msg_t;
+      var sig, sig' : sig_t;
+      var msig : msg_t * sig_t;
+      var msigl : (msg_t * sig_t) list;
+      var is_valid, is_fresh : bool;
+      
+      (* Sample message for which the adversary must produce a forgery *)
+      m' <$ dmsg;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+
+      (* 
+        Construct a list of n_ufrma (message, signature) pairs. To this end,
+        for each pair, randomly sample a message and, subsequently, create
+        (with the previously generated secret key) a corresponding signature by 
+        using the signing algorithm of the considered signature scheme.
+      *)
+      msigl <- [];
+      while (size msigl < n_ufrma) {
+        m <$ dmsg;
+
+        (sig, sk) <@ S.sign(sk, m);
+
+        msig <- (m, sig);
+        msigl <- rcons msigl msig;
+      }
+
+      (* 
+        Ask the adversary to forge a signature for m' given the public key pk, a list
+        of (message, signature) pairs msigl, and m'
+      *)
+      sig' <@ A.forge(pk, msigl, m');
+      
+      (* 
+        Verify (w.r.t. message m') the signature sig' provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m', sig');
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the set of messages for which 
+        the adversary received signatures)
+      *)
+      is_fresh <- ! m' \in (map fst msigl);
+      
+      (* 
+        Success iff 
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh;
+    }
+  }.
+  end UFRMA.
+
+  (*
+    -
+    Selective Forgery under Random-Message Attack (SF-RMA).
+    After picking a message, the adversary is given the public/verification key, 
+    the signatures for a set of known random messages, and an arbitrary message, and is tasked
+    with forging a signature for the picked message
+    -
+  *)
+  abstract theory SFRMA.
+  (* Number of messages the adversary obtains signatures for in SF-RMA game *)
+  const n_sfrma : { int | 0 <= n_sfrma } as ge0_nsfrma.
+  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
+  op [lossless] dmsg : msg_t distr.
+  
+  (* Class of adversaries against SF-RMA *)
+  module type Adv_SFRMA = {
+    proc pick() : msg_t
+    proc forge(pk : pk_t, msigl : (msg_t * sig_t) list) : sig_t
+  }.
+
+  (* SF-RMA game *)
+  module SF_RMA(S : Scheme, A : Adv_SFRMA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk, sk' : sk_t;
+      var m, m' : msg_t;
+      var sig, sig' : sig_t;
+      var msig : msg_t * sig_t;
+      var msigl : (msg_t * sig_t) list;
+      var is_valid, is_fresh : bool;
+
+      (* Ask the adversary to pick a message to forge a signature for *)
+      m' <@ A.pick();
+
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+
+      (* 
+        Construct a list of n_sfrma (message, signature) pairs. To this end,
+        for each pair, randomly sample a message and, subsequently, create
+        (with the previously generated secret key) a corresponding signature by 
+        using the signing algorithm of the considered signature scheme.
+      *)
+      msigl <- [];
+      while (size msigl < n_sfrma) {
+        m <$ dmsg;
+
+        (sig, sk) <@ S.sign(sk, m);
+
+        msig <- (m, sig);
+        msigl <- rcons msigl msig;
+      }
+
+      (* 
+        Ask the adversary to forge a signature for m' given the public key pk and 
+        a list of (message, signature) pairs msigl
+      *)
+      sig' <@ A.forge(pk, msigl);
+      
+      (* 
+        Verify (w.r.t. message m') the signature sig' provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m', sig');
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the set of messages for which 
+        the adversary received signatures)
+      *)
+      is_fresh <- ! m' \in (map fst msigl);
+      
+      (* 
+        Success iff 
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh;
+    }
+  }.
+  end SFRMA.
+  
+  (*
+    -
+    Existential Forgery under Random-Message Attack (EF-RMA)
+    Given the public/verification key and the signatures for a set of known random messages,
+    the adversary is tasked with forging a signature for any fresh message
+    -
+  *)
+  abstract theory EFRMA.
+  (* Number of messages the adversary obtains signatures for in EF-RMA game *)
+  const n_efrma : { int | 0 <= n_efrma } as ge0_nefrma.
+  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
+  op [lossless] dmsg : msg_t distr.
+  
+  (* Class of adversaries against EF-RMA *)
+  module type Adv_EFRMA = {
+    proc forge(pk : pk_t, msigl : (msg_t * sig_t) list) : msg_t * sig_t
+  }. 
+
+  (* EF-RMA game *)
+  module EF_RMA(S : Scheme, A : Adv_EFRMA) = {   
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m, m' : msg_t;
+      var sig, sig' : sig_t;
+      var msig : msg_t * sig_t;
+      var msigl : (msg_t * sig_t) list;
+      var is_valid, is_fresh : bool;
+
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+
+      (* 
+        Construct a list of n_efrma (message, signature) pairs. To this end,
+        for each pair, randomly sample a message and, subsequently, create
+        (with the previously generated secret key) a corresponding signature by 
+        using the signing algorithm of the considered signature scheme.
+      *)
+      msigl <- [];
+      while (size msigl < n_efrma) {
+        m <$ dmsg;
+
+        (sig, sk) <@ S.sign(sk, m);
+
+        msig <- (m, sig);
+        msigl <- rcons msigl msig;
+      }
+
+      (* 
+        Ask the adversary to forge a signature for any message (and provide both the
+        message and signature) given the public key pk and a list of (message, signature) 
+        pairs msigl
+      *)
+      (m', sig') <@ A.forge(pk, msigl);
+      
+      (* 
+        Verify (w.r.t. message m') the signature sig' provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m', sig');
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the set of messages for which 
+        the adversary received signatures)
+      *)
+      is_fresh <- ! m' \in (map fst msigl);
+      
+      (* 
+        Success iff 
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh;
+    }
+  }.
+  end EFRMA.
+
+  (*
+    -- 
+    Generic Chosen-Message Attack (GCMA).
+    Attacks in which the adversary is given the public/verification key as well as
+    the signatures for a set of *chosen* messages. Here, all messages are chosen
+    (1) non-adaptively; that is, before obtaining any of the signatures, and
+    (2) independently of the public key; that is, without knowing the public key
+        at the time of choosing the messages
+    --
+  *)  
+  (* 
+    - 
+    Total Break under Generic Chosen-Message Attack (TB-GCMA). 
+    Given the public/verification key and the signatures for a set of messages chosen
+    non-adaptively and indepedently of the public key, the adversary is tasked with 
+    computing the secret key corresponding to the public/verification key
+    -
+  *)
+  abstract theory TBGCMA.
+  (* Number of messages the adversary obtains signatures for in TB-GCMA game *)
+  const n_tbgcma : { int | 0 <= n_tbgcma } as ge0_ntbgcma.
+  
+  (* Class of adversaries against TB-GCMA *)
+  module type Adv_TBGCMA = {
+    proc choose() : msg_t list
+    proc break(pk : pk_t, sigl : sig_t list) : sk_t 
+  }.
+  
+  (* TB-GCMA game *)
+  module TB_GCMA(S : Scheme, A : Adv_TBGCMA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk, sk' : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var ml : msg_t list;
+      var sigl : sig_t list;
+      
+      (* Ask adversary to choose a list of messages for which to receive signatures *)
+      ml <@ A.choose();
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* 
+        Construct a list sigl of at most n_tbgcma signatures. Here, the i-th signature is
+        a signature for the i-th message in the list ml previously provided by the
+        adversary. Naturally, the signatures are created using the signing algorithm
+        of the considered signature scheme with the previously generated secret key.
+        Note that, in case the adversary provided less than n messages in ml, the
+        resulting list of signatures will have the same size as ml (and, hence, less than n).
+      *)
+      sigl <- [];
+      while (size sigl < min (size ml) n_tbgcma) {
+        m <- nth witness ml (size sigl);
+        
+        (sig, sk) <@ S.sign(sk, m);
+        
+        sigl <- rcons sigl sig;
+      }
+      
+      (* 
+        Ask adversary to compute the secret key sk given the public key pk and a list
+        of signatures sigl for the messages previously chosen by the adversary
+        (i.e., the messages in list ml) 
+      *) 
+      sk' <@ A.break(pk, sigl);
+      
+      (* Success iff the adversary correctly computed the secret key sk *)
+      return sk' = sk;
+    }
+  }.
+  end TBGCMA.
+  
+  (*
+    - 
+    Universal Forgery under Generic Chosen-Message Attack (UF-GCMA).
+    Given the public/verification key, the signatures for a set of messages chosen
+    non-adaptively and indepedently of the public key, and an arbitrary message, 
+    the adversary is tasked with forging a signature for the given (latter) message
+    -
+  *)
+  abstract theory UFGCMA.
+  (* Number of messages the adversary obtains signatures for in UF-GCMA game *)
+  const n_ufgcma : { int | 0 <= n_ufgcma } as ge0_nufgcma.
+  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
+  op [lossless] dmsg : msg_t distr.
+  
+  (* Class of adversaries against UF-GCMA *)
+  module type Adv_UFGCMA = {
+    proc choose() : msg_t list
+    proc forge(pk : pk_t, sigl : sig_t list, m : msg_t) : sig_t
+  }.
+
+  (* UF-GCMA game *)
+  module UF_GCMA(S : Scheme, A : Adv_UFGCMA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m, m' : msg_t;
+      var sig, sig' : sig_t;
+      var ml : msg_t list;
+      var sigl : sig_t list;
+      var is_valid, is_fresh : bool;
+      
+      (* Sample message for which the adversary must forge a signature *) 
+      m' <$ dmsg;
+      
+      (* Ask adversary to choose a list of messages for which to receive signatures *)
+      ml <@ A.choose();
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* 
+        Construct a list sigl of at most n_ufgcma signatures. Here, the i-th signature is
+        a signature for the i-th message in the list ml previously provided by the
+        adversary. Naturally, the signatures are created using the signing algorithm
+        of the considered signature scheme with the previously generated secret key.
+        Note that, in case the adversary provided less than n messages in ml, the
+        resulting list of signatures will have the same size as ml (and, hence, less than n).
+      *)
+      sigl <- [];
+      while (size sigl < min (size ml) n_ufgcma) {
+        m <- nth witness ml (size sigl);
+        
+        (sig, sk) <@ S.sign(sk, m);
+        
+        sigl <- rcons sigl sig;
+      }
+      
+      (*
+        Ask the adversary to forge a signature for message m' given the public key pk 
+        and a list of signatures sigl for the messages previously chosen by the adversary
+        (i.e., the messages in list ml) 
+      *)
+      sig' <@ A.forge(pk, sigl, m');
+      
+      (* 
+        Verify (w.r.t. message m') the signature sig' provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m', sig');
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the set of messages for which 
+        the adversary received signatures)
+      *)
+      is_fresh <- ! m' \in (take (size sigl) ml);
+      
+      (* 
+        Success iff
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh;
+    }
+  }.
+  end UFGCMA.
+  
+  (* 
+    - 
+    Selective Forgery under Generic Chosen-Message Attack (SF-GCMA).
+    After picking a message, the adversary is given the public/verification key and
+    the signatures for a set of messages chosen non-adaptively and indepedently 
+    of the public key, and is tasked with forging a signature for the picked message
+    -
+  *)
+  abstract theory SFGCMA.
+  (* Number of messages the adversary obtains signatures for in SF-GCMA game *)
+  const n_sfgcma : { int | 0 <= n_sfgcma } as ge0_nsfgcma.
+  
+  (* Class of adversaries against SF-GCMA *)
+  module type Adv_SFGCMA = {
+    proc pick() : msg_t
+    proc choose() : msg_t list
+    proc forge(pk : pk_t, sigl : sig_t list) : sig_t
+  }.
+
+  (* SF-GCMA game *)
+  module SF_GCMA(S : Scheme, A : Adv_SFGCMA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m, m' : msg_t;
+      var ml : msg_t list;
+      var sigl : sig_t list;
+      var sig, sig': sig_t;
+      var is_valid, is_fresh : bool;
+      
+      (* Ask the adversary to pick a message to forge a signature for *)
+      m' <@ A.pick();
+
+      (* Ask adversary to choose a list of messages for which to receive signatures *)
+      ml <@ A.choose();
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* 
+        Construct a list sigl of at most n_sfgcma signatures. Here, the i-th signature is
+        a signature for the i-th message in the list ml previously provided by the
+        adversary. Naturally, the signatures are created using the signing algorithm
+        of the considered signature scheme with the previously generated secret key.
+        Note that, in case the adversary provided less than n messages in ml, the
+        resulting list of signatures will have the same size as ml (and, hence, less than n).
+      *)
+      sigl <- [];
+      while (size sigl < min (size ml) n_sfgcma) {
+        m <- nth witness ml (size sigl);
+        
+        (sig, sk) <@ S.sign(sk, m);
+        
+        sigl <- rcons sigl sig;
+      }
+      
+      (*
+        Ask the adversary to forge a signature for the previously picked message m' 
+        given the public key pk and a list of signatures sigl for the messages 
+        previously chosen by the adversary (i.e., the messages in list ml) 
+      *)
+      sig' <@ A.forge(pk, sigl);
+      
+      (* 
+        Verify (w.r.t. message m') the signature sig' provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m', sig');
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the set of messages for which 
+        the adversary received signatures)
+      *)
+      is_fresh <- ! m' \in (take (size sigl) ml);
+      
+      (* 
+        Success iff
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh;   
+    }
+  }.
+  end SFGCMA.
+  
+  (*
+    -
+    Existential Forgery under Generic Chosen-Message Attack (EF-GCMA)
+    Given the public/verification key and the signatures for a set of messages 
+    chosen non-adaptively and indepedently of the public key, the adversary is tasked 
+    with forging a signature for any fresh message
+    -
+  *)
+  abstract theory EFGCMA.
+  (* Number of messages the adversary obtains signatures for in EF-GCMA game *)
+  const n_efgcma : { int | 0 <= n_efgcma } as ge0_nefgcma.
+  
+  (* Class of adversaries against EF-GCMA *)
+  module type Adv_EFGCMA = {
+    proc choose() : msg_t list
+    proc forge(pk : pk_t, sigl : sig_t list) : msg_t * sig_t
+  }.
+  
+  (* EF-GCMA game *)
+  module EF_GCMA(S : Scheme, A : Adv_EFGCMA) = {   
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m, m' : msg_t;
+      var ml : msg_t list;
+      var sigl : sig_t list;
+      var sig, sig': sig_t;
+      var is_valid, is_fresh : bool;   
+    
+      (* Ask adversary to choose a list of messages for which to receive signatures *)
+      ml <@ A.choose();
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* 
+        Construct a list sigl of at most n_efgcma signatures. Here, the i-th signature is
+        a signature for the i-th message in the list ml previously provided by the
+        adversary. Naturally, the signatures are created using the signing algorithm
+        of the considered signature scheme with the previously generated secret key.
+        Note that, in case the adversary provided less than n messages in ml, the
+        resulting list of signatures will have the same size as ml (and, hence, less than n).
+      *)
+      sigl <- [];
+      while (size sigl < min (size ml) n_efgcma) {
+        m <- nth witness ml (size sigl);
+        
+        (sig, sk) <@ S.sign(sk, m);
+        
+        sigl <- rcons sigl sig;
+      }
+      
+      (*
+        Ask the adversary to forge a signature for any message (and provide both
+        the message and the signature) given the public key pk and a list of 
+        signatures sigl for the messages previously chosen by the adversary 
+        (i.e., the messages in list ml) 
+      *)
+      (m', sig') <@ A.forge(pk, sigl);
+      
+      (* 
+        Verify (w.r.t. message m') the signature sig' provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m', sig');
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the set of messages for which 
+        the adversary received signatures)
+      *)
+      is_fresh <- ! m' \in (take (size sigl) ml);
+      
+      (* 
+        Success iff
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh;   
+    }  
+  }.
+  end EFGCMA.
+  
+  (*
+    -- 
+    Non-Adaptive Chosen-Message Attack (NACMA)/Directed Chosen-Message Attack (DCMA).
+    Attacks in which the adversary is given the public/verification key as well as
+    the signatures for a set of *chosen* messages. Here, all messages are chosen
+    non-adaptively; that is, before obtaining any of the signatures. However, the chosen
+    messages may depend on the public key; i.e., the adversary is given the public key
+    when asked to provide the messages
+    --
+  *) 
+  (* 
+    - 
+    Total Break under Non-Adaptive Chosen-Message Attack (TB-NACMA). 
+    Given the public/verification key and the signatures for a set of non-adaptively
+    chosen messages, the adversary is tasked with computing the secret key 
+    corresponding to the public/verification key
+    -
+  *)
+  abstract theory TBNACMA.
+  (* Number of messages the adversary obtains signatures for in TB-RMA game *)
+  const n_tbnacma : { int | 0 <= n_tbnacma } as ge0_ntbnacma.
+
+  (* Class of adversaries against TB-NACMA *)
+  module type Adv_TBNACMA = {
+    proc choose(pk : pk_t) : msg_t list
+    proc break(sigl : sig_t list) : sk_t 
+  }.
+  
+  (* TB-NACMA game *)
+  module TB_NACMA(S : Scheme, A : Adv_TBNACMA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk, sk' : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var ml : msg_t list;
+      var sigl : sig_t list;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* 
+        Ask adversary to choose a list of messages for which to receive signatures
+        given the public key pk 
+      *)
+      ml <@ A.choose(pk);
+      
+      (* 
+        Construct a list sigl of at most n_tbnacma signatures. Here, the i-th signature is
+        a signature for the i-th message in the list ml previously provided by the
+        adversary. Naturally, the signatures are created using the signing algorithm
+        of the considered signature scheme with the previously generated secret key.
+        Note that, in case the adversary provided less than n messages in ml, the
+        resulting list of signatures will have the same size as ml (and, hence, less than n).
+      *)
+      sigl <- [];
+      while (size sigl < min (size ml) n_tbnacma) {
+        m <- nth witness ml (size sigl);
+        
+        (sig, sk) <@ S.sign(sk, m);
+        
+        sigl <- rcons sigl sig;
+      }
+      
+      (* 
+        Ask adversary to compute the secret key sk given the public key pk (in the
+        call to A.choose(pk)) and a list of signatures sigl for the messages previously 
+        chosen by the adversary (i.e., the messages in list ml) 
+      *) 
+      sk' <@ A.break(sigl);
+      
+      (* Success iff the adversary correctly computed the secret key sk *)
+      return sk' = sk;
+    }
+  }.
+  end TBNACMA.
+  
+  (*
+    - 
+    Universal Forgery under Non-Adaptive Chosen-Message Attack (UF-NACMA).
+    Given the public/verification key, the signatures for a set of non-adaptively
+    chosen messages, and an arbitrary message, the adversary is tasked with forging 
+    a signature for the given (latter) message
+    -
+  *)
+  abstract theory UFNACMA.
+  (* Number of messages the adversary obtains signatures for in UF-RMA game *)
+  const n_ufnacma : { int | 0 <= n_ufnacma } as ge0_nufnacma.
+  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
+  op [lossless] dmsg : msg_t distr.
+  
+  (* Class of adversaries against UF-NACMA *)
+  module type Adv_UFNACMA = {
+    proc choose(pk : pk_t) : msg_t list
+    proc forge(sigl : sig_t list, m : msg_t) : sig_t
+  }.
+
+  (* UF-NACMA game *)
+  module UF_NACMA(S : Scheme, A : Adv_UFNACMA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m, m' : msg_t;
+      var sig, sig' : sig_t;
+      var ml : msg_t list;
+      var sigl : sig_t list;
+      var is_valid, is_fresh : bool;
+      
+      (* Sample message for which the adversary must forge a signature *) 
+      m' <$ dmsg;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* 
+        Ask adversary to choose a list of messages for which to receive signatures
+        given the public key pk 
+      *)
+      ml <@ A.choose(pk);
+      
+      (* 
+        Construct a list sigl of at most n_ufnacma signatures. Here, the i-th signature is
+        a signature for the i-th message in the list ml previously provided by the
+        adversary. Naturally, the signatures are created using the signing algorithm
+        of the considered signature scheme with the previously generated secret key.
+        Note that, in case the adversary provided less than n messages in ml, the
+        resulting list of signatures will have the same size as ml (and, hence, less than n).
+      *)
+      sigl <- [];
+      while (size sigl < min (size ml) n_ufnacma) {
+        m <- nth witness ml (size sigl);
+        
+        (sig, sk) <@ S.sign(sk, m);
+        
+        sigl <- rcons sigl sig;
+      }
+      
+      (*
+        Ask the adversary to forge a signature for message m' given the public key pk
+        (in the call to A.choose(pk)) and a list of signatures sigl for the messages 
+        previously chosen by the adversary (i.e., the messages in list ml) 
+      *)
+      sig' <@ A.forge(sigl, m');
+      
+      (* 
+        Verify (w.r.t. message m') the signature sig' provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m', sig');
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the set of messages for which 
+        the adversary received signatures)
+      *)
+      is_fresh <- ! m' \in (take (size sigl) ml);
+      
+      (* 
+        Success iff
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh;
+    }
+  }.
+  end UFNACMA.
+  
+  (* 
+    - 
+    Selective Forgery under Non-Adaptive Chosen-Message Attack (SF-NACMA).
+    After picking a message, the adversary is given the public/verification key and
+    the signatures for a set of non-adaptively chosen messages, and is tasked with 
+    forging a signature for the picked message
+    -
+  *)
+  abstract theory SFNACMA.
+  (* Number of messages the adversary obtains signatures for in SF-RMA game *)
+  const n_sfnacma : { int | 0 <= n_sfnacma } as ge0_nsfnacma.
+  
+  (* Class of adversaries against SF-NACMA *)
+  module type Adv_SFNACMA = {
+    proc pick() : msg_t
+    proc choose(pk : pk_t) : msg_t list
+    proc forge(sigl : sig_t list) : sig_t
+  }.
+
+  (* SF-NACMA game *)
+  module SF_NACMA(S : Scheme, A : Adv_SFNACMA) = {
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m, m' : msg_t;
+      var ml : msg_t list;
+      var sigl : sig_t list;
+      var sig, sig': sig_t;
+      var is_valid, is_fresh : bool;
+      
+      (* Ask the adversary to pick a message to forge a signature for *)
+      m' <@ A.pick();
+
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* 
+        Ask adversary to choose a list of messages for which to receive signatures
+        given the public key pk 
+      *)
+      ml <@ A.choose(pk);
+      
+      (* 
+        Construct a list sigl of at most n_sfnacma signatures. Here, the i-th signature is
+        a signature for the i-th message in the list ml previously provided by the
+        adversary. Naturally, the signatures are created using the signing algorithm
+        of the considered signature scheme with the previously generated secret key.
+        Note that, in case the adversary provided less than n messages in ml, the
+        resulting list of signatures will have the same size as ml (and, hence, less than n).
+      *)
+      sigl <- [];
+      while (size sigl < min (size ml) n_sfnacma) {
+        m <- nth witness ml (size sigl);
+        
+        (sig, sk) <@ S.sign(sk, m);
+        
+        sigl <- rcons sigl sig;
+      }
+      
+      (*
+        Ask the adversary to forge a signature for message m' given the public key pk
+        (in the call to A.choose(pk)) and a list of signatures sigl for the messages 
+        previously chosen by the adversary (i.e., the messages in list ml) 
+      *)
+      sig' <@ A.forge(sigl);
+      
+      (* 
+        Verify (w.r.t. message m') the signature sig' provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m', sig');
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the set of messages for which 
+        the adversary received signatures)
+      *)
+      is_fresh <- ! m' \in (take (size sigl) ml);
+      
+      (* 
+        Success iff
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh;
+    }
+  }.
+  end SFNACMA.
+  
+  (*
+    -
+    Existential Forgery under Non-Adaptive Chosen-Message Attack (EF-NACMA).
+    Given the public/verification key and the signatures for a set of non-adaptively
+    chosen messages the adversary is tasked with forging a signature for any fresh message
+    -
+  *)
+  abstract theory EFNACMA.
+  (* Number of messages the adversary obtains signatures for in EF-RMA game *)
+  const n_efnacma : { int | 0 <= n_efnacma } as ge0_nefnacma.
+  
+  (* Class of adversaries against EF-NACMA *)
+  module type Adv_EFNACMA = {
+    proc choose(pk : pk_t) : msg_t list
+    proc forge(sigl : sig_t list) : msg_t * sig_t
+  }.
+  
+  (* EF-NACMA game *)
+  module EF_NACMA(S : Scheme, A : Adv_EFNACMA) = {   
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m, m' : msg_t;
+      var ml : msg_t list;
+      var sigl : sig_t list;
+      var sig, sig': sig_t;
+      var is_valid, is_fresh : bool;   
+
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* 
+        Ask adversary to choose a list of messages for which to receive signatures
+        given the public key pk 
+      *)
+      ml <@ A.choose(pk);
+      
+      (* 
+        Construct a list sigl of at most n_efnacma signatures. Here, the i-th signature is
+        a signature for the i-th message in the list ml previously provided by the
+        adversary. Naturally, the signatures are created using the signing algorithm
+        of the considered signature scheme with the previously generated secret key.
+        Note that, in case the adversary provided less than n messages in ml, the
+        resulting list of signatures will have the same size as ml (and, hence, less than n).
+      *)
+      sigl <- [];
+      while (size sigl < min (size ml) n_efnacma) {
+        m <- nth witness ml (size sigl);
+        
+        (sig, sk) <@ S.sign(sk, m);
+        
+        sigl <- rcons sigl sig;
+      }
+      
+      (*
+        Ask the adversary to forge a signature for the any message (and provide both
+        the message and the signature) given the public key pk (in the call to A.choose(pk))
+        and a list of signatures sigl for the messages previously chosen by the adversary 
+        (i.e., the messages in list ml) 
+      *)
+      (m', sig') <@ A.forge(sigl);
+      
+      (* 
+        Verify (w.r.t. message m') the signature sig' provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m', sig');
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the set of messages for which 
+        the adversary received signatures)
+      *)
+      is_fresh <- ! m' \in (take (size sigl) ml);
+      
+      (* 
+        Success iff
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh; 
+    }  
+  }.  
+  end EFNACMA.
+  
+  (*
+    -- 
+    (Adaptive) Chosen-Message Attack (CMA).
+    Attacks in which the adversary is given the public/verification key as well as
+    the signatures for a set of *chosen* messages. Here, all messages are chosen
+    adaptively and may depend on the public key; that is, the adversary 
+    (1) immediately receives a signature for a chosen message before choosing the 
+        subsequent message, and
+    (2) is given the public key when asked to provide the messages.
+    --
+  *)
+  (* - General - *)
+  (* 
+    Type for signing oracles used in (adaptive) CMA game, including procedures 
+    for initialization and auxiliary tasks 
+  *)
+  module type Oracle_CMA(S : Scheme) = {
+    proc init(sk_init : sk_t) : unit {}
+    proc sign(m : msg_t) : sig_t {S.sign}
+    proc fresh(m : msg_t) : bool {}
+    proc nr_queries() : int {}
+  }.
+
+  (* 
+    Type for signing oracles used in (adaptive) CMA games, only exposing the 
+    procedure for signing 
+  *)
+  module type SOracle_CMA = {
+    proc sign(m : msg_t) : sig_t
+  }.
+  
+  (* 
+    Default implementation of a signing oracle including procedures for 
+    initialization and auxiliary tasks 
+  *)
+  module (O_CMA_Default : Oracle_CMA) (S : Scheme) = {
+    var sk : sk_t
+    var qs : msg_t list
+    
+    (* Initialize secret/signing key and oracle query list qs *)
+    proc init(sk_init : sk_t) : unit = {
+      sk <- sk_init;
+      qs <- [];
+    }
+
+    (* 
+      Sign given message m using the considered signature scheme with the
+      secret/signing key sk and append m to the list of oracle queries qs
+    *)
+    proc sign(m : msg_t) : sig_t = {
+      var sig : sig_t;
+      
+      (sig, sk) <@ S.sign(sk, m);
+
+      qs <- rcons qs m;
+            
+      return sig;
+    }
+
+    (* 
+      Check whether given message m is fresh, i.e., whether m is not contained in
+      the list of oracle queries qs 
+    *)
+    proc fresh(m : msg_t) : bool = {
+      return ! m \in qs;
+    }
+    
+    (* Get the number of oracle queries, i.e., the size of the oracle query list qs *)
+    proc nr_queries() : int = {
+      return size qs;
+    }
+  }.
+
+  
+  (* 
+    - 
+    Total Break under (Adaptive) Chosen-Message Attack (TB-CMA). 
+    Given the public/verification key and the signatures for a set of adaptively
+    chosen messages, the adversary is tasked with computing the secret key 
+    corresponding to the public/verification key
+    -
+  *)
+  abstract theory TBCMA.
+  (* Maximum number of oracle queries the adversary is allowed to make in TB-CMA game *)
+  const q_tbcma : { int | 0 <= q_tbcma } as ge0_qtbcma.
+ 
+  (* Class of adversaries against TB-CMA *)
+  module type Adv_TBCMA(O : SOracle_CMA) = {
+    proc break(pk : pk_t) : sk_t
+  }.
+
+  (* TB-CMA game *)
+  module TB_CMA(S : Scheme, A : Adv_TBCMA, O : Oracle_CMA) = {
+    (* Provide the signing oracle access to the considered scheme *)
+    module O = O(S)
+    
+    (* Provide the adversary access to the (sign procedure of) the signing oracle *)
+    module A = A(O)
+
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk, sk' : sk_t;
+      var nrqs : int;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* Initialize the signing oracle with the generated secret key *)
+      O.init(sk);
+
+      (* 
+        Ask adversary to compute the secret key sk given the public key pk and
+        access to a signing oracle that it can query at most q_tbcma times
+      *) 
+      sk' <@ A.break(pk);
+      
+      (* Get the total number of oracle queries that the adversary made *) 
+      nrqs <@ O.nr_queries();
+      
+      (* 
+        Success iff
+        (1) "nrqs <= q_tbcma": the adversary made at most q_tbcma oracle queries, and
+        (2) "sk' = sk": the adversary correctly computed the secret key sk.
+      *)
+      return nrqs <= q_tbcma /\ sk' = sk; 
+    }
+  }.
+
+  (* TB-CMA game with Unlimited oracle queries *)
+  module TB_CMA_U(S : Scheme, A : Adv_TBCMA, O : Oracle_CMA) = {
+    (* Provide the signing oracle access to the considered scheme *)
+    module O = O(S)
+    
+    (* Provide the adversary access to the (sign procedure of) the signing oracle *)
+    module A = A(O)
+
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk, sk' : sk_t;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* Initialize the signing oracle with the generated secret key *)
+      O.init(sk);
+
+      (* 
+        Ask adversary to compute the secret key sk given the public key pk and
+        access to a signing oracle that it can query an unlimited number of times
+      *) 
+      sk' <@ A.break(pk);
+      
+      (* Success iff the adversary correctly computed the secret key sk. *)
+      return sk' = sk; 
+    }
+  }.
+  end TBCMA.
+  
+  (*
+    - 
+    Universal Forgery under (Adaptive) Chosen-Message Attack (UF-CMA)
+    Given the public/verification key, the signatures for a set of adaptively
+    chosen messages, and an arbitrary message, the adversary is tasked with forging 
+    a signature for the given (latter) message
+    -
+  *)
+  abstract theory UFCMA.
+  (* Maximum number of oracle queries the adversary is allowed to make in UF-CMA game *)
+  const q_ufcma : { int | 0 <= q_ufcma } as ge0_qufcma.
+  (* (Proper) distribution over type of to-be-signed artifacts ('messages') *)
+  op [lossless] dmsg : msg_t distr.
+  
+  (* Class of adversaries against UF-CMA *)
+  module type Adv_UFCMA(O : SOracle_CMA) = {
+    proc forge(pk : pk_t, m : msg_t) : sig_t
+  }.
+
+  (* UF-CMA game *)
+  module UF_CMA(S : Scheme, A : Adv_UFCMA, O : Oracle_CMA) = {
+    (* Provide the signing oracle access to the considered scheme *)
+    module O = O(S)
+    
+    (* Provide the adversary access to the (sign procedure of) the signing oracle *)
+    module A = A(O)
+
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var nrqs : int;
+      var is_valid, is_fresh : bool;
+      
+      (* Sample message for which the adversary must forge a signature *) 
+      m <$ dmsg;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* Initialize the signing oracle with the generated secret key *)
+      O.init(sk);
+
+      (*
+        Ask the adversary to forge a signature for message m given the public key pk 
+        and and access to a signing oracle that it can query at most q_ufcma times
+      *)
+      sig <@ A.forge(pk, m);
+
+      (* 
+        Verify (w.r.t. message m) the signature sig provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m, sig);
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the list of messages for which 
+        the adversary received signatures through an oracle query)
+      *)
+      is_fresh <@ O.fresh(m);
+      
+      (* Get the total number of oracle queries that the adversary made *) 
+      nrqs <@ O.nr_queries();
+          
+      (* 
+        Success iff
+        (1) "nrqs <= q_ufcma": the adversary made at most q_ufcma oracle queries, and
+        (2) "is_valid": the forged signature provided by the adversary is valid, and
+        (3) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return nrqs <= q_ufcma /\ is_valid /\ is_fresh; 
+    }
+  }.
+
+  (* UF-CMA game with Unlimited oracle queries *)
+  module UF_CMA_U(S : Scheme, A : Adv_UFCMA, O : Oracle_CMA) = {
+    (* Provide the signing oracle access to the considered scheme *)
+    module O = O(S)
+    
+    (* Provide the adversary access to the (sign procedure of) the signing oracle *)
+    module A = A(O)
+
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var is_valid, is_fresh : bool;
+      
+      (* Sample message for which the adversary must forge a signature *) 
+      m <$ dmsg;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* Initialize the signing oracle with the generated secret key *)
+      O.init(sk);
+
+      (*
+        Ask the adversary to forge a signature for message m given the public key pk 
+        and and access to a signing oracle that it can query an unlimited number of times
+      *)
+      sig <@ A.forge(pk, m);
+
+      (* 
+        Verify (w.r.t. message m) the signature sig provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m, sig);
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the list of messages for which 
+        the adversary received signatures through an oracle query)
+      *)
+      is_fresh <@ O.fresh(m);
+     
+      (* 
+        Success iff
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh; 
+    }
+  }.
+  end UFCMA.
+  
+  (*
+    -
+    Selective Forgery under Chosen-Message Attack (SF-CMA).
+    After picking a message, the adversary is given the public/verification key 
+    and the signatures for a set of adaptively chosen messages, and is tasked with 
+    forging a signature for the picked message
+    -
+  *)
+  abstract theory SFCMA.
+  (* Maximum number of oracle queries the adversary is allowed to make in SF-CMA game *)
+  const q_sfcma : { int | 0 <= q_sfcma } as ge0_qsfcma.
+
+  (* Class of adversaries against SF-CMA *)
+  module type Adv_SFCMA(O : SOracle_CMA) = {
+    proc pick() : msg_t
+    proc forge(pk : pk_t) : sig_t
+  }.
+
+  (* SF-CMA game *)
+  module SF_CMA(S : Scheme, A : Adv_SFCMA, O : Oracle_CMA) = {
+    (* Provide the signing oracle access to the considered scheme *)
+    module O = O(S)
+    
+    (* Provide the adversary access to the (sign procedure of) the signing oracle *)
+    module A = A(O)
+
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var nrqs : int;
+      var is_valid, is_fresh : bool;
+      
+      (* Ask the adversary to pick a message to forge a signature for *) 
+      m <@ A.pick();
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* Initialize the signing oracle with the generated secret key *)
+      O.init(sk);
+
+      (*
+        Ask the adversary to forge a signature for message m given the public key pk 
+        and and access to a signing oracle that it can query at most q_ufcma times
+      *)
+      sig <@ A.forge(pk);
+
+      (* 
+        Verify (w.r.t. message m) the signature sig provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m, sig);
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the list of messages for which 
+        the adversary received signatures through an oracle query)
+      *)
+      is_fresh <@ O.fresh(m);
+      
+      (* Get the total number of oracle queries that the adversary made *) 
+      nrqs <@ O.nr_queries();
+          
+      (* 
+        Success iff
+        (1) "nrqs <= q_sfcma": the adversary made at most q_sfcma oracle queries, and
+        (2) "is_valid": the forged signature provided by the adversary is valid, and
+        (3) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return nrqs <= q_sfcma /\ is_valid /\ is_fresh; 
+    }
+  }.
+
+  (* SF-CMA game with Unlimited oracle queries *)
+  module SF_CMA_U(S : Scheme, A : Adv_SFCMA, O : Oracle_CMA) = {
+    (* Provide the signing oracle access to the considered scheme *)
+    module O = O(S)
+    
+    (* Provide the adversary access to the (sign procedure of) the signing oracle *)
+    module A = A(O)
+
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var is_valid, is_fresh : bool;
+      
+      (* Ask the adversary to pick a message to forge a signature for *) 
+      m <@ A.pick();
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* Initialize the signing oracle with the generated secret key *)
+      O.init(sk);
+
+      (*
+        Ask the adversary to forge a signature for message m given the public key pk 
+        and and access to a signing oracle that it can query an unlimited number of times
+      *)
+      sig <@ A.forge(pk);
+
+      (* 
+        Verify (w.r.t. message m) the signature sig provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m, sig);
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the list of messages for which 
+        the adversary received signatures through an oracle query)
+      *)
+      is_fresh <@ O.fresh(m);
+     
+      (* 
+        Success iff
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh; 
+    }
+  }.
+  end SFCMA.
+
+  (*
+    -
+    Existential Forgery under Chosen-Message Attack (EF-CMA)
+    Given the public/verification key and the signatures for a set of adaptively 
+    chosen messages, the adversary is tasked with forging a signature for any fresh message
+    -
+  *)
+  abstract theory EFCMA.
+  (* Maximum number of oracle queries the adversary is allowed to make in EF-CMA game *)
+  const q_efcma : { int | 0 <= q_efcma } as ge0_qefcma.
+  
+  (* Class of adversaries against EF-CMA *)
+  module type Adv_EFCMA(O : SOracle_CMA) = {
+    proc forge(pk : pk_t) : msg_t * sig_t
+  }.
+
+  (* EF-CMA game *)
+  module EF_CMA(S : Scheme, A : Adv_EFCMA, O : Oracle_CMA) = {
+    (* Provide the signing oracle access to the considered scheme *)
+    module O = O(S)
+    
+    (* Provide the adversary access to the (sign procedure of) the signing oracle *)
+    module A = A(O)
+
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var nrqs : int;
+      var is_valid, is_fresh : bool;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* Initialize the signing oracle with the generated secret key *)
+      O.init(sk);
+
+      (*
+        Ask the adversary to forge a signature for any message (and provide both the
+        message and the signature) given the public key pk and access to a signing oracle 
+        that it can query at most q_efcma times
+      *)
+      (m, sig) <@ A.forge(pk);
+
+      (* 
+        Verify (w.r.t. message m) the signature sig provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m, sig);
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the list of messages for which 
+        the adversary received signatures through an oracle query)
+      *)
+      is_fresh <@ O.fresh(m);
+      
+      (* Get the total number of oracle queries that the adversary made *) 
+      nrqs <@ O.nr_queries();
+          
+      (* 
+        Success iff
+        (1) "nrqs <= q_efcma": the adversary made at most q_efcma oracle queries, and
+        (2) "is_valid": the forged signature provided by the adversary is valid, and
+        (3) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return nrqs <= q_efcma /\ is_valid /\ is_fresh; 
+    }
+  }.
+
+  (* EF-CMA game with Unlimited oracle queries *)
+  module EF_CMA_U(S : Scheme, A : Adv_EFCMA, O : Oracle_CMA) = {
+    (* Provide the signing oracle access to the considered scheme *)
+    module O = O(S)
+    
+    (* Provide the adversary access to the (sign procedure of) the signing oracle *)
+    module A = A(O)
+
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var is_valid, is_fresh : bool;
+            
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* Initialize the signing oracle with the generated secret key *)
+      O.init(sk);
+
+      (*
+        Ask the adversary to forge a signature for any message (and provide both the
+        message and the signature) given the public key pk and access to a signing oracle 
+        that it can query an unlimited number of times
+      *)
+      (m, sig) <@ A.forge(pk);
+
+      (* 
+        Verify (w.r.t. message m) the signature sig provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m, sig);
+      
+      (* 
+        Check whether message for which the adversary forged a signature is fresh 
+        (i.e., check whether message is not included in the list of messages for which 
+        the adversary received signatures through an oracle query)
+      *)
+      is_fresh <@ O.fresh(m);
+     
+      (* 
+        Success iff
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the message for which the adversary forged a signature is fresh.
+      *)
+      return is_valid /\ is_fresh; 
+    }
+  }.
+  end EFCMA.
+
+  (*
+    - 
+    Strong Existential Forgery under Chosen-Message Attack (SEF-CMA).
+    Given the public/verification key and the signatures for a set of adaptively 
+    chosen messages, the adversary is tasked with forging a fresh signature for any message
+    -
+  *)
+  abstract theory SEFCMA.
+  (* Maximum number of oracle queries the adversary is allowed to make in SEF-CMA game *)
+  const q_sefcma : { int | 0 <= q_sefcma } as ge0_qsefcma.
+  
+  (* 
+    Type for signing oracles used in the SEF-CMA game, including procedures 
+    for initialization and auxiliary tasks 
+  *)
+  module type Oracle_SEFCMA(S : Scheme) = {
+    proc init(sk_init : sk_t) : unit {}
+    proc sign(m : msg_t) : sig_t {S.sign}
+    proc fresh(msig : msg_t * sig_t) : bool {}
+    proc nr_queries() : int {}
+  }.
+
+  (* 
+    Type for signing oracles used in the SEF-CMA game, only exposing the 
+    procedure for signing 
+  *)
+  module type SOracle_SEFCMA = {
+    proc sign(m : msg_t) : sig_t
+  }.
+  
+  (* 
+    Default implementation of a signing oracle including procedures for 
+    initialization and auxiliary tasks 
+  *)
+  module (O_SEFCMA_Default : Oracle_SEFCMA) (S : Scheme) = {
+    var sk : sk_t
+    var qs : (msg_t * sig_t) list
+    
+    (* Initialize secret/signing key and oracle query list qs *)
+    proc init(sk_init : sk_t) : unit = {
+      sk <- sk_init;
+      qs <- [];
+    }
+
+    (* 
+      Sign given message m using the considered signature scheme with the
+      secret/signing key sk and append m to the list of oracle queries qs
+    *)
+    proc sign(m : msg_t) : sig_t = {
+      var sig : sig_t;
+      var msig : msg_t * sig_t;
+      
+      (sig, sk) <@ S.sign(sk, m);
+
+      msig <- (m, sig);
+      qs <- rcons qs msig;
+            
+      return sig;
+    }
+
+    (* 
+      Check whether given (message, signature) pair msig is fresh, i.e., whether this pair
+      is not contained in the list of oracle queries qs 
+    *)
+    proc fresh(msig : msg_t * sig_t) : bool = {
+      return ! msig \in qs;
+    }
+    
+    (* Get the number of oracle queries, i.e., the size of the oracle query list qs *)
+    proc nr_queries() : int = {
+      return size qs;
+    }
+  }.
+
+  (* Class of adversaries against SEF-CMA *)
+  module type Adv_SEFCMA(O : SOracle_SEFCMA) = {
+    proc forge(pk : pk_t) : msg_t * sig_t
+  }.
+
+  (* SEF-CMA game *)
+  module SEF_CMA(S : Scheme, A : Adv_SEFCMA, O : Oracle_SEFCMA) = {
+    (* Provide the signing oracle access to the considered scheme *)
+    module O = O(S)
+    
+    (* Provide the adversary access to the (sign procedure of) the signing oracle *)
+    module A = A(O)
+
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var nrqs : int;
+      var is_valid, is_fresh : bool;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* Initialize the signing oracle with the generated secret key *)
+      O.init(sk);
+
+      (*
+        Ask the adversary to forge a signature for any message (and provide both the
+        message and the signature) given the public key pk and access to a signing oracle 
+        that it can query at most q_sefcma times
+      *)
+      (m, sig) <@ A.forge(pk);
+
+      (* 
+        Verify (w.r.t. message m) the signature sig provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m, sig);
+      
+      (* 
+        Check whether (message, signature) pair (m, sig) returned by the adversary is fresh
+        (i.e., check whether this pair is not included in the list of (message, signature)
+        pairs of the signing oracle)
+      *)
+      is_fresh <@ O.fresh((m, sig));
+      
+      (* Get the total number of oracle queries that the adversary made *) 
+      nrqs <@ O.nr_queries();
+          
+      (* 
+        Success iff
+        (1) "nrqs <= q_sefcma": the adversary made at most q_sefcma oracle queries, and
+        (2) "is_valid": the forged signature provided by the adversary is valid, and
+        (3) "is_fresh": the (message, signature) pair provided by the adversary is fresh.
+      *)
+      return nrqs <= q_sefcma /\ is_valid /\ is_fresh; 
+    }
+  }.
+
+  (* SEF-CMA game with Unlimited oracle queries *)
+  module SEF_CMA_U(S : Scheme, A : Adv_SEFCMA, O : Oracle_SEFCMA) = {
+    (* Provide the signing oracle access to the considered scheme *)
+    module O = O(S)
+    
+    (* Provide the adversary access to the (sign procedure of) the signing oracle *)
+    module A = A(O)
+
+    proc main() : bool = {
+      var pk : pk_t;
+      var sk : sk_t;
+      var m : msg_t;
+      var sig : sig_t;
+      var is_valid, is_fresh : bool;
+      
+      (* Generate a key pair using the considered signature scheme *)
+      (pk, sk) <@ S.keygen();
+      
+      (* Initialize the signing oracle with the generated secret key *)
+      O.init(sk);
+
+      (*
+        Ask the adversary to forge a signature for any message (and provide both the
+        message and the signature) given the public key pk and access to a signing oracle 
+        that it can query an unlimited number of times
+      *)
+      (m, sig) <@ A.forge(pk);
+
+      (* 
+        Verify (w.r.t. message m) the signature sig provided by the adversary 
+        using the verification algorithm of the considered signature scheme 
+      *)
+      is_valid <@ S.verify(pk, m, sig);
+      
+      (* 
+        Check whether (message, signature) pair (m, sig) returned by the adversary is fresh
+        (i.e., check whether this pair is not included in the list of (message, signature)
+        pairs of the signing oracle)
+      *)
+      is_fresh <@ O.fresh((m, sig));
+     
+      (* 
+        Success iff
+        (1) "is_valid": the forged signature provided by the adversary is valid, and
+        (2) "is_fresh": the (message, signature) pair provided by the adversary is fresh.
+      *)
+      return is_valid /\ is_fresh; 
+    }
+  }.
+  end SEFCMA.
+end KeyUpdating.
