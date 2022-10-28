@@ -14,8 +14,7 @@ clone FSa.Generic as FSaG.
 
 (* Commitment Recoverable FS+abort construction (i.e. Sig = C*Z option *)
 clone FSa.CommRecov as FSaCR with
-  op qS <= FSaG.qS,
-  op kappa <= FSaG.kappa.
+  op qS <= FSaG.qS.
 
 module (RedFSaG (A : FSaCR.DSS.Adv_EFCMA_RO) : FSaG.DSS.Adv_EFCMA_RO) 
   (H : FSaG.DSS.Hash)
@@ -23,29 +22,19 @@ module (RedFSaG (A : FSaCR.DSS.Adv_EFCMA_RO) : FSaG.DSS.Adv_EFCMA_RO)
 { 
   module OCR = { 
     proc sign(m : M) = { 
-      var w,c,z,osig,sig;
-      osig <@ O.sign(m);
-      if (osig <> None) { 
-        (w,z) <- oget osig;
-        c <@ H.get(w,m); 
-        sig <- Some (c,z);
-      } else { 
-        sig <- None;
-      }  
-      return sig;
+      var w,c,z;
+      (w,z) <@ O.sign(m);
+      c <@ H.get(w,m); 
+      return (c,z);
     }
   }
 
   proc forge(pk : PK) : M*FSaG.Sig = { 
     var w,c,z,m,sig,sig';
     (m,sig) <@ A(H,OCR).forge(pk);
-    if (sig <> None) { 
-      (c,z) <- oget sig;
-      w <- FSaCR.recover pk c z;
-      sig' <- Some (w,z);
-    } else { 
-      sig' <- None;
-    }
+    (c,z) <- sig;
+    w <- FSaCR.recover pk c z;
+    sig' <- (w,z);
     return (m,sig');
   }
 }.
@@ -89,28 +78,29 @@ seq 4 5 : (={glob P,glob V,pk} /\ m{1} = m0{2} /\ sig{1} = sig0{2} /\ pk{1} = pk
            /\ ={qs,sk}(FSaCR_O_Default,FSaG_O_Default) 
            /\ ={m}(FSaCR.DSS.PRO.RO,FSaG.DSS.PRO.RO)
           ); last first. 
-- inline*. wp. sp 4 0. if; [by auto| | by rcondf{2} 7; auto].
-  rcondt{2} 9; first by auto.
-  seq 6 13 : (w{1} = w0{2} /\ c'{1} = c0{2} /\ pk0{1} = pk1{2} /\ z{1} = z0{2} /\ result{1} = false /\
-             ={glob V,m} /\ ={qs,sk}(FSaCR_O_Default,FSaG_O_Default)); first by auto => />. 
-  if{1}; [call(:true)|]. auto => />. wp. 
-  conseq (:_ ==> true) _ (:_ ==> _ : 1%r). smt(). islossless. apply verify_ll. 
-call(: ={glob P,glob V} 
+- inline*. wp. sp.
+  seq 1 1 : (#pre /\ ={r0}); first by auto.
+  seq 2 2 : (#pre /\ c'{1} = c0{2}); first by if; auto.
+  if{1}; first by call(: true); auto.
+  conseq (:_ ==> true); 1: smt().
+  by islossless; apply verify_ll. 
+inline*. conseq />.
+call(: ={glob P} 
        /\ ={qs,sk}(FSaCR_O_Default,FSaG_O_Default) 
-       /\ ={m}(FSaCR.DSS.PRO.RO,FSaG.DSS.PRO.RO)).
-- proc. inline{1} 1. inline{2} 1. inline{2} 2. conseq />.
-  seq 7 8 : (={glob P,oz,k,m} /\ w{1} = w0{2} /\ c{1} = c0{2} /\ (m0 = m /\ m1 = m){2} /\ (m0 = m){1}
-            /\ ={qs,sk}(FSaCR_O_Default,FSaG_O_Default) 
-            /\ ={m}(FSaCR.DSS.PRO.RO,FSaG.DSS.PRO.RO)
-            /\ (oz = None \/ Some c0 = FSaG.DSS.PRO.RO.m.[w0,m1]){2}).
-  + while (#post /\ ={k,sk}); last by auto => />. 
-    inline*; auto; call(: true); auto; call(: true); auto => />. 
-    smt(domE get_set_sameE).
-  inline*. auto. sp. if{2}; last by auto => /> /#. 
-  rcondf{2} 4; first by auto => /> /#.
-  by auto => />; smt(get_set_sameE).
+       /\ ={m}(FSaCR.DSS.PRO.RO,FSaG.DSS.PRO.RO)); first last.
 - by sim.
-by inline*; auto; call(: true); auto => />.
+- by auto; call(: true); auto => />.
+proc. inline{1} 1. inline{2} 1. inline{2} 2. 
+swap{2} 9 2; wp; sp; conseq />.
+seq 1 1 : (={sk,oz,glob P} /\ w{1} = w0{2} /\ c{1} = c0{2} /\ m0{1} = m1{2} /\ (m = m1){2} /\
+           ={m}(FSaCR.DSS.PRO.RO,FSaG.DSS.PRO.RO) /\ 
+           (Some c0 = FSaG.DSS.PRO.RO.m.[w0,m1]){2} ).
+- while (#[:-2]post /\ (oz <> None => Some c0 = FSaG.DSS.PRO.RO.m.[w0,m1]){2}); 
+    last by auto => /> /#.  
+  inline*; call(: true); auto; call(: true); auto => />. 
+  smt(domE get_set_sameE).
+inline*. rcondf{2} ^if; first by auto => />; smt(domE get_set_sameE).
+by auto => />; smt(get_set_sameE).
 qed.
 
 end section PROOF.
