@@ -19,14 +19,6 @@ require import DistrExtras.
 op l1_norm (p : polyXnD1) = big predT ZModQ."`|_|" (mkseq (fun i => p.[i]) Round.n).
 op dC a = dcond dpolyXnD1 (fun (c : polyXnD1) => `|c| <= 1 /\ l1_norm c = a).
 
-lemma dpolyX_ll d :
-  is_lossless d => is_lossless (dpolyX d).
-proof.
-move => ?; rewrite /dpolyX.
-apply dmap_ll.
-exact BasePoly.dpoly_ll.
-qed.
-
 lemma reduced_dpoly d p m :
   m <= Round.n =>
   p \in BasePoly.dpoly Round.n d =>
@@ -38,18 +30,6 @@ have ?: BasePoly.deg p <= Round.n.
 exact reducedP.
 qed.
 
-(* Definitely stlib material... *)
-lemma map_mkseq (f : 'a -> 'b) (g: int -> 'a) (n : int) :
-  map f (mkseq g n) = mkseq (f \o g) n.
-proof.
-apply (eq_from_nth witness).
-rewrite size_map !size_mkseq //.
-move => i rg_i.
-rewrite size_map size_mkseq in rg_i.
-rewrite (nth_map witness); first smt(size_mkseq).
-rewrite !nth_mkseq; smt(ge0_n).
-qed.
-
 lemma abs_polyXN (p : polyXnD1) :
   `|-p| = `|p|.
 proof.
@@ -57,7 +37,7 @@ rewrite /"`|_|"; congr.
 rewrite /inf_norm.
 apply BigMax.eq_big_perm_map.
 apply perm_eq_refl_eq.
-rewrite !map_mkseq /(\o).
+rewrite !map_mkseq /(\o); 1, 2: exact ge0_n.
 congr; rewrite fun_ext => x /=; congr.
 by rewrite -rcoeffN -abs_zpN.
 qed.
@@ -110,15 +90,6 @@ lemma inf_norm_lt (p : polyXnD1) a :
   `|p| < a.
 proof. smt(inf_norm_le). qed.
 
-lemma ge0_abs_zp (x : zmod) :
-  0 <= `|x|.
-proof. smt(). qed.
-
-lemma ler_ofint' i j :
-  0 <= i /\ 0 <= j /\ ofint i <= ofint j
-  => i <= j.
-proof. smt(ofintK). qed.
-
 lemma inf_normXE (p : polyXnD1) a i :
   0 <= a =>
   `|p| <= a =>
@@ -133,10 +104,6 @@ rewrite -ler_bigmax in H.
 suff: p.[i] \in mkseq (fun i => p.[i]) Round.n by smt(ler_ofint').
 smt(mkseqP).
 qed.
-
-lemma abs_zp_ub (p : zmod) :
-  `|p| <= Round.q %/ 2.
-proof. smt(rg_asint). qed.
 
 lemma inf_norm_ub (p : polyXnD1) :
   `|p| <= Round.q %/ 2.
@@ -164,12 +131,6 @@ rewrite eq_sym in im_y; subst.
 rewrite /poly_highbits mkseqP in in_x.
 case in_x => [i [rg_i ?]]; subst.
 by exists (y.[i]).
-qed.
-
-lemma abs_zp_one : `|one| = 1.
-proof.
-rewrite /"`|_|" /crepr /=.
-rewrite oneE; smt(ge2_p).
 qed.
 
 (* Makes a valid challenge *)

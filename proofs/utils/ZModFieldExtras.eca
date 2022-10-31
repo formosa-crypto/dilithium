@@ -55,6 +55,20 @@ rewrite zeroE => /=.
 smt(ge2_p).
 qed.
 
+lemma abs_zp_one : `|one| = 1.
+proof.
+rewrite /"`|_|" /crepr /=.
+rewrite oneE; smt(ge2_p).
+qed.
+
+lemma ge0_abs_zp (x : zmod) :
+  0 <= `|x|.
+proof. smt(). qed.
+
+lemma abs_zp_ub (x : zmod) :
+  `|x| <= p %/ 2.
+proof. smt(rg_asint). qed.
+
 lemma asintK_centered (x : zmod) :
   `|x| < p %/ 2 =>
    inzmod (crepr x) = x.

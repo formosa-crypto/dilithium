@@ -212,7 +212,8 @@ rewrite !scalepE &(eqvMl) &(eqv_trans q).
   - by rewrite mulr_ge0 // divz_ge0.
   - by rewrite modz_ge0 gtr_eqF.
 apply/eqvMr; rewrite -polyCX ?divz_ge0 // (IntID.mulrC _ n).
-by rewrite exprM eqvX polyCN eqv_Xn.
+rewrite exprM eqvX; first smt(gt0_n).
+by rewrite polyCN eqv_Xn.
 qed.
 
 (* -------------------------------------------------------------------- *)
@@ -561,6 +562,14 @@ import BasePoly.
 
 op dpolyX (dcoeff : Zp distr) : polyXnD1 distr =
   dmap (dpoly n dcoeff) pinject.
+
+lemma dpolyX_ll d :
+  is_lossless d => is_lossless (dpolyX d).
+proof.
+move => ?; rewrite /dpolyX.
+apply dmap_ll.
+exact BasePoly.dpoly_ll.
+qed.
 
 op dpolyXnD1 = dmap (dpoly n Zp.DZmodP.dunifin) pinject.
 

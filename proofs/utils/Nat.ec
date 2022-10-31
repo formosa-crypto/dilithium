@@ -109,6 +109,11 @@ lemma ler_ofint i j : 0 <= i <= j => (ofint i <= ofint j) by smt.
 
 lemma ltr_ofint i j : 0 <= i < j => (ofint i < ofint j) by smt.
 
+lemma ler_ofint' i j :
+  0 <= i /\ 0 <= j /\ ofint i <= ofint j
+  => i <= j.
+proof. smt(ofintK). qed.
+
 lemma ler_ofint_ofnat (n : int) (m : nat) :
   0 <= n =>
   (ofint n <= m) <=> (n <= ofnat m).

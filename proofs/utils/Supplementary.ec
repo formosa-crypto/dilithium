@@ -35,3 +35,16 @@ rewrite -big_mkcond Bigreal.sumr_const; congr.
 rewrite count_predT_eq_in => //.
 move => z; apply mem_to_seq => //.
 qed.
+
+lemma map_mkseq (f : 'a -> 'b) (g: int -> 'a) (n : int) :
+  0 <= n =>
+  map f (mkseq g n) = mkseq (f \o g) n.
+proof.
+move => ge0_n.
+apply (eq_from_nth witness).
+rewrite size_map !size_mkseq //.
+move => i rg_i.
+rewrite size_map size_mkseq in rg_i.
+rewrite (nth_map witness); first smt(size_mkseq).
+by rewrite !nth_mkseq /#.
+qed.
