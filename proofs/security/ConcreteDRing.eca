@@ -125,7 +125,7 @@ lemma abs_zp_triangle_big (xs : 'a list) f :
   big predT (fun x => `|f x|) xs.
 proof.
 elim xs.
-- admit.
+- by rewrite big_nil BasePoly.BigCf.BCA.big_nil abs_zp_zero //.
 move => head tail IH /=.
 rewrite big_consT BasePoly.BigCf.BCA.big_consT /=.
 apply (StdOrder.IntOrder.ler_trans (`|f head| + `|BasePoly.BigCf.BCA.big predT f tail|)).
