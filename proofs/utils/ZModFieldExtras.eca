@@ -1,13 +1,44 @@
 require import AllCore IntDiv ZModP.
 require import Distr DInterval.
 import StdOrder IntOrder.
+require import Supplementary.
 
 clone include ZModField.
 
 (* Centered representative.
- * "Halfway" is rounded down. *)
+ * "Halfway" is rounded down.
+ * In the case where p is indeed prime,
+ * this matters only if p = 2,
+ * in which case we have {-1, 0}.
+ * Other cases are all ``balanced". *)
+op to_crepr x = let y = x %% p in
+  if (p + 1) %/ 2 <= y then y - p else y.
+
+lemma to_crepr_idempotent :
+  to_crepr \o to_crepr = to_crepr.
+proof.
+rewrite fun_ext /(\o) => x.
+smt(ge2_p).
+qed.
+
+lemma rg_to_crepr x :
+  (p + 1) %/ 2 - p <= to_crepr x < (p + 1) %/ 2.
+proof.
+smt(ge2_p rg_asint).
+qed.
+
+lemma to_crepr_zmodcgr x :
+  zmodcgr x (to_crepr x).
+proof. smt(ge2_p). qed.
+
 op crepr x = let y = asint x in
   if (p + 1) %/ 2 <= y then y - p else y.
+
+lemma rg_crepr x :
+  (p + 1) %/ 2 - p <= crepr x < (p + 1) %/ 2.
+proof.
+smt(ge2_p rg_asint).
+qed.
 
 lemma crepr_eq x y :
   crepr x = crepr y <=> x = y.
@@ -22,6 +53,16 @@ rewrite -modzDr.
 smt(modz_small rg_asint).
 qed.
 
+lemma creprK (x : zmod) :
+   inzmod (crepr x) = x.
+proof.
+rewrite /crepr /=.
+case ((p + 1) %/ 2 <= asint x) => ?; last exact asintK.
+rewrite inzmod_mod.
+suff: (asint x - p) %% p = asint x by smt(asintK).
+smt(rg_asint).
+qed.
+
 op "`|_|" x = `|crepr x|.
 
 lemma abs_zp_small (x: int) :
@@ -29,11 +70,9 @@ lemma abs_zp_small (x: int) :
 proof. smt(inzmodK). qed.
 
 lemma abs_zp_triangle (x y : zmod) :
-  (* can probably be weakened to `<=`? *)
-  `|x| + `|y| < p %/ 2 =>
   `|x + y| <= `|x| + `|y|.
 proof.
-smt(rg_asint addE ltr0_norm).
+smt(rg_asint inzmodK).
 qed.
 
 lemma abs_zpN (x : zmod) :
@@ -69,12 +108,88 @@ lemma abs_zp_ub (x : zmod) :
   `|x| <= p %/ 2.
 proof. smt(rg_asint). qed.
 
-lemma asintK_centered (x : zmod) :
-  `|x| < p %/ 2 =>
-   inzmod (crepr x) = x.
+(* repeat? *)
+(* print rg_crepr *)
+(*
+lemma crepr_rg x :
+  - (p + 1) %/ 2 <= crepr x < (p + 1) %/ 2.
+proof. smt(rg_asint). qed.
+*)
+
+(*
+lemma eq_by_zmodcgr_crepr x y :
+  (p + 1) %/ 2 - p <= x < (p + 1) %/ 2 =>
+  (p + 1) %/ 2 - p <= y < (p + 1) %/ 2 =>
+  zmodcgr x y =>
+  x = y.
 proof.
-move => ?; rewrite /crepr /=.
-smt(asintK).
+smt().
+qed.
+*)
+
+lemma crepr_mulE x y :
+  crepr (x * y) = to_crepr ((crepr x * crepr y)).
+proof.
+suff: zmodcgr (crepr (x * y)) (crepr x * crepr y).
+- smt(rg_to_crepr to_crepr_zmodcgr rg_crepr).
+rewrite /crepr mulE /=.
+
+(* Hideous, I know... *)
+case ((p + 1) %/ 2 <= asint x * asint y %% p) => _.
+- case ((p + 1) %/ 2 <= asint x) => _.
+  + case ((p + 1) %/ 2 <= asint y) => _.
+    * suff: zmodcgr (asint x * asint y %% p)
+                    (asint x * asint y + (- asint x - asint y + p) * p) by smt().
+      suff: zmodcgr (asint x * asint y %% p)
+                    (asint x * asint y) by smt(modzMDr).
+      smt(modz_mod).
+    * suff: zmodcgr (asint x * asint y %% p)
+                    (asint x * asint y + (-asint y) * p) by smt().
+      suff: zmodcgr (asint x * asint y %% p)
+                    (asint x * asint y) by smt(modzMDr).
+      smt(modz_mod).
+  + case ((p + 1) %/ 2 <= asint y) => _.
+    * suff: zmodcgr (asint x * asint y %% p)
+                    (asint x * asint y + (-asint x) * p) by smt().
+      suff: zmodcgr (asint x * asint y %% p)
+                    (asint x * asint y) by smt(modzMDr).
+      smt(modz_mod).
+    * suff: zmodcgr (asint x * asint y %% p)
+                    (asint x * asint y) by smt().
+      smt(modz_mod).
+- case ((p + 1) %/ 2 <= asint x) => _.
+  + case ((p + 1) %/ 2 <= asint y) => _.
+    * suff: zmodcgr (asint x * asint y %% p)
+                    (asint x * asint y + (- asint x - asint y + p) * p) by smt().
+      suff: zmodcgr (asint x * asint y %% p)
+                    (asint x * asint y) by smt(modzMDr).
+      smt(modz_mod).
+    * suff: zmodcgr (asint x * asint y %% p)
+                    (asint x * asint y + (-asint y) * p) by smt().
+      suff: zmodcgr (asint x * asint y %% p)
+                    (asint x * asint y) by smt(modzMDr).
+      smt(modz_mod).
+  + case ((p + 1) %/ 2 <= asint y) => _.
+    * suff: zmodcgr (asint x * asint y %% p)
+                    (asint x * asint y + (-asint x) * p) by smt().
+      suff: zmodcgr (asint x * asint y %% p)
+                    (asint x * asint y) by smt(modzMDr).
+      smt(modz_mod).
+    * suff: zmodcgr (asint x * asint y %% p)
+                    (asint x * asint y) by smt().
+      smt(modz_mod).
+qed.
+
+lemma to_crepr_abs x :
+  `|to_crepr x| <= `|x|.
+proof. smt(rg_to_crepr). qed.
+
+lemma abs_zp_prod (x y : zmod) :
+  `|x * y| <= `|x| * `|y|.
+proof.
+rewrite /"`|_|".
+rewrite crepr_mulE.
+smt(to_crepr_abs).
 qed.
 
 (* -- Distributions over interval of ZModField -- *)
@@ -166,7 +281,7 @@ rewrite dinter_zp_supp; 1, 2: smt().
 split => ?; first smt(abs_zp_small).
 exists (crepr x).
 split; last smt().
-by rewrite asintK_centered // /#.
+by rewrite creprK // /#.
 qed.
 
 lemma dopenball_zp_supp i x :
