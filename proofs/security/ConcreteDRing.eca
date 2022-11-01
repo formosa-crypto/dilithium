@@ -134,17 +134,17 @@ smt().
 qed.
 
 lemma inf_l1_norm_product (x y : polyXnD1) b1 b2 :
-  (* 0 <= b1 => *)
-  0 <= b2 =>
+  0 < b1 =>
+  0 < b2 =>
   `|x| <= b1 =>
    l1_norm y <= b2 =>
   `|x * y| <= b1 * b2.
 proof.
-move => ge0_b2 inf_norm_x_ub l1_norm_y_ub.
+move => gt0_b1 gt0_b2 inf_norm_x_ub l1_norm_y_ub.
 
 (* clean up inf_norm hypothesis *)
 rewrite ler_ofnat in inf_norm_x_ub.
-case inf_norm_x_ub => ge0_b1 inf_norm_x_ub.
+case inf_norm_x_ub => _ inf_norm_x_ub.
 rewrite -ler_bigmax /= in inf_norm_x_ub.
 have ?: forall z, z \in mkseq (fun i => x.[i]) Round.n => `|z| <= b1.
 - smt(ler_ofint').
@@ -168,22 +168,34 @@ apply (StdOrder.IntOrder.ler_trans
     (fun j => `| y.[j] * x.[i - j] - y.[j] * x.[Round.n + i - j] |) 0 Round.n)).
 - exact abs_zp_triangle_big.
 
-print StdBigop.Bigint.ler_sum.
-print StdBigop.Bigint.ler_sum_seq.
+apply (StdOrder.IntOrder.ler_trans
+  (bigi predT (fun j => `| y.[j] | * b1) 0 Round.n)).
+- apply StdBigop.Bigint.ler_sum_seq => /= j rg_j _.
+  rewrite mem_range in rg_j.
+  case (i < j) => ?.
+  + have ->: x.[i - j] = ZModQ.zero.
+    - by rewrite lt0_rcoeff //; first smt().
+    rewrite ZModpRing.mulr0 ZModpRing.sub0r -abs_zpN.
+    apply (StdOrder.IntOrder.ler_trans (`|y.[j]| * `|x.[Round.n + i - j]|)).
+    - exact abs_zp_prod.
+    suff: `|x.[Round.n + i - j]| <= b1.
+    - by have /#: 0 <= `|y.[j]| by smt(ge0_abs_zp).
+    suff: x.[Round.n + i - j] \in mkseq (fun i => x.[i]) Round.n by move => ? /#.
+    by apply mkseqP; exists (Round.n + i - j) => /#.
+  + have ->: x.[Round.n + i - j] = ZModQ.zero.
+    - by rewrite gered_rcoeff // /#.
+    rewrite ZModpRing.mulr0 ZModpRing.subr0.
+    apply (StdOrder.IntOrder.ler_trans (`|y.[j]| * `|x.[i - j]|)); first exact abs_zp_prod.
+    suff: `|x.[i - j]| <= b1.
+    - by have /#: 0 <= `|y.[j]| by smt(ge0_abs_zp).
+    suff: x.[i - j] \in mkseq (fun i => x.[i]) Round.n by move => ? /#.
+    by apply mkseqP; exists (i - j) => /#.
+rewrite -big_distrl //; first smt().
 
-print eq_big_seq.
-
-print rcoeffM.
-print BasePoly.BigCf.BCA.bigi.
-print bigi.
-
-print ler_ofnat.
-
-print big_distrr.
-
-print eq_big_perm.
-print eq_big_perm_map.
-admitted.
+suff: bigi predT (fun (a : int) => `|y.[a]|) 0 Round.n = l1_norm y by smt().
+rewrite /l1_norm /mkseq big_mapT.
+by congr => /#.
+qed.
 
 op dpoly_openball i =
   if 1 <= i <= Round.q %/ 2 then dpolyX (dopenball_zp i) else dpolyXnD1.
