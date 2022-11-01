@@ -30,7 +30,7 @@ axiom qH_ge0 : 0 <= qH.
 op e : int.
 
 (* upper bound on number of itertions. *)
-op kappa : { int | 0 < kappa } as gt0_kappa.
+(* op kappa : { int | 0 < kappa } as gt0_kappa. *)
 
 (* matrix dimensions *)
 op k : {int | 0 < k} as gt0_k.
@@ -115,10 +115,9 @@ op recover (pk : PK) (c : challenge_t) (z : response_t) : commit_t =
 
 clone FSa.CommRecov as FSaCR with
   op recover <= recover,
-  op kappa <= kappa,
   op qS <= qS,
   op qH <= qH
-proof* by smt(gt0_kappa qS_ge0 qH_ge0).
+proof* by smt(qS_ge0 qH_ge0).
 
 section.
 import FSaCR.
@@ -146,9 +145,8 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
     c <- witness;
 
     (mA, s1, s2) <- sk;
-    ctr <- 0;
     z <- None;
-    while(ctr < kappa /\ z = None) {
+    while(z = None) {
       y <$ dvector (dRq_ (gamma1 - 1)) l;
       w <- mA *^ y;
       w1 <- highBitsV w;
@@ -158,9 +156,8 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
          gamma2 - b <= inf_normv (lowBitsV (mA *^ y - c ** s2))) {
         z <- None;
       }
-      ctr <- ctr + 1;
     }
-    return if z = None then None else Some (c, oget z);
+    return (c, oget z);
   }
 
   proc verify(pk: PK, m : M, sig : Sig) = {
@@ -168,13 +165,12 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
     var mA, t1;
     var result;
     (mA, t1) <- pk;
-    result <- false;
-    if(sig <> None) {
-      (c, z) <- oget sig;
-      w <- highBitsV (mA *^ z - c ** t1);
-      c' <@ H.get((w, m));
-      result <- size z = l /\ inf_normv z < gamma1 - b /\ c = c';
-    }
+
+    (c, z) <- sig;
+    w <- highBitsV (mA *^ z - c ** t1);
+    c' <@ H.get((w, m));
+    result <- size z = l /\ inf_normv z < gamma1 - b /\ c = c';
+
     return result;
   }
 }.
@@ -233,12 +229,12 @@ module RedMSIS (A : Adv_EFKOA_RO) (H : RqStMSIS.PRO.RO) = {
     t <- -tbar;
     (mu,sig) <@ A(H').forge(mA,t); (* discard H, use H' *)
     y <- witness;
-    if (sig <> None) {
-      (c,z) <- oget sig;
-      w <- (mA *^ z - c ** t);
-      e <- -lowBitsV w;
-      y <- e || z || vectc 1 c;
-    }
+
+    (c,z) <- sig;
+    w <- (mA *^ z - c ** t);
+    e <- -lowBitsV w;
+    y <- e || z || vectc 1 c;
+
     return (y,mu);
   }
 }.
@@ -259,7 +255,7 @@ local module S1 (H : Hash) = {
     return (pk,witness);
   }
   
-  proc sign(sk: SK, m: M) : Sig = { return None; }
+  proc sign(sk: SK, m: M) : Sig = { return witness; }
 
   proc verify = SimplifiedDilithium(H).verify
 }.
@@ -300,11 +296,8 @@ seq 3 3 : (={m,sig,pk} /\
     if; 1,3: by auto => /> /#.
     auto => />. smt(get_setE set_set_sameE shiftV_inj).
   by inline*; auto => />; smt(emptyE).
-inline*; wp. sp. if; 1,3: by auto. 
-sp 3 4; seq 1 1 : (#pre /\ r0{1} = r1{2}); first by auto.
-if; 2,3: by auto => />; smt(get_set_sameE). (* uff ... *)
-move => /> &1 &2. case: (sig{2}) => // -[c z] /> Hshift.
-pose w1 := highBitsV _. smt().
+(* Ethan: Not sure if good way to patch things *)
+inline*; auto => />; smt(get_set_sameE).
 qed.
 
 import StdOrder.RealOrder.
@@ -312,6 +305,7 @@ import StdOrder.RealOrder.
 (* move to EC lib? *)
 lemma max_ltrP (i j k : int) : i < max j k <=> i < j \/ i < k by smt().
 
+(* Ethan: This proof was broken; I tried fixing it. *)
 local lemma hop3 &m : 
   Pr[EF_KOA_RO(S1, A, H').main() @ &m : res] <= Pr[Game(RedMSIS(A), G).main() @ &m : res].
 proof.
@@ -353,25 +347,25 @@ seq 6 7 : (={sig,PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in
     by rewrite colN oppmK colK. 
   move => _ _.     
   by rewrite -E1 -E2 /= rows_catmr //=; smt(Top.gt0_k Top.gt0_l).
-inline S1(H').verify. sp 5 1. 
-if; 1,3: by (try inline*); auto.
-inline H'.get. wp. sp 1 1. 
+inline S1(H').verify  H'.get. wp. sp.
+
 (* need [size z{1} = l] to prove equality of the RO argument *)
 case (size z{1} = l /\ inf_normv z{1} < gamma1 - b);
   last by conseq (:_ ==> true); [ smt() | inline*; auto].
 call(: ={arg,glob G} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in dC tau){1} 
        ==> ={res} /\ res{1} \in dC tau).
-  proc; inline*; auto => />.  smt(get_set_sameE).
-wp; skip => &1 &2. case: (sig0{1}) => // -[? ?]. 
-move => />. case. move => /> _. (* why is case needed? *)
-(* recover names / definitions *)
-move: (mA0{2}) (t{2}) (z{1}) (c{1}) => A t z c.
+  proc; inline*; auto => />. smt(get_set_sameE).
+
+auto => /> &1 ? r_mA c_mA size_t size_z normv_z.
+
 pose w := (_ - Vectors.(**) _ _). (* FIXME: why is XInt.(**) in scope? *)
 pose w1 := highBitsV _. 
 pose e := - lowBitsV _.
-move => r_mA c_mA size_t size_z normv_z. 
-have size_w : size w = k by rewrite size_addv /= size_scalarv size_mulmxv /#. 
-have size_e : size e = k by rewrite size_oppv size_lowBitsV.
+
+have size_w : size w{1} = k.
+- by rewrite size_addv /= size_scalarv size_mulmxv /#. 
+have size_e : size e = k.
+- by rewrite size_oppv size_lowBitsV.
 split => [|? c_dC]; last split.
 - rewrite mulmxv_cat.
   + smt(gt0_k). 
@@ -383,10 +377,10 @@ split => [|? c_dC]; last split.
   by rewrite /w1 /e oppvK high_lowPv. 
 - rewrite 2!inf_normv_cat !StdOrder.IntOrder.ltr_maxrP !max_ltrP.
   rewrite normv_z /= 1!inf_normv_vectc //.
-  have -> /= : cnorm c < gamma2+1 by smt(cnorm_dC gamma2_bound).
+  have -> /= : cnorm c0{1} < gamma2+1 by smt(cnorm_dC gamma2_bound).
   right. rewrite /e inf_normvN. smt(inf_normv_low gamma2_bound).
 - rewrite catvA get_catv_r ?size_catv 1:/#. 
-  have -> : k + (l + 1) - 1 - (size e + size z) = 0 by smt().
+  have -> : k + (l + 1) - 1 - (size e + size z{1}) = 0 by smt().
   by rewrite get_vectc.
 qed.
 
@@ -489,17 +483,19 @@ equiv sign_opbased_correct :
   ={arg,glob H} ==> ={res,glob H}.
 proof.
 proc; inline *. 
-while (oz{1} = z{2} /\ ={c,sk,glob H,m} /\ k{1} = ctr{2} /\ (sk = (mA,s1,s2)){2}); 
+while (oz{1} = z{2} /\ ={c,sk,glob H,m} /\ (sk = (mA,s1,s2)){2}); 
   last by auto => /> /#.
 conseq (: _ ==> ={c, sk, glob H, m} /\ (sk = (mA,s1,s2)){2} 
-                 /\ oz{1} = z{2} /\ k{1} = ctr{2}); 1: smt().
+                 /\ oz{1} = z{2}); 1: smt().
 seq 4 4 : (#pre /\ w{1} = w1{2} /\ P.pstate{1} = y{2}).
 - call(: true). conseq />. 
-  rnd: *0 *0. skip => /> &m ?. split => [[y w1] ?|_]. 
+  rnd: *0 *0.
+  skip => /> &m.
+  split => [[y w1] ?|_]. 
   + apply/eq_sym. congr. (* symmetry as hack for RHS pattern selection *)
     by rewrite /commit /= dmap_comp /(\o) /=. 
   move => ?. by rewrite /commit /= dmap_comp /(\o).
-conseq />. auto => /> &m ?. split => [|pass_chk]. 
+conseq />. auto => /> &m. split => [|pass_chk]. 
 + by rewrite /respond /= => ->.
 + by rewrite /respond /= ifF.
 qed.
@@ -508,12 +504,11 @@ equiv verify_opbased_correct :
   OpBasedSig(H).verify ~ SimplifiedDilithium(H).verify :
   ={arg,glob H} ==> ={res,glob H}.
 proof.
-proc; inline *. 
-sp; if; 1,3: by auto => />.
-seq 3 3: (#pre /\ ={c, z, w, c'} /\
+proc; inline *.
+sp.
+seq 1 1: (#pre /\ ={c, z, w, c'} /\
           w{1} = recover pk{1} c{1} z{1}).
-- sp; call (: true); skip => /> ?? H H' ?.
-  by rewrite -H in H'; case H' => ?? /#.
+- by sp; call (: true).
 if{1}; by auto => />.
 qed.
 
@@ -1154,10 +1149,9 @@ qed.
 (*** Step 2 : Reduce to the case for general (i.e., not commitment recoverable schemes) ***)
 
 local clone Generic as FSaG with
-  op kappa <= kappa,
   op qS <= qS,
   op qH <= qH + Top.qS 
-proof* by smt(gt0_kappa qS_ge0 qH_ge0).
+proof* by smt(qS_ge0 qH_ge0).
 
 (* Generic FS+abort transform of the OpBased ID scheme *)
 local module OpBasedSigG = FSaG.IDS_Sig(OpBased.P,OpBased.V).
