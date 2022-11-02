@@ -583,12 +583,34 @@ have -> /= : (gamma1 - b <= inf_normv (y' + c' ** s1) \/
               gamma2 - b <= inf_normv (lowBitsV (mA *^ y' - c' ** s2))) = false by smt().
 rewrite /recover /=.
 have ->: mA *^ (y' + c' ** s1) - c' ** (mA *^ s1 + s2) = mA *^ y' - c' ** s2.
-- admit. (* more annoying vector stuff again... *)
+- rewrite mulmxvDr.
+  + have ->: size y' = l by smt(size_dvector).
+    by rewrite size_scalarv /#.
+  rewrite scalarvDr.
+  + by rewrite size_mulmxv => /#.
+  have ->: mA *^ (c' ** s1) = c' ** (mA *^ s1).
+  + by rewrite mulmsv /#.
+  rewrite oppvD.
+  rewrite addvA.
+  suff: c' ** (mA *^ s1) - c' ** (mA *^ s1) - c' ** s2 = - c' ** s2.
+  + move => H.
+    by rewrite -{2}H; smt(addvA).
+  rewrite addvN.
+  have ->: size (c' ** (mA *^ s1)) = size (-c' ** s2).
+  + by rewrite size_oppv !size_scalarv size_mulmxv => /#.
+  by rewrite add0v //.
 have ->: highBitsV (mA *^ y') = highBitsV (mA *^ y' - c' ** s2 + c' ** s2).
 - congr.
-  admit. (* vectors... *)
+  suff: - c' ** s2 + c' ** s2 =  zerov (size (mA *^ y')).
+  + move => H.
+    by rewrite -addvA H addv0.
+  rewrite addvC addvN.
+  congr.
+  by rewrite size_scalarv size_mulmxv; smt(size_dvector).
 apply (hide_lowV _ _ b).
-- admit. (* vector size stuff *)
+- rewrite size_addv size_oppv size_scalarv.
+  suff: size (mA *^ y') = size s2 by smt().
+  by rewrite size_mulmxv; smt(size_dvector).
 - smt(gt0_b).
 - smt(b_round_gamma2_lt).
 - (* Need to prove inf_norm cs2 upper-bound... *)
@@ -688,16 +710,30 @@ local lemma line12_magic_some :
   forall c s1 z0, c \in FSa.dC => s1 \in ds1 => check_znorm z0 =>
     mu1 (transz c s1) (Some z0) = 1%r / (size (to_seq (support dy)))%r.
 proof.
-  move => c s1 z0 c_valid s1_valid z0_valid.
-  rewrite /transz dmap1E /pred1 /(\o) => /=.
-  rewrite (mu_eq _ _ (fun y => y + c ** s1 = z0)).
-  - move => y /#.
-  have -> : (fun y => y + c ** s1 = z0) = pred1 (z0 - c ** s1).
-    apply fun_ext => y. rewrite /pred1.
-    admit. (* vector calculation... *)
-  rewrite mu1_uni_ll ?dy_uni ?dy_ll.
-  suff -> : (z0 - c ** s1) \in dy by trivial.
-  exact masking_range.
+move => c s1 z0 c_valid s1_valid z0_valid.
+rewrite /transz dmap1E /pred1 /(\o) => /=.
+rewrite (mu_eq _ _ (fun y => y + c ** s1 = z0)).
+- move => y /#.
+rewrite (mu_eq_support _ _ (pred1 (z0 - c ** s1))).
+- move => /= y supp_y.
+  rewrite /pred1 eq_iff.
+  split.
+  + move => H; rewrite eq_sym in H; subst.
+    rewrite -addvA addvN.
+    rewrite size_scalarv.
+    have ->: size s1 = l by smt(size_dvector).
+    have ->: l = size y by smt(size_dvector).
+    by rewrite addv0.
+  + move => H; subst.
+    rewrite -addvA.
+    have ->: (- c ** s1) + c ** s1 = c ** s1 + (- c ** s1) by apply addvC.
+    rewrite addvN size_scalarv.
+    have ->: size s1 = l by smt(size_dvector).
+    have ->: l = size z0 by smt().
+    by rewrite addv0.
+rewrite mu1_uni_ll ?dy_uni ?dy_ll.
+suff -> : (z0 - c ** s1) \in dy by trivial.
+exact masking_range.
 qed.
 
 local lemma line12_outofbound :
