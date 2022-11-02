@@ -816,9 +816,7 @@ have -> :
     apply supportPn.
     apply line12_outofbound => //.
 apply sum_characteristic.
-
-(* TODO Need to prove new vector type is finite... *)
-admit.
+exact is_finite_check_znorm.
 qed.
 
 local lemma line12_magic c s1 :
