@@ -638,11 +638,16 @@ apply (hide_lowV _ _ b); 5: smt().
 (* Need to prove inf_norm cs2 upper-bound... *)
 (* should first bound inf-norm of (1-norm poly * inf-norm poly). *)
 apply (StdOrder.IntOrder.ler_trans (e * tau)); last by exact eta_tau_leq_b.
+have ->: e * tau = tau * e by smt().
 apply l1_inf_norm_product_ub.
-- exact gt0_eta.
 - smt(tau_bound).
-- (* TODO l1_norm of c' *) admit.
-- (* TODO inf_norm of s2 *) admit.
+- exact gt0_eta.
+- (* l1_norm of c' *)
+  rewrite supp_dC /# in c_supp.
+- apply inf_normv_ler; first by smt(gt0_eta).
+  move => i rg_i.
+  rewrite supp_dvector in rg_s2; first by smt(Top.gt0_k).
+  rewrite -supp_dRq; smt(gt0_eta).
 qed.
 
 (* -- OpBased is indeed zero-knowledge -- *)
@@ -705,25 +710,53 @@ proof.
   rewrite mu1_uni_ll ?dsimz_uni ?dsimz_ll; smt(dsimz_supp).
 qed.
 
-print dy.
-
-print check_znorm.
-
-print inf_normv.
-print inf_norm.
-search cnorm.
-
 local lemma masking_range c s1 z:
   c \in FSa.dC => s1 \in ds1 => check_znorm z =>
   (z - c ** s1) \in dy.
-proof. admitted.
+proof.
+move => c_supp s1_supp z_supp.
+apply supp_dvector; first smt(Top.gt0_l).
+split => [|i rg_i].
+- (* size *)
+  rewrite size_addv size_oppv size_scalarv.
+  smt(size_dvector).
+rewrite supp_dRq; first smt(b_gamma1_lt gt0_b).
+rewrite get_addv.
+- (* size *)
+  smt(size_addv size_oppv size_scalarv size_dvector).
+apply (StdOrder.IntOrder.ler_trans (cnorm z.[i] + cnorm (- c ** s1).[i])).
+- exact cnorm_triangle.
+suff: cnorm z.[i] < gamma1 - b /\ cnorm (- c ** s1).[i] <= tau * e by smt(eta_tau_leq_b).
+split.
+- (* bound cnorm z.[i] *)
+  rewrite /check_znorm in z_supp.
+  case z_supp => [size_z norm_z_ub].
+  by rewrite inf_normv_ltr in norm_z_ub; smt(b_gamma1_lt).
+- (* bound cnorm cs1 *)
+  rewrite getvN cnormN get_scalarv.
+  apply l1_cnorm_product_ub.
+  - smt(tau_bound).
+  - smt(gt0_eta).
+  - by rewrite supp_dC /# in c_supp.
+  - rewrite supp_dvector in s1_supp.
+    + smt(Top.gt0_l).
+    by rewrite -supp_dRq; smt(gt0_eta).
+qed.
 
 local lemma is_finite_check_znorm :
   is_finite check_znorm.
 proof.
 have ->: check_znorm = (fun (v : vector) => size v = l /\
     forall i, 0 <= i < l => (fun r => cnorm r < gamma1 - b) v.[i]).
-- admit. (* TODO should be straightforward rewrites hopefully *)
+- apply fun_ext => v.
+  rewrite eq_iff.
+  split.
+  + move => [sz_v znorm_v].
+    split => [/#|i rg_i] /=.
+    by rewrite inf_normv_ltr in znorm_v; smt(b_gamma1_lt).
+  + move => [sz_v cnorm_vi].
+    split => [/#|].
+    rewrite inf_normv_ltr; smt(b_gamma1_lt).
 apply is_finite_vector.
 apply (finite_leq predT) => /=; first smt().
 exact is_finite_Rq.
@@ -732,10 +765,16 @@ qed.
 local lemma is_finite_dy :
   is_finite (support dy).
 proof.
-print dy.
-print supp_dvector.
-(* TODO hopefully just rearranging dy so is_finite_vector applies *)
-admitted.
+have ->: support dy =
+         (fun (y : vector) => size y = l /\
+          forall i, 0 <= i < l => (fun r => r \in dRq_ (gamma1 - 1)) y.[i]).
+- rewrite fun_ext => y /=.
+  apply eq_iff.
+  by rewrite supp_dvector //; smt(Top.gt0_l).
+apply is_finite_vector.
+apply (finite_leq predT) => /=; first smt().
+exact is_finite_Rq.
+qed.
 
 local lemma mask_size :
   size (to_seq check_znorm) <= size (to_seq (support dy)).
@@ -759,13 +798,14 @@ qed.
 lemma ge0_inf_normv v :
   0 <= inf_normv v.
 proof.
-search inf_normv.
-admitted.
+rewrite /inf_normv /(\o) /inf_norm.
+apply ler_ofint_ofnat => //.
+exact le0n.
+qed.
 
 local lemma inf_normv_zero dim :
   inf_normv (zerov dim) = 0.
 proof.
-search inf_normv.
 suff: inf_normv (zerov dim) <= 0 by smt(ge0_inf_normv).
 apply inf_normv_ler => //.
 move => i rg_i.
