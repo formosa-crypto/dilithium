@@ -133,22 +133,22 @@ apply (StdOrder.IntOrder.ler_trans (`|f head| + `|BasePoly.BigCf.BCA.big predT f
 smt().
 qed.
 
-lemma inf_l1_norm_product (x y : polyXnD1) b1 b2 :
+lemma l1_inf_norm_product (x y : polyXnD1) b1 b2 :
   0 < b1 =>
   0 < b2 =>
-  `|x| <= b1 =>
-   l1_norm y <= b2 =>
+  l1_norm x <= b1 =>
+  `|y| <= b2 =>
   `|x * y| <= b1 * b2.
 proof.
-move => gt0_b1 gt0_b2 inf_norm_x_ub l1_norm_y_ub.
+move => gt0_b1 gt0_b2 l1_norm_x_ub inf_norm_y_ub.
 
 (* clean up inf_norm hypothesis *)
-rewrite ler_ofnat in inf_norm_x_ub.
-case inf_norm_x_ub => _ inf_norm_x_ub.
-rewrite -ler_bigmax /= in inf_norm_x_ub.
-have ?: forall z, z \in mkseq (fun i => x.[i]) Round.n => `|z| <= b1.
+rewrite ler_ofnat in inf_norm_y_ub.
+case inf_norm_y_ub => _ inf_norm_y_ub.
+rewrite -ler_bigmax in inf_norm_y_ub.
+have ?: forall z, z \in mkseq (fun i => y.[i]) Round.n => `|z| <= b2.
 - smt(ler_ofint').
-clear inf_norm_x_ub.
+clear inf_norm_y_ub.
 
 (* from poly to entry-wise ler *)
 apply ler_ofnat.
@@ -160,39 +160,40 @@ apply ler_ofint.
 split => [|_]; first smt().
 
 (* rewriting poly product *)
-rewrite PolyReduceZq.ComRing.mulrC.
+
+(* outdated? rewrite PolyReduceZq.ComRing.mulrC. *)
 rewrite rcoeffM //.
 
 apply (StdOrder.IntOrder.ler_trans
   (bigi predT
-    (fun j => `| y.[j] * x.[i - j] - y.[j] * x.[Round.n + i - j] |) 0 Round.n)).
+    (fun j => `| x.[j] * y.[i - j] - x.[j] * y.[Round.n + i - j] |) 0 Round.n)).
 - exact abs_zp_triangle_big.
 
 apply (StdOrder.IntOrder.ler_trans
-  (bigi predT (fun j => `| y.[j] | * b1) 0 Round.n)).
+  (bigi predT (fun j => `| x.[j] | * b2) 0 Round.n)).
 - apply StdBigop.Bigint.ler_sum_seq => /= j rg_j _.
   rewrite mem_range in rg_j.
   case (i < j) => ?.
-  + have ->: x.[i - j] = ZModQ.zero.
+  + have ->: y.[i - j] = ZModQ.zero.
     - by rewrite lt0_rcoeff //; first smt().
     rewrite ZModpRing.mulr0 ZModpRing.sub0r -abs_zpN.
-    apply (StdOrder.IntOrder.ler_trans (`|y.[j]| * `|x.[Round.n + i - j]|)).
+    apply (StdOrder.IntOrder.ler_trans (`|x.[j]| * `|y.[Round.n + i - j]|)).
     - exact abs_zp_prod.
-    suff: `|x.[Round.n + i - j]| <= b1.
-    - by have /#: 0 <= `|y.[j]| by smt(ge0_abs_zp).
-    suff: x.[Round.n + i - j] \in mkseq (fun i => x.[i]) Round.n by move => ? /#.
+    suff: `|y.[Round.n + i - j]| <= b2.
+    - by have /#: 0 <= `|x.[j]| by smt(ge0_abs_zp).
+    suff: y.[Round.n + i - j] \in mkseq (fun i => y.[i]) Round.n by move => ? /#.
     by apply mkseqP; exists (Round.n + i - j) => /#.
-  + have ->: x.[Round.n + i - j] = ZModQ.zero.
+  + have ->: y.[Round.n + i - j] = ZModQ.zero.
     - by rewrite gered_rcoeff // /#.
     rewrite ZModpRing.mulr0 ZModpRing.subr0.
-    apply (StdOrder.IntOrder.ler_trans (`|y.[j]| * `|x.[i - j]|)); first exact abs_zp_prod.
-    suff: `|x.[i - j]| <= b1.
-    - by have /#: 0 <= `|y.[j]| by smt(ge0_abs_zp).
-    suff: x.[i - j] \in mkseq (fun i => x.[i]) Round.n by move => ? /#.
+    apply (StdOrder.IntOrder.ler_trans (`|x.[j]| * `|y.[i - j]|)); first exact abs_zp_prod.
+    suff: `|y.[i - j]| <= b2.
+    - by have /#: 0 <= `|x.[j]| by smt(ge0_abs_zp).
+    suff: y.[i - j] \in mkseq (fun i => y.[i]) Round.n by move => ? /#.
     by apply mkseqP; exists (i - j) => /#.
 rewrite -big_distrl //; first smt().
 
-suff: bigi predT (fun (a : int) => `|y.[a]|) 0 Round.n = l1_norm y by smt().
+suff: bigi predT (fun (a : int) => `|x.[a]|) 0 Round.n = l1_norm x by smt().
 rewrite /l1_norm /mkseq big_mapT.
 by congr => /#.
 qed.
@@ -362,3 +363,4 @@ split => H.
   rewrite dball_zp_supp //; 1, 2: smt().
   by rewrite inf_normXE => /#.
 qed.
+realize l1_cnorm_product_ub by exact l1_inf_norm_product.

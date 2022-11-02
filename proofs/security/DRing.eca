@@ -20,6 +20,13 @@ clone import Ring.ComRing as RqRing with type t <= Rq.
 op cnorm : Rq -> int.             (* infinity norm (after centered reduction modulo) *)
 op l1_norm : Rq -> int.           (* sum over absolute values                        *)
 
+axiom l1_cnorm_product_ub (x y : Rq) (b1 b2 : int) :
+  0 < b1 =>
+  0 < b2 =>
+  l1_norm x <= b1 =>
+  cnorm y <= b2 =>
+  cnorm (x * y) <= b1 * b2.
+
 (* TOTHINK: If [high = Rq] is a problem, we either need to have a
 ComRing structure on high or use lists rather than vectors to pass
 [w1] around *)
