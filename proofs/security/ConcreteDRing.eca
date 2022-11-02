@@ -122,6 +122,27 @@ move => i rg_i.
 by rewrite rcoeff0 abs_zp_zero.
 qed.
 
+lemma sum_ofnat a b :
+  ofnat a + ofnat b = ofnat (a + b).
+proof. smt(le0n ofintK natW2). qed.
+
+lemma le_ofnat (a b : nat) :
+  a <= b =>
+  ofnat a <= ofnat b.
+proof. smt(le0n ofintK natW2). qed.
+
+lemma inf_norm_triangle (x y : polyXnD1) :
+  `|x + y| <= `|x| + `|y|.
+proof.
+apply inf_norm_le; first smt(ge0_inf_norm_p).
+move => i rg_i.
+apply (StdOrder.IntOrder.ler_trans (`|x.[i]| + `|y.[i]|)).
+- rewrite rcoeffD.
+  exact abs_zp_triangle.
+suff: `|x.[i]| <= `|x| /\ `|y.[i]| <= `|y| by smt().
+split; exact inf_norm_poly_ler.
+qed.
+
 (**
 lemma ler_ofnat' (m n : nat) :
   m <= n => ofnat m <= ofnat n.
@@ -374,3 +395,4 @@ split => H.
 qed.
 realize l1_cnorm_product_ub by exact l1_inf_norm_product.
 realize cnorm0 by exact inf_norm0.
+realize cnorm_triangle by exact inf_norm_triangle.

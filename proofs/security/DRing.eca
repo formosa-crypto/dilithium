@@ -21,6 +21,7 @@ op cnorm : Rq -> int.             (* infinity norm (after centered reduction mod
 op l1_norm : Rq -> int.           (* sum over absolute values                        *)
 
 axiom cnorm0 : cnorm zeror = 0.
+axiom cnorm_triangle (x y : Rq) : cnorm (x + y) <= cnorm x + cnorm y.
 
 axiom l1_cnorm_product_ub (x y : Rq) (b1 b2 : int) :
   0 < b1 =>
