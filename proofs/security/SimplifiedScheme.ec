@@ -27,7 +27,7 @@ axiom qH_ge0 : 0 <= qH.
 
 (* secret key range.
  * Typically "eta" but that's a reserved keyword in EC. *)
-op e : int.
+op e : {int | 0 < e} as gt0_eta.
 
 (* upper bound on number of itertions. *)
 (* op kappa : { int | 0 < kappa } as gt0_kappa. *)
@@ -47,8 +47,15 @@ op gamma2 : { int | 2 <= gamma2 <= q %/ 4 } as gamma2_bound.
 axiom gamma2_div : 2 * gamma2 %| (q - 1).
 
 (* beta in spec.
- * beta is again a reserved keyword in EC. *)
-op b : int.
+ * beta is again a reserved keyword in EC.
+ *
+ * Maybe bound should be gt0_beta anyways?
+ *)
+op b : {int | 0 < b} as gt0_b.
+
+(* more beta bounds and properties... *)
+axiom b_gamma1_lt : b < gamma1.
+axiom b_round_gamma2_lt : b < 2 * gamma2 %/ 2.
 
 clone import DVect as DV with 
   theory DR <- DR,
@@ -62,9 +69,10 @@ realize HL.alpha_almost_divides_q by apply gamma2_div.
 import DV.MatRq. (* Matrices and Vectors over Rq *)
 import DV.HL.    (* highBitsV and lowBitsV with alpha = 2 * gamma2 *)
 
-
 (* challenge weight *)
 op tau : { int | 1 <= tau <= n } as tau_bound.
+
+axiom eta_tau_leq_b : e * tau <= b.
 
 lemma cnorm_dC c tau : c \in dC tau => cnorm c <= 1 by smt(supp_dC).
 
@@ -518,11 +526,7 @@ end section OpBasedCorrectness.
 (* -- OpBased is commitment recoverable -- *)
 (* Necessary for the simulator definition below to make sense *)
 
-axiom gt0_b : 0 < b.
-axiom b_gamma1_lt : b < gamma1.
-axiom b_round_gamma2_lt : b < 2 * gamma2 %/ 2.
-
-lemma pk_decomp mA' t' mA s1 s2 :
+local lemma pk_decomp mA' t' mA s1 s2 :
   ((mA', t'), (mA, s1, s2)) \in keygen =>
   mA' = mA /\ t' = mA *^ s1 + s2.
 proof.
@@ -535,7 +539,7 @@ case H => y [? H].
 by rewrite supp_dmap /= in H => /#.
 qed.
 
-lemma sk_size mA s1 s2 :
+local lemma sk_size mA s1 s2 :
   (exists pk, (pk, (mA, s1, s2)) \in keygen) => size mA = (k, l) /\ size s1 = l /\ size s2 = k.
 proof.
 move => [pk valid_keys].
@@ -547,6 +551,23 @@ case valid_keys => [s1' [s1_supp valid_keys]].
 rewrite supp_dmap /= in valid_keys.
 case valid_keys => [s2' [s2_supp [?[?[??]]]]]; subst.
 smt(size_dmatrix size_dvector Top.gt0_l Top.gt0_k).
+qed.
+
+local lemma keygen_supp_decomp pk mA s1 s2 :
+  (pk, (mA, s1, s2)) \in keygen =>
+  s1 \in ds1 /\
+  s2 \in ds2.
+  (* There's a lot more that can be said if necessary *)
+proof.
+move => H.
+rewrite supp_dlet in H.
+case H => a [a_supp H].
+rewrite supp_dlet in H.
+case H => v1 [v1_supp H].
+rewrite supp_dmap in H.
+case H => /= v2 [v2_supp H].
+case H => [?[?[??]]].
+by subst => //.
 qed.
 
 hoare recover_correct (pk_i : PK) (sk_i : SK) :
@@ -562,6 +583,7 @@ move => valid_keys.
 have sk_sizes: size mA = (k, l) /\ size s1 = l /\ size s2 = k.
 - apply sk_size.
   by exists (mA', t').
+have rg_s2: s2 \in ds2 by smt(keygen_supp_decomp).
 apply pk_decomp in valid_keys.
 case valid_keys => [??]; subst.
 move => wy; case wy => w y /=.
@@ -601,22 +623,26 @@ have ->: mA *^ (y' + c' ** s1) - c' ** (mA *^ s1 + s2) = mA *^ y' - c' ** s2.
   by rewrite add0v //.
 have ->: highBitsV (mA *^ y') = highBitsV (mA *^ y' - c' ** s2 + c' ** s2).
 - congr.
-  suff: - c' ** s2 + c' ** s2 =  zerov (size (mA *^ y')).
+  suff: - c' ** s2 + c' ** s2 = zerov (size (mA *^ y')).
   + move => H.
     by rewrite -addvA H addv0.
   rewrite addvC addvN.
   congr.
   by rewrite size_scalarv size_mulmxv; smt(size_dvector).
-apply (hide_lowV _ _ b).
+apply (hide_lowV _ _ b); 5: smt().
 - rewrite size_addv size_oppv size_scalarv.
   suff: size (mA *^ y') = size s2 by smt().
   by rewrite size_mulmxv; smt(size_dvector).
 - smt(gt0_b).
 - smt(b_round_gamma2_lt).
-- (* Need to prove inf_norm cs2 upper-bound... *)
-  (* should first bound inf-norm of (1-norm poly * inf-norm poly). *)
-  admit.
-smt().
+(* Need to prove inf_norm cs2 upper-bound... *)
+(* should first bound inf-norm of (1-norm poly * inf-norm poly). *)
+apply (StdOrder.IntOrder.ler_trans (e * tau)); last by exact eta_tau_leq_b.
+apply l1_inf_norm_product_ub.
+- exact gt0_eta.
+- smt(tau_bound).
+- (* TODO l1_norm of c' *) admit.
+- (* TODO inf_norm of s2 *) admit.
 qed.
 
 (* -- OpBased is indeed zero-knowledge -- *)
@@ -681,7 +707,7 @@ qed.
 
 local lemma masking_range c s1 z:
   c \in FSa.dC => s1 \in ds1 => check_znorm z =>
-  z - c ** s1 \in dy.
+  (z - c ** s1) \in dy.
 proof. admitted.
 
 local lemma is_finite_check_znorm :
@@ -1084,23 +1110,6 @@ proc.
 seq 2 2: (#pre /\ ={mA, s1, s2, t} /\ mA{2} = mA'{2}).
 - by auto => />; smt(pk_decomp).
 by sim.
-qed.
-
-local lemma keygen_supp_decomp pk mA s1 s2 :
-  (pk, (mA, s1, s2)) \in keygen =>
-  s1 \in ds1 /\
-  s2 \in ds2.
-  (* There's a lot more that can be said if necessary *)
-proof.
-move => H.
-rewrite supp_dlet in H.
-case H => a [a_supp H].
-rewrite supp_dlet in H.
-case H => v1 [v1_supp H].
-rewrite supp_dmap in H.
-case H => /= v2 [v2_supp H].
-case H => [?[?[??]]].
-by subst => //.
 qed.
 
 local equiv final_hop_correct :

@@ -138,3 +138,14 @@ rewrite get_addv //.
 rewrite (hide_low _ _ b) //; first smt().
 smt(get_mapv size_lowBitsV).
 qed.
+
+lemma l1_inf_norm_product_ub (x : Rq) (yv : vector) (b1 b2 : int) :
+  0 < b1 =>
+  0 < b2 =>
+  l1_norm x <= b1 =>
+  inf_normv yv <= b2 =>
+  inf_normv (x ** yv) <= b1 * b2.
+proof.
+(* TODO *)
+print l1_cnorm_product_ub.
+admitted.
