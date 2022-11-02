@@ -397,6 +397,7 @@ end section PROOF.
 
 (* -- Operator-based -- *)
 
+op dA = dmatrix dRq k l.
 op ds1 = dvector (dRq_ e) l.
 op ds2 = dvector (dRq_ e) k.
 
@@ -614,7 +615,7 @@ module HVZK_Sim_Inst : DID.HVZK_Sim = {
     if(oz <> None) {
       z <- oget oz;
       w' <- mA *^ z - c ** t;
-      resp <- if gamma2 - b <= inf_normv w' then None else Some z;
+      resp <- if gamma2 - b <= inf_normv (lowBitsV w') then None else Some z;
     } else {
       resp <- None;
     }
@@ -1010,6 +1011,23 @@ seq 2 2: (#pre /\ ={mA, s1, s2, t} /\ mA{2} = mA'{2}).
 by sim.
 qed.
 
+local lemma keygen_supp_decomp pk mA s1 s2 :
+  (pk, (mA, s1, s2)) \in keygen =>
+  s1 \in ds1 /\
+  s2 \in ds2.
+  (* There's a lot more that can be said if necessary *)
+proof.
+move => H.
+rewrite supp_dlet in H.
+case H => a [a_supp H].
+rewrite supp_dlet in H.
+case H => v1 [v1_supp H].
+rewrite supp_dmap in H.
+case H => /= v2 [v2_supp H].
+case H => [?[?[??]]].
+by subst => //.
+qed.
+
 local equiv final_hop_correct :
   HVZK_Hops.game6 ~ HVZK_Sim_Inst.get_trans :
   (pk{1}, sk{1}) \in keygen /\ ={pk} ==> ={res}.
@@ -1017,41 +1035,14 @@ proof.
 proc.
 seq 3 2 : (#pre /\ ={mA, t, c} /\ mA{1} = mA'{1} /\ sk{1} = (mA'{1}, s1{1}, s2{1}) /\ pk{1} = (mA{1}, t{1}) /\ c{1} \in FSa.dC).
 - by auto; smt(pk_decomp).
-seq 1 1 : (#pre /\ ={oz}).
-  rnd; auto => //= &1 &2.
-  move => [#] valid_keys ??????? c_valid; subst.
-(* Proof outdated; TODO fix me *)
-(*
-  have a_supp : mA{2} \in dA by smt(keys_supp).
-  have s1_supp : s1{1} \in ds1 by smt(keys_supp).
-  have s2_supp : s2{1} \in ds2 by smt(keys_supp).
-  apply pk_decomp in valid_keys.
-  case valid_keys => [#] ? ?; subst.
+seq 1 1 : (#pre /\ ={oz}); last by sim.
+rnd; auto => //= &1 &2.
+move => [#] valid_keys ??????? c_valid; subst.
 
-  (* Now comes the actual proof *)
-  split.
-  rewrite line12_magic //=.
-  move => H oz ?.
-  split; 1: smt(line12_magic).
-  move => _.
-  split.
-  split; 2: trivial.
-    (* keygen support... *)
-    rewrite /keygen.
-    apply supp_dlet => /=.
-    exists a{2}.
-    split; 1: assumption.
-    apply supp_dlet => /=.
-    exists s1{1}.
-    split; 1: assumption.
-    apply supp_dlet => /=.
-    exists s2{1}.
-    split; 1: assumption.
-    by apply supp_dunit.
-  smt().
-by auto => /#.
-*)
-admitted.
+rewrite line12_magic //.
+apply keygen_supp_decomp in valid_keys.
+by case valid_keys => [??] //.
+qed.
 
 lemma HVZK_Sim_correct k :
   equiv[DID.Honest_Execution(OpBased.P, OpBased.V).get_trans ~ HVZK_Sim_Inst.get_trans :
