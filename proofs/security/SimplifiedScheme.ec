@@ -684,22 +684,71 @@ local lemma masking_range c s1 z:
   z - c ** s1 \in dy.
 proof. admitted.
 
+local lemma is_finite_check_znorm :
+  is_finite check_znorm.
+proof.
+have ->: check_znorm = (fun (v : vector) => size v = l /\
+    forall i, 0 <= i < l => (fun r => cnorm r < gamma1 - b) v.[i]).
+- admit. (* TODO should be straightforward rewrites hopefully *)
+apply is_finite_vector.
+apply (finite_leq predT) => /=; first smt().
+exact is_finite_Rq.
+qed.
+
+local lemma is_finite_dy :
+  is_finite (support dy).
+proof.
+print dy.
+print supp_dvector.
+(* TODO hopefully just rearranging dy so is_finite_vector applies *)
+admitted.
+
 local lemma mask_size :
-  size (to_seq check_znorm) < size (to_seq (support dy)).
-proof. admitted.
+  size (to_seq check_znorm) <= size (to_seq (support dy)).
+proof.
+apply uniq_leq_size.
+- apply uniq_to_seq.
+  exact is_finite_check_znorm.
+move => v.
+rewrite mem_to_seq.
+- exact is_finite_check_znorm.
+rewrite mem_to_seq.
+- apply is_finite_dy.
+rewrite supp_dvector; first smt(Top.gt0_l).
+rewrite /check_znorm.
+rewrite inf_normv_ltr; first smt(b_gamma1_lt).
+suff: (forall x, (cnorm x < gamma1 - b => x \in dRq_ (gamma1 - 1))) by smt().
+move => x H.
+by rewrite supp_dRq; smt(gt0_b b_gamma1_lt).
+qed.
 
 (* Is this still necessary to begin with? *)
 local lemma mask_nonzero :
   0 < size (to_seq check_znorm).
-proof. admitted.
+proof.
+suff: zerov l \in (to_seq check_znorm) by smt(size_eq0 List.size_ge0).
+rewrite mem_to_seq; first exact is_finite_check_znorm.
+split; first smt(size_zerov Top.gt0_l).
+suff: inf_normv (zerov l) = 0 by smt(b_gamma1_lt).
+search inf_normv.
+print inf_normv.
+print inf_norm.
+(* TODO really dumb number crunching *)
+admitted.
 
 local lemma dy_ll :
   is_lossless dy.
-proof. admitted.
+proof.
+apply dvector_ll.
+exact dRq__ll.
+qed.
 
 local lemma dy_uni :
   is_uniform dy.
-proof. admitted.
+proof.
+apply dvector_uni.
+exact dRq__uni.
+qed.
 
 local op transz (c : Rq) s1 =
   dmap dy (fun y =>

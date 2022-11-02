@@ -4,6 +4,7 @@ lowBits operations used in Dilithium *)
 require import AllCore IntDiv Distr.
 require Subtype.
 require import Supplementary.
+import Finite.
 
 (* Modulo *)
 op q : {int | prime q} as prime_q. 
@@ -26,6 +27,13 @@ ComRing structure on high or use lists rather than vectors to pass
 op [lossless full uniform] dRq : Rq distr. 
 
 lemma dRq_funi : is_funiform dRq by smt(dRq_fu dRq_uni).
+
+lemma is_finite_Rq : is_finite predT<:Rq>.
+proof.
+have ->: predT = support dRq by smt(dRq_fu).
+apply uniform_finite.
+exact dRq_uni.
+qed.
 
 op [lossless uniform] dRq_open : int -> Rq distr.
 axiom supp_dRq_open x a : 1 <= a => x \in dRq_open a <=> cnorm x < a.
