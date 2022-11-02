@@ -146,6 +146,11 @@ lemma l1_inf_norm_product_ub (x : Rq) (yv : vector) (b1 b2 : int) :
   inf_normv yv <= b2 =>
   inf_normv (x ** yv) <= b1 * b2.
 proof.
-(* TODO *)
-print l1_cnorm_product_ub.
-admitted.
+move => gt0_b1 gt0_b2 norm_x_ub norm_yv_ub.
+rewrite inf_normv_ler in norm_yv_ub; first smt().
+rewrite inf_normv_ler; first smt().
+move => i rg_i.
+rewrite size_scalarv in rg_i.
+rewrite get_scalarv.
+by apply l1_cnorm_product_ub => // /#.
+qed.

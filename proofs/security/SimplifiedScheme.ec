@@ -705,6 +705,14 @@ proof.
   rewrite mu1_uni_ll ?dsimz_uni ?dsimz_ll; smt(dsimz_supp).
 qed.
 
+print dy.
+
+print check_znorm.
+
+print inf_normv.
+print inf_norm.
+search cnorm.
+
 local lemma masking_range c s1 z:
   c \in FSa.dC => s1 \in ds1 => check_znorm z =>
   (z - c ** s1) \in dy.
@@ -748,19 +756,32 @@ move => x H.
 by rewrite supp_dRq; smt(gt0_b b_gamma1_lt).
 qed.
 
-(* Is this still necessary to begin with? *)
+lemma ge0_inf_normv v :
+  0 <= inf_normv v.
+proof.
+search inf_normv.
+admitted.
+
+local lemma inf_normv_zero dim :
+  inf_normv (zerov dim) = 0.
+proof.
+search inf_normv.
+suff: inf_normv (zerov dim) <= 0 by smt(ge0_inf_normv).
+apply inf_normv_ler => //.
+move => i rg_i.
+rewrite get_zerov.
+by rewrite cnorm0 //.
+qed.
+
 local lemma mask_nonzero :
   0 < size (to_seq check_znorm).
 proof.
 suff: zerov l \in (to_seq check_znorm) by smt(size_eq0 List.size_ge0).
 rewrite mem_to_seq; first exact is_finite_check_znorm.
 split; first smt(size_zerov Top.gt0_l).
-suff: inf_normv (zerov l) = 0 by smt(b_gamma1_lt).
-search inf_normv.
-print inf_normv.
-print inf_norm.
-(* TODO really dumb number crunching *)
-admitted.
+rewrite inf_normv_zero.
+smt(b_gamma1_lt).
+qed.
 
 local lemma dy_ll :
   is_lossless dy.

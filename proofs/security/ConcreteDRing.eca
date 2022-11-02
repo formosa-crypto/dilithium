@@ -113,6 +113,15 @@ apply inf_norm_le.
 - move => ?_; exact abs_zp_ub.
 qed.
 
+lemma inf_norm0 :
+  `|zeroXnD1| = 0.
+proof.
+suff: `|zeroXnD1| <= 0 by smt(ge0_inf_norm_p).
+apply inf_norm_le => //.
+move => i rg_i.
+by rewrite rcoeff0 abs_zp_zero.
+qed.
+
 (**
 lemma ler_ofnat' (m n : nat) :
   m <= n => ofnat m <= ofnat n.
@@ -364,3 +373,4 @@ split => H.
   by rewrite inf_normXE => /#.
 qed.
 realize l1_cnorm_product_ub by exact l1_inf_norm_product.
+realize cnorm0 by exact inf_norm0.

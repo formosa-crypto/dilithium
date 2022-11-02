@@ -20,6 +20,8 @@ clone import Ring.ComRing as RqRing with type t <= Rq.
 op cnorm : Rq -> int.             (* infinity norm (after centered reduction modulo) *)
 op l1_norm : Rq -> int.           (* sum over absolute values                        *)
 
+axiom cnorm0 : cnorm zeror = 0.
+
 axiom l1_cnorm_product_ub (x y : Rq) (b1 b2 : int) :
   0 < b1 =>
   0 < b2 =>
