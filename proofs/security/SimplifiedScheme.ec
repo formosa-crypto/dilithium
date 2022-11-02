@@ -984,24 +984,16 @@ have: size (sk{2}.`1) = (k, l) /\ size (sk{2}.`2) = l /\ size (sk{2}.`3) = k.
   by exists pk{2} => /#.
 (* Annoying proof of some simple vector calculations below... *)
 case (sk{2}) => mA s1 s2 /= /> *.
-(** OUTDATED TODO FIX ME
-print mulmsv.
-
 rewrite mulmxvDr.
-- rewrite size_scalarv.
-  rewrite /dy in y_valid.
-  smt(size_dvector).
+- rewrite size_scalarv; smt(size_dvector).
 rewrite -addvA; congr.
 rewrite mulmsv => [/#|].
-rewrite scalarvDr.
-- by rewrite size_mulmxv => /#.
+rewrite scalarvDr; first by rewrite size_mulmxv => /#.
 rewrite oppvD addvA addvN.
-have ->: size (c ** (sk{2}.`1 *^ sk{2}.`2)) = size (- c ** sk{2}.`3).
+have ->: size (c ** (mA *^ s1)) = size (- c ** s2).
 - by rewrite size_oppv !size_scalarv size_mulmxv => /#.
 by rewrite add0v //.
 qed.
-**)
-admitted.
 
 local equiv hop4_correct :
   HVZK_Hops.game3 ~ HVZK_Hops.game4 :
