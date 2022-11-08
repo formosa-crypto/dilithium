@@ -19,150 +19,6 @@ require import DistrExtras.
 op l1_norm (p : polyXnD1) = big predT ZModQ."`|_|" (mkseq (fun i => p.[i]) Round.n).
 op dC a = dcond dpolyXnD1 (fun (c : polyXnD1) => `|c| <= 1 /\ l1_norm c = a).
 
-lemma reduced_dpoly d p m :
-  m <= Round.n =>
-  p \in BasePoly.dpoly Round.n d =>
-  reduced p.
-proof.
-move => *.
-have ?: BasePoly.deg p <= Round.n.
-- smt(BasePoly.supp_dpoly Round.gt0_n).
-exact reducedP.
-qed.
-
-lemma abs_polyXN (p : polyXnD1) :
-  `|-p| = `|p|.
-proof.
-rewrite /"`|_|"; congr.
-rewrite /inf_norm.
-apply BigMax.eq_big_perm_map.
-apply perm_eq_refl_eq.
-rewrite !map_mkseq /(\o); 1, 2: exact ge0_n.
-congr; rewrite fun_ext => x /=; congr.
-by rewrite -rcoeffN -abs_zpN.
-qed.
-
-lemma dpolyX_uni d :
-  is_uniform d => is_uniform (dpolyX d).
-proof.
-move => ?.
-rewrite /dpolyX.
-rewrite dmap_uni_in_inj; first smt(reduced_dpoly piK).
-exact BasePoly.dpoly_uni.
-qed.
-
-lemma dpolyX_supp d p :
-  p \in dpolyX d <=> (forall i, 0 <= i < Round.n => p.[i] \in d).
-proof.
-rewrite /dpolyX.
-rewrite supp_dmap.
-split.
-- move => [f[supp_f ?]] i rg_i; subst.
-  rewrite BasePoly.supp_dpoly // in supp_f.
-  case supp_f => [deg_f supp_coeff].
-  by rewrite /"_.[_]" piK; smt(reducedP).
-- move => *.
-  exists (crepr p).
-  split; last by rewrite creprK.
-  apply BasePoly.supp_dpoly => //.
-  split => //.
-  exact deg_crepr.
-qed.
-
-lemma inf_norm_le (p : polyXnD1) a :
-  0 <= a =>
-  (forall i, 0 <= i < Round.n => `|p.[i]| <= a) =>
-  `|p| <= a.
-proof.
-move => ge0_a ?; rewrite /"`|_|" /inf_norm ler_ofnat.
-split; first by auto.
-rewrite -ler_bigmax /=.
-move => x mem_x _.
-apply ler_ofint.
-split => [|_]; first smt().
-rewrite mkseqP in mem_x.
-case mem_x => j [rg_j ?]; subst => /#.
-qed.
-
-lemma inf_norm_lt (p : polyXnD1) a :
-  0 < a =>
-  (forall i, 0 <= i < Round.n => `|p.[i]| < a) =>
-  `|p| < a.
-proof. smt(inf_norm_le). qed.
-
-lemma inf_normXE (p : polyXnD1) a i :
-  0 <= a =>
-  `|p| <= a =>
-  0 <= i < Round.n => `|p.[i]| <= a.
-proof.
-move => ge0_a H rg_i.
-rewrite /"`|_|" in H.
-rewrite ler_ofnat in H.
-case H => [_ H].
-rewrite /inf_norm /= in H.
-rewrite -ler_bigmax in H.
-suff: p.[i] \in mkseq (fun i => p.[i]) Round.n by smt(ler_ofint').
-smt(mkseqP).
-qed.
-
-lemma inf_norm_ub (p : polyXnD1) :
-  `|p| <= Round.q %/ 2.
-proof.
-apply inf_norm_le.
-- smt(ge2_p).
-- move => ?_; exact abs_zp_ub.
-qed.
-
-lemma inf_norm0 :
-  `|zeroXnD1| = 0.
-proof.
-suff: `|zeroXnD1| <= 0 by smt(ge0_inf_norm_p).
-apply inf_norm_le => //.
-move => i rg_i.
-by rewrite rcoeff0 abs_zp_zero.
-qed.
-
-lemma sum_ofnat a b :
-  ofnat a + ofnat b = ofnat (a + b).
-proof. smt(le0n ofintK natW2). qed.
-
-lemma le_ofnat (a b : nat) :
-  a <= b =>
-  ofnat a <= ofnat b.
-proof. smt(le0n ofintK natW2). qed.
-
-lemma inf_norm_triangle (x y : polyXnD1) :
-  `|x + y| <= `|x| + `|y|.
-proof.
-apply inf_norm_le; first smt(ge0_inf_norm_p).
-move => i rg_i.
-apply (StdOrder.IntOrder.ler_trans (`|x.[i]| + `|y.[i]|)).
-- rewrite rcoeffD.
-  exact abs_zp_triangle.
-suff: `|x.[i]| <= `|x| /\ `|y.[i]| <= `|y| by smt().
-split; exact inf_norm_poly_ler.
-qed.
-
-(**
-lemma ler_ofnat' (m n : nat) :
-  m <= n => ofnat m <= ofnat n.
-proof. smt(). qed.
-**)
-
-(* not sure where to put this... *)
-lemma abs_zp_triangle_big (xs : 'a list) f :
-  `|BasePoly.BigCf.BCA.big predT f xs| <=
-  big predT (fun x => `|f x|) xs.
-proof.
-elim xs.
-- by rewrite big_nil BasePoly.BigCf.BCA.big_nil abs_zp_zero //.
-move => head tail IH /=.
-rewrite big_consT BasePoly.BigCf.BCA.big_consT /=.
-apply (StdOrder.IntOrder.ler_trans (`|f head| + `|BasePoly.BigCf.BCA.big predT f tail|)).
-- exact abs_zp_triangle.
-smt().
-qed.
-
 lemma l1_inf_norm_product (x y : polyXnD1) b1 b2 :
   0 < b1 =>
   0 < b2 =>
@@ -171,7 +27,6 @@ lemma l1_inf_norm_product (x y : polyXnD1) b1 b2 :
   `|x * y| <= b1 * b2.
 proof.
 move => gt0_b1 gt0_b2 l1_norm_x_ub inf_norm_y_ub.
-
 (* clean up inf_norm hypothesis *)
 rewrite ler_ofnat in inf_norm_y_ub.
 case inf_norm_y_ub => _ inf_norm_y_ub.
@@ -179,7 +34,6 @@ rewrite -ler_bigmax in inf_norm_y_ub.
 have ?: forall z, z \in mkseq (fun i => y.[i]) Round.n => `|z| <= b2.
 - smt(ler_ofint').
 clear inf_norm_y_ub.
-
 (* from poly to entry-wise ler *)
 apply ler_ofnat.
 split; first by smt().
@@ -188,17 +42,14 @@ rewrite mkseqP.
 move => [i [rg_i ?]] _ /=; subst.
 apply ler_ofint.
 split => [|_]; first smt().
-
 (* rewriting poly product *)
-
-(* outdated? rewrite PolyReduceZq.ComRing.mulrC. *)
 rewrite rcoeffM //.
-
+(* triangle ineq.; moving abs into big *)
 apply (StdOrder.IntOrder.ler_trans
   (bigi predT
     (fun j => `| x.[j] * y.[i - j] - x.[j] * y.[Round.n + i - j] |) 0 Round.n)).
 - exact abs_zp_triangle_big.
-
+(* Upper-bounding using inf_norm *)
 apply (StdOrder.IntOrder.ler_trans
   (bigi predT (fun j => `| x.[j] | * b2) 0 Round.n)).
 - apply StdBigop.Bigint.ler_sum_seq => /= j rg_j _.
@@ -221,8 +72,8 @@ apply (StdOrder.IntOrder.ler_trans
     - by have /#: 0 <= `|x.[j]| by smt(ge0_abs_zp).
     suff: y.[i - j] \in mkseq (fun i => y.[i]) Round.n by move => ? /#.
     by apply mkseqP; exists (i - j) => /#.
+(* wrapping up; interface fix *)
 rewrite -big_distrl //; first smt().
-
 suff: bigi predT (fun (a : int) => `|x.[a]|) 0 Round.n = l1_norm x by smt().
 rewrite /l1_norm /mkseq big_mapT.
 by congr => /#.

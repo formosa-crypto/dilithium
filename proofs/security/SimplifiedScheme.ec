@@ -579,6 +579,7 @@ case pk_i => mA' t'.
 case sk_i => mA s1 s2.
 proc; inline *.
 auto => />.
+(* introduce and unfold hypothesis *)
 move => valid_keys.
 have sk_sizes: size mA = (k, l) /\ size s1 = l /\ size s2 = k.
 - apply sk_size.
@@ -600,10 +601,14 @@ move => [H [? H']].
 rewrite eq_sym in H.
 rewrite eq_sym in H'.
 subst.
+(* Now, deal with the goal... *)
 rewrite /respond /=.
 have -> /= : (gamma1 - b <= inf_normv (y' + c' ** s1) \/
               gamma2 - b <= inf_normv (lowBitsV (mA *^ y' - c' ** s2))) = false by smt().
 rewrite /recover /=.
+(* From here, highbits Ay is close to highbits (Az - ct).
+ * First expand out Az-ct.
+ *)
 have ->: mA *^ (y' + c' ** s1) - c' ** (mA *^ s1 + s2) = mA *^ y' - c' ** s2.
 - rewrite mulmxvDr.
   + have ->: size y' = l by smt(size_dvector).
@@ -621,6 +626,7 @@ have ->: mA *^ (y' + c' ** s1) - c' ** (mA *^ s1 + s2) = mA *^ y' - c' ** s2.
   have ->: size (c' ** (mA *^ s1)) = size (-c' ** s2).
   + by rewrite size_oppv !size_scalarv size_mulmxv => /#.
   by rewrite add0v //.
+(* Now line things up for `hide_lowV` *)
 have ->: highBitsV (mA *^ y') = highBitsV (mA *^ y' - c' ** s2 + c' ** s2).
 - congr.
   suff: - c' ** s2 + c' ** s2 = zerov (size (mA *^ y')).
@@ -635,8 +641,8 @@ apply (hide_lowV _ _ b); 5: smt().
   by rewrite size_mulmxv; smt(size_dvector).
 - smt(gt0_b).
 - smt(b_round_gamma2_lt).
-(* Need to prove inf_norm cs2 upper-bound... *)
-(* should first bound inf-norm of (1-norm poly * inf-norm poly). *)
+(* Finally, need to prove inf_norm cs2 upper-bound. *)
+(* It's sufficient to bound inf-norm of (1-norm poly * inf-norm poly). *)
 apply (StdOrder.IntOrder.ler_trans (e * tau)); last by exact eta_tau_leq_b.
 have ->: e * tau = tau * e by smt().
 apply l1_inf_norm_product_ub.

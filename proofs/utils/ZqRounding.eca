@@ -386,6 +386,71 @@ lemma ge0_inf_norm_p p :
   0 <= `|p|.
 proof. exact StNat.valP. qed.
 
+lemma abs_polyXN (p : polyXnD1) :
+  `|-p| = `|p|.
+proof.
+rewrite /"`|_|"; congr.
+rewrite /inf_norm.
+apply BigMax.eq_big_perm_map.
+apply perm_eq_refl_eq.
+rewrite !map_mkseq /(\o); 1, 2: exact ge0_n.
+congr; rewrite fun_ext => x /=; congr.
+by rewrite -rcoeffN -abs_zpN.
+qed.
+
+lemma inf_norm_le (p : polyXnD1) a :
+  0 <= a =>
+  (forall i, 0 <= i < n => `|p.[i]| <= a) =>
+  `|p| <= a.
+proof.
+move => ge0_a ?; rewrite /"`|_|" /inf_norm ler_ofnat.
+split; first by auto.
+rewrite -ler_bigmax /=.
+move => x mem_x _.
+apply ler_ofint.
+split => [|_]; first smt().
+rewrite mkseqP in mem_x.
+case mem_x => j [rg_j ?]; subst => /#.
+qed.
+
+lemma inf_norm_lt (p : polyXnD1) a :
+  0 < a =>
+  (forall i, 0 <= i < n => `|p.[i]| < a) =>
+  `|p| < a.
+proof. smt(inf_norm_le). qed.
+
+lemma inf_normXE (p : polyXnD1) a i :
+  0 <= a =>
+  `|p| <= a =>
+  0 <= i < n => `|p.[i]| <= a.
+proof.
+move => ge0_a H rg_i.
+rewrite /"`|_|" in H.
+rewrite ler_ofnat in H.
+case H => [_ H].
+rewrite /inf_norm /= in H.
+rewrite -ler_bigmax in H.
+suff: p.[i] \in mkseq (fun i => p.[i]) n by smt(ler_ofint').
+smt(mkseqP).
+qed.
+
+lemma inf_norm_ub (p : polyXnD1) :
+  `|p| <= q %/ 2.
+proof.
+apply inf_norm_le.
+- smt(ge2_p).
+- move => ?_; exact abs_zp_ub.
+qed.
+
+lemma inf_norm0 :
+  `|zeroXnD1| = 0.
+proof.
+suff: `|zeroXnD1| <= 0 by smt(ge0_inf_norm_p).
+apply inf_norm_le => //.
+move => i rg_i.
+by rewrite rcoeff0 abs_zp_zero.
+qed.
+
 lemma inf_norm_poly_ler p i :
   `|p.[i]| <= `|p|.
 proof.
@@ -398,6 +463,35 @@ case (0 <= i /\ i < n) => ?.
 - have ->: (p.[i] = ZModQ.zero) by smt(lt0_rcoeff gered_rcoeff).
   rewrite abs_zp_zero.
   exact ge0_inf_norm_p.
+qed.
+
+lemma inf_norm_triangle (x y : polyXnD1) :
+  `|x + y| <= `|x| + `|y|.
+proof.
+apply inf_norm_le; first smt(ge0_inf_norm_p).
+move => i rg_i.
+apply (StdOrder.IntOrder.ler_trans (`|x.[i]| + `|y.[i]|)).
+- rewrite rcoeffD.
+  exact abs_zp_triangle.
+suff: `|x.[i]| <= `|x| /\ `|y.[i]| <= `|y| by smt().
+split; exact inf_norm_poly_ler.
+qed.
+
+require StdBigop.
+import StdBigop.Bigint.BIA.
+
+(* not sure where to put this... *)
+lemma abs_zp_triangle_big (xs : 'a list) f :
+  `|BasePoly.BigCf.BCA.big predT f xs| <=
+  big predT (fun x => `|f x|) xs.
+proof.
+elim xs.
+- by rewrite big_nil BasePoly.BigCf.BCA.big_nil abs_zp_zero //.
+move => head tail IH /=.
+rewrite big_consT BasePoly.BigCf.BCA.big_consT /=.
+apply (StdOrder.IntOrder.ler_trans (`|f head| + `|BasePoly.BigCf.BCA.big predT f tail|)).
+- exact abs_zp_triangle.
+smt().
 qed.
 
 lemma poly_hide_low_aux alpha px py b1 b2 :

@@ -119,6 +119,15 @@ lemma ler_ofint_ofnat (n : int) (m : nat) :
   (ofint n <= m) <=> (n <= ofnat m).
 proof. smt(ofintK). qed.
 
+lemma sum_ofnat a b :
+  ofnat a + ofnat b = ofnat (a + b).
+proof. smt(le0n ofintK natW2). qed.
+
+lemma le_ofnat (a b : nat) :
+  a <= b =>
+  ofnat a <= ofnat b.
+proof. smt(le0n ofintK natW2). qed.
+
 lemma ler_elem_is_ler_big (P : 'a -> bool) F (s : 'a list) (n : nat) :
   (forall x, x \in s => P x => F x <= n) => big P F s <= n.
 proof.

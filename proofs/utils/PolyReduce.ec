@@ -591,4 +591,45 @@ proof. by apply/dmap_ll/dpoly_ll/DZmodP.dunifin_ll. qed.
 
 lemma dpolyXnD1_funi : is_funiform dpolyXnD1.
 proof. by apply/is_full_funiform/dpolyXnD1_uni/dpolyXnD1_fu. qed.
+
+lemma reduced_dpoly d p m :
+  m <= n =>
+  p \in BasePoly.dpoly n d =>
+  reduced p.
+proof.
+move => *.
+have ?: BasePoly.deg p <= n.
+- smt(BasePoly.supp_dpoly gt0_n).
+exact reducedP.
+qed.
+
+lemma dpolyX_uni d :
+  is_uniform d => is_uniform (dpolyX d).
+proof.
+move => ?.
+rewrite /dpolyX.
+rewrite dmap_uni_in_inj; first smt(reduced_dpoly piK).
+exact BasePoly.dpoly_uni.
+qed.
+
+lemma dpolyX_supp d p :
+  p \in dpolyX d <=> (forall i, 0 <= i < n => p.[i] \in d).
+proof.
+rewrite /dpolyX.
+rewrite supp_dmap.
+split.
+- move => [f[supp_f ?]] i rg_i; subst.
+  rewrite BasePoly.supp_dpoly // in supp_f.
+  case supp_f => [deg_f supp_coeff].
+  by rewrite /"_.[_]" piK; smt(reducedP).
+- move => *.
+  exists (crepr p).
+  split; last by rewrite creprK.
+  apply BasePoly.supp_dpoly => //.
+  split => //.
+  exact deg_crepr.
+qed.
+
 end PolyReduceZp.
+
+
