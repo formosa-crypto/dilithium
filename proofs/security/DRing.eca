@@ -45,11 +45,22 @@ apply uniform_finite.
 exact dRq_uni.
 qed.
 
-op [lossless uniform] dRq_open : int -> Rq distr.
-axiom supp_dRq_open x a : 1 <= a => x \in dRq_open a <=> cnorm x < a.
-
 op [lossless uniform] dRq_ : int -> Rq distr.
 axiom supp_dRq x a : 0 <= a => x \in dRq_ a <=> cnorm x <= a.
+
+op dRq_open i = dRq_ (i - 1).
+
+lemma supp_dRq_open x a :
+  1 <= a => x \in dRq_open a <=> cnorm x < a.
+proof. smt(supp_dRq). qed.
+
+lemma dRq_open_ll a :
+  is_lossless (dRq_open a).
+proof. smt(dRq__ll). qed.
+
+lemma dRq_open_uni a :
+  is_uniform (dRq_open a).
+proof. smt(dRq__uni). qed.
 
 op [uniform] dC : int -> Rq distr.
 (* This was a [lossless] tag.

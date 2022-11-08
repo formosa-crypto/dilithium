@@ -159,7 +159,6 @@ clone DRing as DR with
   op cnorm <= Round."`|_|",
   op dRq <= dpolyXnD1,
   op dRq_ <= dpoly_ball,
-  op dRq_open <= dpoly_openball,
   op dC <= dC,
   op l1_norm <= l1_norm,
   type Flex.high <= int list,
@@ -221,28 +220,6 @@ apply (poly_leftshift_inj alpha xs ys) => //.
 - smt(poly_highbits_size).
 - smt(poly_leftshift_imE).
 - smt(poly_leftshift_imE).
-qed.
-realize dRq_open_ll.
-move => i; rewrite /dpoly_openball.
-case (1 <= i <= Round.q %/ 2) => /= ?; last exact dpolyXnD1_ll.
-by rewrite dpolyX_ll dball_zp_ll /#.
-qed.
-realize dRq_open_uni.
-move => i; rewrite /dpoly_openball.
-case (1 <= i <= Round.q %/ 2) => /= ?; last exact dpolyXnD1_uni.
-by rewrite dpolyX_uni dball_zp_uni /#.
-qed.
-realize supp_dRq_open.
-move => p a ?; rewrite /dpoly_openball.
-have -> /=: (1 <= a) = true by smt().
-case (a <= Round.q %/ 2) => /= ?; last smt(dpolyXnD1_fu inf_norm_ub).
-rewrite dpolyX_supp.
-split => H.
-- apply inf_norm_lt; first smt().
-  smt(dball_zp_supp).
-- move => i rg_i.
-  rewrite dball_zp_supp //; 1, 2: smt().
-  by rewrite inf_normXE => /#.
 qed.
 realize l1_cnorm_product_ub by exact l1_inf_norm_product.
 realize cnorm0 by exact inf_norm0.

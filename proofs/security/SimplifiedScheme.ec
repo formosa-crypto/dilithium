@@ -801,24 +801,6 @@ move => x H.
 by rewrite supp_dRq; smt(gt0_b b_gamma1_lt).
 qed.
 
-lemma ge0_inf_normv v :
-  0 <= inf_normv v.
-proof.
-rewrite /inf_normv /(\o) /inf_norm.
-apply ler_ofint_ofnat => //.
-exact le0n.
-qed.
-
-local lemma inf_normv_zero dim :
-  inf_normv (zerov dim) = 0.
-proof.
-suff: inf_normv (zerov dim) <= 0 by smt(ge0_inf_normv).
-apply inf_normv_ler => //.
-move => i rg_i.
-rewrite get_zerov.
-by rewrite cnorm0 //.
-qed.
-
 local lemma mask_nonzero :
   0 < size (to_seq check_znorm).
 proof.
@@ -944,25 +926,14 @@ case z.
 qed.
 
 local module HVZK_Hops = {
-  (* Switch to commitment-recoverable *)
-  proc game1(pk : PK, sk : SK) : (commit_t * challenge_t * response_t) option = {
-    var st, w, c, oz, result;
-    (w, st) <$ commit sk;
-    c <$ FSa.dC;
-    oz <- respond sk c st;
-    result <- if oz = None then None else Some (recover pk c (oget oz), c, oget oz);
-    return result;
-  }
-
-  (* unfolding everything *)
-  proc game2(pk: PK, sk: SK) : (commit_t * challenge_t * response_t) option = {
-    var mA, s1, s2, w, w', y, c, z, t, resp;
+  (* unfold everything and drop commitment*)
+  proc game2(pk: PK, sk: SK) : (challenge_t * response_t) option = {
+    var mA, s1, s2, w', y, c, z, t, resp;
 
     (mA, s1, s2) <- sk;
     t <- mA *^ s1 + s2;
     c <$ FSa.dC;
     y <$ dy;
-    w <- mA *^ y;
     z <- y + c ** s1;
     if(check_znorm z) {
       w' <- mA *^ y - c ** s2;
@@ -970,18 +941,17 @@ local module HVZK_Hops = {
     } else {
       resp <- None;
     }
-    return if resp = None then None else Some (recover pk c (oget resp), c, oget resp);
+    return if resp = None then None else Some (c, oget resp);
   }
 
   (* Compute w' using only public information *)
-  proc game3(pk: PK, sk: SK) : (commit_t * challenge_t * response_t) option = {
-    var mA, s1, s2, w, w', y, c, z, t, resp;
+  proc game3(pk: PK, sk: SK) : (challenge_t * response_t) option = {
+    var mA, s1, s2, w', y, c, z, t, resp;
 
     (mA, s1, s2) <- sk;
     t <- mA *^ s1 + s2;
     c <$ FSa.dC;
     y <$ dy;
-    w <- mA *^ y;
     z <- y + c ** s1;
     if(check_znorm z) {
       w' <- mA *^ z - c ** t;
@@ -989,19 +959,18 @@ local module HVZK_Hops = {
     } else {
       resp <- None;
     }
-    return if resp = None then None else Some (recover pk c (oget resp), c, oget resp);
+    return if resp = None then None else Some (c, oget resp);
   }
 
   (* Change conditional on `oz` *)
-  proc game4(pk: PK, sk: SK) : (commit_t * challenge_t * response_t) option = {
-    var mA, s1, s2, w, w', y, c, z, t, resp;
+  proc game4(pk: PK, sk: SK) : (challenge_t * response_t) option = {
+    var mA, s1, s2, w', y, c, z, t, resp;
     var oz;
 
     (mA, s1, s2) <- sk;
     t <- mA *^ s1 + s2;
     c <$ FSa.dC;
     y <$ dy;
-    w <- mA *^ y;
     z <- y + c ** s1;
     oz <- if check_znorm z then Some z else None;
     if(oz <> None) {
@@ -1011,12 +980,12 @@ local module HVZK_Hops = {
     } else {
       resp <- None;
     }
-    return if resp = None then None else Some (recover pk c (oget resp), c, oget resp);
+    return if resp = None then None else Some (c, oget resp);
   }
 
   (* Rewrite relevant parts of above as operator *)
-  proc game5(pk: PK, sk: SK) : (commit_t * challenge_t * response_t) option = {
-    var mA, s1, s2, w', (* y, *) c, z, t, resp;
+  proc game5(pk: PK, sk: SK) : (challenge_t * response_t) option = {
+    var mA, s1, s2, w', c, z, t, resp;
     var oz;
 
     (mA, s1, s2) <- sk;
@@ -1030,11 +999,11 @@ local module HVZK_Hops = {
     } else {
       resp <- None;
     }
-    return if resp = None then None else Some (recover pk c (oget resp), c, oget resp);
+    return if resp = None then None else Some (c, oget resp);
   }
 
   (* Get (a, t) from public key *)
-  proc game6(pk: PK, sk: SK) : (commit_t * challenge_t * response_t) option = {
+  proc game6(pk: PK, sk: SK) : (challenge_t * response_t) option = {
     var mA, mA', s1, s2, w', c, z, t, resp;
     var oz;
 
@@ -1049,38 +1018,28 @@ local module HVZK_Hops = {
     } else {
       resp <- None;
     }
-    return if resp = None then None else Some (recover pk c (oget resp), c, oget resp);
+    return if resp = None then None else Some (c, oget resp);
   }
 }.
 
-local equiv hop1_correct pk sk :
-  DID.Honest_Execution(OpBased.P, OpBased.V).get_trans ~ HVZK_Hops.game1 :
-  (pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res}.
+local equiv hop2_correct pk_i sk_i :
+  DID.Honest_Execution(OpBased.P, OpBased.V).get_trans ~ HVZK_Hops.game2 :
+  (pk_i, sk_i) \in keygen /\ arg{1} = (pk_i, sk_i) /\ arg{2} = (pk_i, sk_i) ==>
+    res{1} = None /\ res{2} = None \/
+    res{1} <> None /\ res{2} <> None /\
+    res{2} = let r = oget res{1} in Some (r.`2, r.`3).
 proof.
-conseq (_: (pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==>
-           (res{1} <> None => let (w, c, z) = oget res{1} in w = recover pk c z) => ={res})
-       (_: (pk, sk) \in keygen /\ arg = (pk, sk) ==>
-           res <> None => let (w, c, z) = oget res in w = recover pk c z) _.
-- smt().
-- smt().
-- apply recover_correct.
-proc; inline *.
-by auto => /#.
-qed.
-
-local equiv hop2_correct pk sk :
-  HVZK_Hops.game1 ~ HVZK_Hops.game2 :
-  (pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res}.
-proof.
-case sk => mA' s1' s2'.
+case sk_i => mA' s1' s2'.
 proc; inline*.
-swap{1} 1 1.
+swap{1} 1 6 7.
 swap{2} [1..2] 1.
-seq 1 1: (#pre /\ ={c}).
-- by rnd; auto.
-swap{2} [1..2] 1.
-seq 1 1: (#pre /\ st{1} = y{2} /\ size y{2} = l).
-- rnd (fun wst => let (w, st) = wst in st) (fun y => (highBitsV (mA' *^ y), y)).
+seq 2 1: (#pre /\ ={c}).
+- by wp; rnd; auto.
+sp.
+(* Sample `y` and discard unused `w` *)
+seq 6 1: (#pre /\ sk1{1} = (mA', s1', s2') /\ c1{1} = c{1} /\
+          P.pstate{1} = y{2} /\ size y{2} = l).
+- wp; rnd (fun wst => let (w, st) = wst in st) (fun y => (highBitsV (mA' *^ y), y)).
   auto => /> _.
   split.
   + move => y supp_y.
@@ -1095,19 +1054,9 @@ seq 1 1: (#pre /\ st{1} = y{2} /\ size y{2} = l).
   case wst_supp => y [supp_y [??]]; subst.
   split => [|_] ; first smt().
   smt(size_dvector Top.gt0_l).
-seq 0 1: (#pre /\ mA{2} = mA' /\ s1{2} = s1' /\ s2{2} = s2').
-- by auto.
-seq 0 2: #pre; first by auto.
-seq 1 2: (#pre /\ oz{1} = resp{2}).
-- conseq />.
-  auto => />.
-  move => &2 valid_keys size_y.
-  split; first smt().
-  rewrite /respond /= /check_znorm.
-  rewrite size_addv size_scalarv.
-  suff: size s1' = l by smt().
-  smt(sk_size).
-by auto => />.
+(* suff: equality of what's (intuitively) oz *)
+seq 1 2: (#pre /\ z{1} = resp{2}); last by auto => /#.
+auto => />; smt(sk_size size_addv size_scalarv).
 qed.
 
 local equiv hop3_correct :
@@ -1115,7 +1064,7 @@ local equiv hop3_correct :
   ={arg} /\ arg{1} \in keygen ==> ={res}.
 proof.
 proc.
-seq 6 6: (#pre /\ ={mA, s1, s2, t, c, y, w, z} /\
+seq 5 5: (#pre /\ ={mA, s1, s2, t, c, y, z} /\
           mA{1} *^ y{1} - c{1} ** s2{1} = mA{2} *^ z{2} - c{2} ** t{2}); 2: by auto => /#.
 auto => />.
 move => &2 valid_key c c_valid y y_valid.
@@ -1147,7 +1096,7 @@ proof.
 proc.
 seq 3 3: (#pre /\ ={mA, s1, s2, t, c} /\ (mA{1}, s1{1}, s2{1}) = sk_i).
 - by auto => /#.
-seq 4 1: (#pre /\ ={oz}); last by auto => /#.
+seq 3 1: (#pre /\ ={oz}); last by auto => /#.
 rnd: *0 *0.
 auto => /> &2.
 case sk_i => mA' s1' s2'.
@@ -1181,15 +1130,17 @@ qed.
 
 local equiv final_hop_correct :
   HVZK_Hops.game6 ~ HVZK_Sim_Inst.get_trans :
-  (pk{1}, sk{1}) \in keygen /\ ={pk} ==> ={res}.
+  (pk{1}, sk{1}) \in keygen /\ ={pk} ==>
+  res{1} = None /\ res{2} = None \/
+  res{1} <> None /\ res{2} <> None /\
+  res{1} = let r = oget res{2} in Some (r.`2, r.`3).
 proof.
 proc.
 seq 3 2 : (#pre /\ ={mA, t, c} /\ mA{1} = mA'{1} /\ sk{1} = (mA'{1}, s1{1}, s2{1}) /\ pk{1} = (mA{1}, t{1}) /\ c{1} \in FSa.dC).
 - by auto; smt(pk_decomp).
-seq 1 1 : (#pre /\ ={oz}); last by sim.
+seq 1 1 : (#pre /\ ={oz}); last by auto => /#.
 rnd; auto => //= &1 &2.
 move => [#] valid_keys ??????? c_valid; subst.
-
 rewrite line12_magic //.
 apply keygen_supp_decomp in valid_keys.
 by case valid_keys => [??] //.
@@ -1200,31 +1151,45 @@ lemma HVZK_Sim_correct k :
         k \in keygen /\ arg{1} = k /\ arg{2} = k.`1 ==> ={res}].
 proof.
 case k => pk sk.
-transitivity HVZK_Hops.game1
-             ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk)  ==> ={res})
-             ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res}); 1, 2: smt().
-- exact hop1_correct.
+(* Commitment recoverable - can drop the commitment *)
+conseq (_: (pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==>
+       (res{1} = None /\ res{2} = None) \/
+       (res{1} <> None /\ res{2} <> None /\
+         (oget res{1}).`2 = (oget res{2}).`2 /\ (oget res{1}).`3 = (oget res{2}).`3))
+  (_: arg = (pk, sk) /\ (pk, sk) \in keygen ==>
+      res <> None => let (w, c, z) = oget res in w = (recover pk c z))
+  (_: arg = pk ==>
+      res <> None => let (w, c, z) = oget res in w = (recover pk c z)); 1, 2: smt().
+- by conseq (recover_correct pk sk).
+- by proc; auto => /#.
+(* Other HVZK game hops *)
 transitivity HVZK_Hops.game2
-             ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res})
-             ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res}); 1, 2: smt().
-- exact hop2_correct.
+ ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==>
+   let resL = if res{1} = None then None else Some ((oget res{1}).`2, (oget res{1}).`3) in
+   resL = res{2})
+ ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==>
+   let resR = if res{2} = None then None else Some ((oget res{2}).`2, (oget res{2}).`3) in
+   res{1} = resR); 1, 2: smt().
+- by conseq (hop2_correct pk sk) => /#.
+(* Doing the final hop first to get rid of misaligned tuple *)
+transitivity HVZK_Hops.game6
+  ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res})
+  ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==>
+   let resR = if res{2} = None then None else Some ((oget res{2}).`2, (oget res{2}).`3) in
+   res{1} = resR); 1, 2: smt(); last by conseq final_hop_correct => /#.
 transitivity HVZK_Hops.game3
              ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res})
-             ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res}); 1, 2: smt().
+             ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res}); 1, 2: smt().
 - by conseq hop3_correct.
 transitivity HVZK_Hops.game4
              ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res})
-             ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res}); 1, 2: smt().
+             ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res}); 1, 2: smt().
 - by conseq hop4_correct.
 transitivity HVZK_Hops.game5
              ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res})
-             ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res}); 1, 2: smt().
+             ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res}); 1, 2: smt().
 - by conseq (hop5_correct pk sk).
-transitivity HVZK_Hops.game6
-             ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res})
-             ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res}); 1, 2: smt().
-- by conseq (hop6_correct pk sk).
-by conseq final_hop_correct.
+by conseq (hop6_correct pk sk).
 qed.
 
 end section OpBasedHVZK.

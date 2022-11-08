@@ -154,3 +154,21 @@ rewrite size_scalarv in rg_i.
 rewrite get_scalarv.
 by apply l1_cnorm_product_ub => // /#.
 qed.
+
+lemma ge0_inf_normv v :
+  0 <= inf_normv v.
+proof.
+rewrite /inf_normv /(\o) /inf_norm.
+apply ler_ofint_ofnat => //.
+exact le0n.
+qed.
+
+lemma inf_normv_zero dim :
+  inf_normv (zerov dim) = 0.
+proof.
+suff: inf_normv (zerov dim) <= 0 by smt(ge0_inf_normv).
+apply inf_normv_ler => //.
+move => i rg_i.
+rewrite get_zerov.
+by rewrite cnorm0 //.
+qed.
