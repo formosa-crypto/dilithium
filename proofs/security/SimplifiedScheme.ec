@@ -531,25 +531,18 @@ local lemma pk_decomp mA' t' mA s1 s2 :
   mA' = mA /\ t' = mA *^ s1 + s2.
 proof.
 rewrite /keygen.
-move => H.
-rewrite supp_dlet /= in H.
-case H => x [? H].
-rewrite supp_dlet /= in H.
-case H => y [? H].
-by rewrite supp_dmap /= in H => /#.
+move => /supp_dlet /= H.
+case H => x [? /supp_dlet /= H].
+by case H => y [? /supp_dmap /= H] /#.
 qed.
 
 local lemma sk_size mA s1 s2 :
   (exists pk, (pk, (mA, s1, s2)) \in keygen) => size mA = (k, l) /\ size s1 = l /\ size s2 = k.
 proof.
-move => [pk valid_keys].
-rewrite /keygen in valid_keys.
-rewrite supp_dlet /= in valid_keys.
-case valid_keys => [mA' [mA_supp valid_keys]].
-rewrite supp_dlet /= in valid_keys.
-case valid_keys => [s1' [s1_supp valid_keys]].
-rewrite supp_dmap /= in valid_keys.
-case valid_keys => [s2' [s2_supp [?[?[??]]]]]; subst.
+move => [pk /supp_dlet valid_keys].
+case valid_keys => [mA' [mA_supp /supp_dlet /= valid_keys]].
+case valid_keys => [s1' [s1_supp /supp_dmap /= valid_keys]].
+case valid_keys => [s2' [s2_supp [#]]] *; subst.
 smt(size_dmatrix size_dvector Top.gt0_l Top.gt0_k).
 qed.
 
@@ -559,15 +552,10 @@ local lemma keygen_supp_decomp pk mA s1 s2 :
   s2 \in ds2.
   (* There's a lot more that can be said if necessary *)
 proof.
-move => H.
-rewrite supp_dlet in H.
-case H => a [a_supp H].
-rewrite supp_dlet in H.
-case H => v1 [v1_supp H].
-rewrite supp_dmap in H.
-case H => /= v2 [v2_supp H].
-case H => [?[?[??]]].
-by subst => //.
+move => /supp_dlet H.
+case H => a [a_supp /supp_dlet H].
+case H => v1 [v1_supp /supp_dmap H].
+by case H => /= v2 [v2_supp [#]] *; subst.
 qed.
 
 hoare recover_correct (pk_i : PK) (sk_i : SK) :
@@ -577,30 +565,17 @@ hoare recover_correct (pk_i : PK) (sk_i : SK) :
 proof.
 case pk_i => mA' t'.
 case sk_i => mA s1 s2.
-proc; inline *.
-auto => />.
+proc; inline *; auto => />.
 (* introduce and unfold hypothesis *)
 move => valid_keys.
 have sk_sizes: size mA = (k, l) /\ size s1 = l /\ size s2 = k.
-- apply sk_size.
-  by exists (mA', t').
+- by apply sk_size; exists (mA', t').
 have rg_s2: s2 \in ds2 by smt(keygen_supp_decomp).
-apply pk_decomp in valid_keys.
-case valid_keys => [??]; subst.
-move => wy; case wy => w y /=.
-move => wy_supp.
-rewrite /commit /= supp_dmap in wy_supp.
-case wy_supp => [y' [y'_supp [??]]]; subst.
-move => c c_supp /=.
-move => H.
-have ?: (respond (mA, s1, s2) c y' <> None) by smt().
-clear H.
-move => w c' z.
+case /pk_decomp valid_keys => [??]; subst.
+rewrite /commit /= => [[w0 y] /supp_dmap [y' [y'_supp [??]]]] c c_supp H w c' z; subst.
+have ? {H}: (respond (mA, s1, s2) c y' <> None) by smt().
 have -> /=: (respond (mA, s1, s2) c y' = None) = false by smt().
-move => [H [? H']].
-rewrite eq_sym in H.
-rewrite eq_sym in H'.
-subst.
+move => [#] *; subst.
 (* Now, deal with the goal... *)
 rewrite /respond /=.
 have -> /= : (gamma1 - b <= inf_normv (y' + c' ** s1) \/
@@ -617,23 +592,17 @@ have ->: mA *^ (y' + c' ** s1) - c' ** (mA *^ s1 + s2) = mA *^ y' - c' ** s2.
   + by rewrite size_mulmxv => /#.
   have ->: mA *^ (c' ** s1) = c' ** (mA *^ s1).
   + by rewrite mulmsv /#.
-  rewrite oppvD.
-  rewrite addvA.
-  suff: c' ** (mA *^ s1) - c' ** (mA *^ s1) - c' ** s2 = - c' ** s2.
-  + move => H.
-    by rewrite -{2}H; smt(addvA).
+  rewrite oppvD addvA.
+  suff: c' ** (mA *^ s1) - c' ** (mA *^ s1) - c' ** s2 = - c' ** s2 by smt(addvA).
   rewrite addvN.
   have ->: size (c' ** (mA *^ s1)) = size (-c' ** s2).
   + by rewrite size_oppv !size_scalarv size_mulmxv => /#.
   by rewrite add0v //.
 (* Now line things up for `hide_lowV` *)
 have ->: highBitsV (mA *^ y') = highBitsV (mA *^ y' - c' ** s2 + c' ** s2).
-- congr.
-  suff: - c' ** s2 + c' ** s2 = zerov (size (mA *^ y')).
-  + move => H.
-    by rewrite -addvA H addv0.
-  rewrite addvC addvN.
-  congr.
+- congr; suff: - c' ** s2 + c' ** s2 = zerov (size (mA *^ y')).
+  + move => H; by rewrite -addvA H addv0.
+  rewrite addvC addvN; congr.
   by rewrite size_scalarv size_mulmxv; smt(size_dvector).
 apply (hide_lowV _ _ b); 5: smt().
 - rewrite size_addv size_oppv size_scalarv.
@@ -641,17 +610,15 @@ apply (hide_lowV _ _ b); 5: smt().
   by rewrite size_mulmxv; smt(size_dvector).
 - smt(gt0_b).
 - smt(b_round_gamma2_lt).
-(* Finally, need to prove inf_norm cs2 upper-bound. *)
-(* It's sufficient to bound inf-norm of (1-norm poly * inf-norm poly). *)
-apply (StdOrder.IntOrder.ler_trans (e * tau)); last by exact eta_tau_leq_b.
-have ->: e * tau = tau * e by smt().
+(* Finally, need to prove inf_norm cs2 upper-bound.
+ * It's sufficient to bound inf-norm of (1-norm poly * inf-norm poly). *)
+apply (StdOrder.IntOrder.ler_trans (tau * e)); last by smt(eta_tau_leq_b).
 apply l1_inf_norm_product_ub.
 - smt(tau_bound).
 - exact gt0_eta.
 - (* l1_norm of c' *)
   rewrite supp_dC /# in c_supp.
-- apply inf_normv_ler; first by smt(gt0_eta).
-  move => i rg_i.
+- apply inf_normv_ler => [|i rg_i]; first by smt(gt0_eta).
   rewrite supp_dvector in rg_s2; first by smt(Top.gt0_k).
   rewrite -supp_dRq; smt(gt0_eta).
 qed.
