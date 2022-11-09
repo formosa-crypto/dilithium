@@ -1127,14 +1127,14 @@ conseq (_: (pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==>
       res <> None => let (w, c, z) = oget res in w = (recover pk c z)); 1, 2: smt().
 - by conseq (recover_correct pk sk).
 - by proc; auto => /#.
-(* left hand side is HVZK first game *)
+(* left hand side equiv to KLS HVZK first game *)
 transitivity HVZK_Hops.game1
  ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==>
    omap drop_commitment res{1} = res{2})
  ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==>
    res{1} = omap drop_commitment res{2}); 1, 2: smt().
 - by proc; inline *; auto => /#.
-(* right hand side is HVZK final game *)
+(* right hand side equiv to KLS HVZK final game *)
 transitivity HVZK_Hops.game7
   ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res})
   ((pk, sk) \in keygen /\ arg{1} = pk /\ arg{2} = pk ==>
