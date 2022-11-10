@@ -563,61 +563,36 @@ hoare recover_correct (pk_i : PK) (sk_i : SK) :
   (res <> None => let (w, c, z) = oget res in w = recover pk_i c z).
 proof.
 case pk_i sk_i => [mA' t'] [mA s1 s2].
-proc; inline *; auto => />.
-(* introduce and unfold hypothesis *)
-move => valid_keys.
+proc; inline *; auto => /> valid_keys.
 have sk_sizes: size mA = (k, l) /\ size s1 = l /\ size s2 = k.
 - by apply sk_size; exists (mA', t').
 have rg_s2: s2 \in ds2 by smt(keygen_supp_decomp).
 case /pk_decomp valid_keys => [??]; subst.
 move => [w0 y] @/commit /= /supp_dmap [y' [y'_supp [??]]] c c_supp H w c' z; subst.
-have ? {H}: (respond (mA, s1, s2) c y' <> None) by smt().
-have -> /=: (respond (mA, s1, s2) c y' = None) = false by smt().
-move => [#] *; subst.
-(* Now, deal with the goal... *)
-rewrite /respond /=.
-have -> /= : (gamma1 - b <= inf_normv (y' + c' ** s1) \/
-              gamma2 - b <= inf_normv (lowBitsV (mA *^ y' - c' ** s2))) = false by smt().
-rewrite /recover /=.
+have {H} H /=: (respond (mA, s1, s2) c y' <> None) by smt().
+rewrite H /respond /= => [#] *; subst.
+rewrite ifF 1:/# /recover /=.
 (* From here, highbits Ay is close to highbits (Az - ct).
  * First expand out Az-ct. *)
 have ->: mA *^ (y' + c' ** s1) - c' ** (mA *^ s1 + s2) = mA *^ y' - c' ** s2.
-- rewrite mulmxvDr.
-  + have ->: size y' = l by smt(size_dvector).
-    by rewrite size_scalarv /#.
-  rewrite scalarvDr.
-  + by rewrite size_mulmxv => /#.
-  have ->: mA *^ (c' ** s1) = c' ** (mA *^ s1).
-  + by rewrite mulmsv /#.
-  rewrite oppvD addvA.
+- rewrite mulmxvDr; 1: smt(size_dvector size_scalarv).
+  rewrite scalarvDr ?size_mulmxv 1,2:/#.
+  rewrite [mA *^ (c' ** s1)]mulmsv 1:/#. (* FIXME: why is this rewrite slow? *)
+  rewrite oppvD addvA. 
   suff: c' ** (mA *^ s1) - c' ** (mA *^ s1) - c' ** s2 = - c' ** s2 by smt(addvA).
-  rewrite addvN.
-  have ->: size (c' ** (mA *^ s1)) = size (-c' ** s2).
-  + by rewrite size_oppv !size_scalarv size_mulmxv => /#.
-  by rewrite add0v //.
+  rewrite addvN lin_add0v //; smt(size_oppv size_scalarv size_mulmxv).
 (* Now line things up for `hide_lowV` *)
-have ->: highBitsV (mA *^ y') = highBitsV (mA *^ y' - c' ** s2 + c' ** s2).
-- congr; suff: - c' ** s2 + c' ** s2 = zerov (size (mA *^ y')).
-  + move => H; by rewrite -addvA H addv0.
-  rewrite addvC addvN; congr.
-  by rewrite size_scalarv size_mulmxv; smt(size_dvector).
-apply (hide_lowV _ _ b); 5: smt().
-- rewrite size_addv size_oppv size_scalarv.
-  suff: size (mA *^ y') = size s2 by smt().
-  by rewrite size_mulmxv; smt(size_dvector).
-- smt(gt0_b).
-- smt(b_round_gamma2_lt).
-(* Finally, need to prove inf_norm cs2 upper-bound.
- * It's sufficient to bound inf-norm of (1-norm poly * inf-norm poly). *)
-apply (StdOrder.IntOrder.ler_trans (tau * e)); last by smt(eta_tau_leq_b).
-apply l1_inf_norm_product_ub.
-- smt(tau_bound).
-- exact gt0_eta.
-- (* l1_norm of c' *)
-  rewrite supp_dC /# in c_supp.
-- apply inf_normv_ler => [|i rg_i]; first by smt(gt0_eta).
-  rewrite supp_dvector in rg_s2; first by smt(Top.gt0_k).
-  rewrite -supp_dRq; smt(gt0_eta).
+have {1}->: mA *^ y' = mA *^ y' - c' ** s2 + c' ** s2. 
+- rewrite -addvA [_ + c' ** _]addvC addvN [_ + zerov _]addvC lin_add0v //.
+  smt(size_scalarv size_mulmxv size_dvector).
+apply (hide_lowV _ _ b); 2,3,5:smt(gt0_b b_round_gamma2_lt).
+- smt(size_oppv size_scalarv size_mulmxv size_dvector size_addv).
+apply: StdOrder.IntOrder.ler_trans eta_tau_leq_b. 
+rewrite mulrC; apply l1_inf_norm_product_ub; 1..3: smt(tau_bound gt0_eta supp_dC).
+(* FIXME: Turn this into a lemma? *)
+apply inf_normv_ler => [|i rg_i]; first by smt(gt0_eta).
+rewrite supp_dvector in rg_s2; first by smt(Top.gt0_k).
+rewrite -supp_dRq; smt(gt0_eta).
 qed.
 
 (* -- OpBased is indeed zero-knowledge -- *)
