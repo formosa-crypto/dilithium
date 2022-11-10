@@ -570,7 +570,7 @@ have sk_sizes: size mA = (k, l) /\ size s1 = l /\ size s2 = k.
 - by apply sk_size; exists (mA', t').
 have rg_s2: s2 \in ds2 by smt(keygen_supp_decomp).
 case /pk_decomp valid_keys => [??]; subst.
-rewrite /commit /= => [[w0 y] /supp_dmap [y' [y'_supp [??]]]] c c_supp H w c' z; subst.
+move => [w0 y] @/commit /= /supp_dmap [y' [y'_supp [??]]] c c_supp H w c' z; subst.
 have ? {H}: (respond (mA, s1, s2) c y' <> None) by smt().
 have -> /=: (respond (mA, s1, s2) c y' = None) = false by smt().
 move => [#] *; subst.
@@ -659,9 +659,8 @@ proof. smt(dRq_open_ll dvector_ll). qed.
 local lemma dsimz_supp : support dsimz = check_znorm.
 proof.
 apply fun_ext => z.
-rewrite /dsimz /check_znorm.
 rewrite supp_dvector; first smt(Top.gt0_l).
-rewrite inf_normv_ltr; first smt(b_gamma1_lt).
+rewrite /check_znorm inf_normv_ltr; first smt(b_gamma1_lt).
 smt(supp_dRq_open b_gamma1_lt).
 qed.
 
@@ -702,28 +701,27 @@ qed.
 local lemma is_finite_check_znorm :
   is_finite check_znorm.
 proof.
-have ->: check_znorm = (fun (v : vector) => size v = l /\
+suff: check_znorm = (fun (v : vector) => size v = l /\
     forall i, 0 <= i < l => (fun r => cnorm r < gamma1 - b) v.[i]).
-- apply fun_ext => v; rewrite eq_iff; split.
-  + move => [sz_v znorm_v]; split => [/#|i rg_i] /=.
-    by rewrite inf_normv_ltr in znorm_v; smt(b_gamma1_lt).
-  + move => [sz_v cnorm_vi]; split => [/#|].
-    by rewrite inf_normv_ltr; smt(b_gamma1_lt).
-apply is_finite_vector.
-apply (finite_leq predT) => /=; first by trivial.
-exact is_finite_Rq.
+- move => ->.
+  by rewrite is_finite_vector (finite_leq predT) // is_finite_Rq.
+apply fun_ext => v; rewrite eq_iff; split.
+- move => [sz_v znorm_v]; split => [/#|i rg_i] /=.
+  by rewrite inf_normv_ltr in znorm_v; smt(b_gamma1_lt).
+- move => [sz_v cnorm_vi]; split => [/#|].
+  by rewrite inf_normv_ltr; smt(b_gamma1_lt).
 qed.
 
 local lemma is_finite_dy :
   is_finite (support dy).
 proof.
-have ->: support dy =
-         (fun (y : vector) => size y = l /\
-          forall i, 0 <= i < l => (fun r => r \in dRq_ (gamma1 - 1)) y.[i]).
-- rewrite fun_ext => y /=.
-  rewrite supp_dvector //; smt(Top.gt0_l).
-rewrite is_finite_vector (finite_leq predT) => /=; first smt().
-exact is_finite_Rq.
+suff: support dy =
+       (fun (y : vector) => size y = l /\
+        forall i, 0 <= i < l => (fun r => r \in dRq_ (gamma1 - 1)) y.[i]).
+- move => ->.
+  by rewrite is_finite_vector (finite_leq predT) // is_finite_Rq.
+rewrite fun_ext => y /=.
+rewrite supp_dvector //; smt(Top.gt0_l).
 qed.
 
 local lemma mask_size :
@@ -734,8 +732,7 @@ apply uniq_leq_size => [|v].
 rewrite mem_to_seq; first exact is_finite_check_znorm.
 rewrite mem_to_seq; first exact is_finite_dy.
 rewrite supp_dvector; first smt(Top.gt0_l).
-rewrite /check_znorm.
-rewrite inf_normv_ltr; first smt(b_gamma1_lt).
+rewrite /check_znorm inf_normv_ltr; first smt(b_gamma1_lt).
 suff: (forall x, (cnorm x < gamma1 - b => x \in dRq_ (gamma1 - 1))) by smt().
 move => x H.
 by rewrite supp_dRq; smt(gt0_b b_gamma1_lt).
@@ -772,11 +769,11 @@ rewrite /transz dmap1E /pred1 /(\o) /=.
 rewrite (mu_eq _ _ (fun y => y + c ** s1 = z0)) => [y /#|].
 rewrite (mu_eq_support _ _ (pred1 (z0 - c ** s1))) => [y supp_y /=|].
 - rewrite /pred1 eq_iff; split.
-  + move => ?; subst.
+  + move => <-.
     rewrite -addvA addvN size_scalarv.
     have ->: size s1 = size y by smt(size_dvector).
     by rewrite addv0.
-  + move => ?; subst.
+  + move => ->.
     rewrite -addvA.
     have ->: (- c ** s1) + c ** s1 = c ** s1 + (- c ** s1) by apply addvC.
     rewrite addvN size_scalarv.
@@ -806,6 +803,7 @@ rewrite sumD1_None /= in sumz.
 - by apply summable_mu1.
 suff: sum (fun (y : vector) => mu1 (transz c s1) (Some y)) = 
   (size (to_seq check_znorm))%r / (size (to_seq (support dy)))%r by smt().
+(* bug: Doesn't let me do `suff {sumz}: ...` *)
 clear sumz.
 have -> :
   (fun z => mu1 (transz c s1) (Some z)) =
@@ -814,8 +812,7 @@ have -> :
   + move => z_good.
     rewrite line12_magic_some => /#.
   + move => z_out.
-    apply supportPn.
-    apply line12_outofbound => //.
+    by rewrite -supportPn line12_outofbound.
 apply sum_characteristic.
 exact is_finite_check_znorm.
 qed.
@@ -993,10 +990,7 @@ seq 1 1: (#pre /\ st{1} = y{2} /\ size y{2} = l).
     rewrite (dmap1E (dvector (dRq_ (gamma1 - 1)) l)) /(\o).
     suff: (fun x => pred1 (highBitsV (mA' *^ y), y) (highBitsV (mA' *^ x), x)) = pred1 y by smt().
     by apply fun_ext => x /#.
-  move => _ wst; case wst => w st /=.
-  rewrite /commit /= => wst_supp.
-  case /supp_dmap wst_supp => y [supp_y [??]]; subst.
-  split => [|_] ; first smt().
+  move => _ [w st] @/commit /= /supp_dmap [y [supp_y [??]]]; subst.
   smt(size_dvector Top.gt0_l).
 (* suff: equality of oz *)
 seq 1 2: (#pre /\ oz{1} = resp{2}); last by auto => /#.
@@ -1043,19 +1037,16 @@ seq 3 3: (#pre /\ ={mA, s1, s2, t, c} /\ (mA{1}, s1{1}, s2{1}) = sk_i).
 seq 3 1: (#pre /\ ={oz}); last by sim.
 rnd: *0 *0.
 auto => /> &2.
-case sk_i => mA' s1' s2'.
-case pk_i => mA'' t'.
+case pk_i sk_i => [mA'' t'] [mA' s1' s2'].
 move => valid_keys.
 have ?: size mA{2} = (k, l) /\ size s1{2} = l /\ size s2{2} = k.
-- apply sk_size.
-  by exists (mA'', t') => //.
+- by apply sk_size; exists (mA'', t').
 have [??]: mA'' = mA{2} /\ t' = mA{2} *^ s1{2} + s2{2}.
 - by apply pk_decomp => //.
 subst.
 split => [oz oz_valid | _ oz oz_valid].
 - by rewrite dmap_id /transz /#.
-rewrite supp_dmap in oz_valid.
-case oz_valid => y /= [#] y_valid ?; subst => /=.
+case /supp_dmap oz_valid => y [#] y_valid ? /=; subst.
 by rewrite dmap_id supp_dmap /=; exists y.
 qed.
 
@@ -1079,8 +1070,7 @@ seq 1 1 : (#pre /\ ={oz}); last by sim.
 rnd; auto => //= &1 &2.
 move => [#] ??? valid_keys ?????? c_valid ; subst.
 rewrite line12_magic //.
-apply keygen_supp_decomp in valid_keys.
-by case valid_keys => [??] //.
+by case /keygen_supp_decomp valid_keys.
 qed.
 
 local equiv KLS_HVZK pk sk :
