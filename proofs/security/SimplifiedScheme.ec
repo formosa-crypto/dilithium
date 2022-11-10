@@ -665,12 +665,8 @@ split.
   by rewrite inf_normv_ltr in norm_z_ub; smt(b_gamma1_lt).
 - (* bound cnorm cs1 *)
   rewrite getvN cnormN get_scalarv.
-  apply l1_cnorm_product_ub.
-  + smt(tau_bound).
-  + smt(gt0_eta).
-  + by rewrite supp_dC /# in c_supp.
-  + rewrite supp_dvector in s1_supp; first smt(Top.gt0_l).
-    by rewrite -supp_dRq; smt(gt0_eta).
+  apply l1_cnorm_product_ub; 1,2,3:smt(tau_bound gt0_eta supp_dC).
+  smt(supp_dvector supp_dRq gt0_eta Top.gt0_l).
 qed.
 
 local lemma is_finite_check_znorm :
@@ -691,8 +687,8 @@ local lemma is_finite_dy :
   is_finite (support dy).
 proof.
 suff: support dy =
-       (fun (y : vector) => size y = l /\
-        forall i, 0 <= i < l => (fun r => r \in dRq_ (gamma1 - 1)) y.[i]).
+  (fun (y : vector) => size y = l /\
+   forall i, 0 <= i < l => (fun r => r \in dRq_ (gamma1 - 1)) y.[i]).
 - move => ->.
   by rewrite is_finite_vector (finite_leq predT) // is_finite_Rq.
 rewrite fun_ext => y /=.
@@ -746,17 +742,11 @@ rewrite (mu_eq_support _ _ (pred1 (z0 - c ** s1))) => [y supp_y /=|].
 - rewrite /pred1 eq_iff; split.
   + move => <-.
     rewrite -addvA addvN size_scalarv.
-    have ->: size s1 = size y by smt(size_dvector).
-    by rewrite addv0.
+    by rewrite addvC lin_add0v; smt(size_dvector).
   + move => ->.
-    rewrite -addvA.
-    have ->: (- c ** s1) + c ** s1 = c ** s1 + (- c ** s1) by apply addvC.
-    rewrite addvN size_scalarv.
-    have ->: size s1 = size z0 by smt(size_dvector).
-    by rewrite addv0.
-rewrite mu1_uni_ll ?dy_uni ?dy_ll.
-suff -> : (z0 - c ** s1) \in dy by trivial.
-exact masking_range.
+    rewrite -addvA [_ + c ** _]addvC addvN size_scalarv addvC lin_add0v //.
+    smt(size_dvector).
+by rewrite mu1_uni_ll ?dy_uni ?dy_ll; smt(masking_range).
 qed.
 
 local lemma line12_outofbound :
@@ -783,13 +773,9 @@ clear sumz.
 have -> :
   (fun z => mu1 (transz c s1) (Some z)) =
   (fun z => if check_znorm z then 1%r / (size (to_seq (support dy)))%r else 0%r).
-  apply fun_ext => z; case (check_znorm z).
-  + move => z_good.
-    rewrite line12_magic_some => /#.
-  + move => z_out.
-    by rewrite -supportPn line12_outofbound.
-apply sum_characteristic.
-exact is_finite_check_znorm.
+- apply fun_ext.
+  smt(line12_magic_some supportPn line12_outofbound).
+by rewrite sum_characteristic // is_finite_check_znorm.
 qed.
 
 local lemma line12_magic c s1 :
@@ -806,12 +792,9 @@ apply eq_distr => z; case z.
 - move => z.
   case (check_znorm z).
   + move => z_valid.
-    rewrite line12_magic_some //.
-    rewrite eq_sym /line12_magicnumber dlet1E sum_over_bool /=.
-    rewrite dunit1E /=.
-    rewrite dmap1E /pred1 /(\o) /=.
-    rewrite dsimz1E //=.
-    rewrite dbiased1E /=.
+    rewrite line12_magic_some // dlet1E sum_over_bool /=.
+    rewrite dunit1E /= dmap1E /pred1 /(\o) /=.
+    rewrite dsimz1E //= dbiased1E /=.
     rewrite clamp_id; smt(mask_nonzero mask_size).
   + move => z_invalid.
     have -> : mu1 (transz c s1) (Some z) = 0%r by rewrite -supportPn line12_outofbound.
@@ -961,10 +944,8 @@ seq 1 1: (#pre /\ st{1} = y{2} /\ size y{2} = l).
   auto => /> _.
   split.
   + move => y supp_y.
-    rewrite /commit /=.
-    rewrite (dmap1E (dvector (dRq_ (gamma1 - 1)) l)) /(\o).
-    suff: (fun x => pred1 (highBitsV (mA' *^ y), y) (highBitsV (mA' *^ x), x)) = pred1 y by smt().
-    by apply fun_ext => x /#.
+    rewrite /commit /= (dmap1E dy) /(\o).
+    by apply mu_eq => ? /#.
   move => _ [w st] @/commit /= /supp_dmap [y [supp_y [??]]]; subst.
   smt(size_dvector Top.gt0_l).
 (* suff: equality of oz *)
@@ -979,22 +960,18 @@ proof.
 proc.
 seq 5 5: (#pre /\ ={mA, s1, s2, t, c, y, z} /\
           mA{1} *^ y{1} - c{1} ** s2{1} = mA{2} *^ z{2} - c{2} ** t{2}); 2: by auto => /#.
-auto => />.
-move => &2 valid_key c c_valid y y_valid.
+auto => /> &2 valid_key c c_valid y y_valid.
 have: size (sk{2}.`1) = (k, l) /\ size (sk{2}.`2) = l /\ size (sk{2}.`3) = k.
 - apply (sk_size (sk{2}.`1) (sk{2}.`2) (sk{2}.`3)).
   by exists pk{2} => /#.
 (* Annoying proof of some simple vector calculations below... *)
 case (sk{2}) => mA s1 s2 /= /> *.
-rewrite mulmxvDr.
-- rewrite size_scalarv; smt(size_dvector).
+rewrite mulmxvDr; first smt(size_scalarv size_dvector).
 rewrite -addvA; congr.
-rewrite mulmsv => [/#|].
+rewrite mulmsv; first smt().
 rewrite scalarvDr; first by rewrite size_mulmxv /#.
 rewrite oppvD addvA addvN.
-have ->: size (c ** (mA *^ s1)) = size (- c ** s2).
-- by rewrite size_oppv !size_scalarv size_mulmxv /#.
-by rewrite add0v //.
+by rewrite lin_add0v // size_oppv !size_scalarv size_mulmxv /#.
 qed.
 
 local equiv hop4_correct :
@@ -1012,8 +989,7 @@ seq 3 3: (#pre /\ ={mA, s1, s2, t, c} /\ (mA{1}, s1{1}, s2{1}) = sk_i).
 seq 3 1: (#pre /\ ={oz}); last by sim.
 rnd: *0 *0.
 auto => /> &2.
-case pk_i sk_i => [mA'' t'] [mA' s1' s2'].
-move => valid_keys.
+case pk_i sk_i => [mA'' t'] [mA' s1' s2'] valid_keys.
 have ?: size mA{2} = (k, l) /\ size s1{2} = l /\ size s2{2} = k.
 - by apply sk_size; exists (mA'', t').
 have [??]: mA'' = mA{2} /\ t' = mA{2} *^ s1{2} + s2{2}.
