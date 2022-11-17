@@ -71,6 +71,7 @@ module type Oracle_i = {
   proc init(sk_i : SK) : unit
 }.
 
+(* counting wrapper to state query bounds *)
 module Count (O: Oracle_i) : Oracle = {
   var countS : int
   var countH : int
@@ -92,6 +93,7 @@ module Count (O: Oracle_i) : Oracle = {
   }
 }.
 
+(* bounding wrapper to avoid out-of-bounds reasoning *)
 module CountBound (O: Oracle_i) : Oracle = {
   import var Count
 
@@ -122,9 +124,9 @@ module CountBound (O: Oracle_i) : Oracle = {
   }
 }.
 
-module OReal : Oracle_i = {
-  var sk : SK
-  var kappa : int
+(* The "Real" oracle, infinite signing loop using [RO.get] to obtain
+the challenge *)
+module OReal : Oracle_i = { var sk : SK var kappa : int
 
   proc init(sk_i: SK) = {
     sk <- sk_i;
@@ -134,10 +136,9 @@ module OReal : Oracle_i = {
 
   proc sign(m: M) = {
     var w, st, c, oz, i;
-    (* Silences unused variables warning *)
+
     w <- witness;
     c <- witness;
-
     i <- 0;
     oz <- None;
     while(oz = None) {
@@ -150,7 +151,10 @@ module OReal : Oracle_i = {
   }
 }.
 
-(* Moving RO.set outside while-loop *)
+(* signing oracle usign random challenges 
+   - RO is reprogrammed at every iteration
+   - loop aborts after kappa attempts  *)
+(* TODO: this should be OSet_k *)
 module OSet : Oracle_i = {
   include var OReal[init, h]
 
@@ -174,10 +178,39 @@ module OSet : Oracle_i = {
   }
 }.
 
+(* NOTE: A major complication is that we cannot easily bound the
+probability of [OReal.sign] reaching a [kappa] iterations: The
+(finite) memory of RO could (a priori) contain only challenges that
+lead to rejecting computations. Consequently, there is no intermediate
+[OReal_k] game with a bounded while loop. 
+
+To bound the difference, we transition from [OSet_k] to [OReal]
+through an "alterating" sequence of hybrid steps. 
+
+1. We extend the last call to [OSet_k.sign] to perform the unbounded
+   loop of [OReal.sign] if the [oz = None] after [kappa] tries. 
+   (loss p^kappa using syntactic up-to bad)
+
+2. Starting from [kappa], we then successively lower the numer of
+   iterations performing the [OSet_k.sign] loop. After [kappa]
+   hybrids, the last call has become a call to [OReal.set]. 
+   (loss for j-th iteration if the i-th query is:
+
+      p^j * (i%r / (1.0 - p) + qh%r + j%r) * eps.
+
+
+
+
+3. Performing (1) and (2) qS times gives a bound of
+   qS * p^kappa + sum_{j = 0}^{kappa} delta.
+
+4. *)
+
 module type Adversary(O: Oracle) = {
   proc distinguish(pk: PK): bool
 }.
 
+(* Distinguishing game for sign/hash oracles *)
 module Game (Adv: Adversary) (O: Oracle_i) = {
   proc main() = {
     var b, pk, sk;
@@ -189,6 +222,8 @@ module Game (Adv: Adversary) (O: Oracle_i) = {
   }
 }.
 
+(* Parametric varant, setting OReal.kappa. Oracle implementations
+   with loop bounds (have to) use OReal.kappa as the bound *)
 module Game_k (Adv: Adversary) (O: Oracle_i) = {
   proc main(kappa_: int) = {
     var b;
@@ -200,7 +235,7 @@ module Game_k (Adv: Adversary) (O: Oracle_i) = {
 
 lemma Ep_commit_dc_None sk : 
   Ep (commit sk) (fun (w0st : W * ST) =>
-              Ep dC (fun (c0_0 : C) => (respond sk w0st.`2 c0_0 = None)%xr)) =
+    Ep dC (fun (c0_0 : C) => (respond sk w0st.`2 c0_0 = None)%xr)) =
   (mu1 (dlet (commit sk) (fun (wst : W * ST) =>              
     dmap dC (fun (c : C) => respond sk wst.`2 c))) None)%xr.
 proof.
@@ -224,6 +259,13 @@ module type Oracle_i_ij = {
   include Oracle
   proc init(sk_i : SK, i:int, j:int) : unit
  }.
+
+(* Outer Hybrid: 
+- answers at most qS signing and qH oracle queries
+- first i signing queries perform a [set] on every iteration (sign_l) 
+  and abort after kappa tries 
+- remaining signing queries perform a [get] and have an unbounded loop 
+- only qS queries are answered *)
 
 module Oi : Oracle_i_i = {
   var sk : SK
@@ -261,10 +303,8 @@ module Oi : Oracle_i_i = {
   proc sign_l(m : M) = { 
     var w, c, oz, j;
 
-    (* Silences unused variables warning *)
     w <- witness;
     c <- witness;
-
     j <- 0;
     oz <- None;
     while(oz = None /\ j < OReal.kappa ) {
@@ -312,6 +352,9 @@ module Oi : Oracle_i_i = {
 
 }.
 
+(* Inner Hybrid, same distintion as before, but the switch happens
+after j iterations on the i-th query to sign.
+NOTE: The loop for the i-th query is unbounded *)
 module Oij : Oracle_i_ij = {
   include var Oi [h]
 
@@ -331,8 +374,10 @@ module Oij : Oracle_i_ij = {
     oz <- None;
  
     while(oz = None) {
-      if (j < j_) (w, c, oz) <@ Oi.sign_i_l (m);
-      else (w, c, oz) <@ Oi.sign_i_r (m); 
+      if (j < j_) 
+        (w, c, oz) <@ Oi.sign_i_l (m);
+      else 
+        (w, c, oz) <@ Oi.sign_i_r (m); 
       j <- j + 1;
     }
     return (w, c, oget oz);
@@ -354,6 +399,8 @@ module Oij : Oracle_i_ij = {
 
 }.
 
+(** Game wrappers *)
+(* TOTHINK: Are these ever instantiated with something oter than Oi/Oij? *)
 module Hi (Adv: Adversary) (O: Oracle_i_i) = {
   proc main(kappa_:int, i_i:int) = {
     var b, pk, sk;
@@ -386,10 +433,16 @@ declare axiom A_bound : forall (O <: Oracle_i{-Adv, -Count}),
   hoare [ Adv(Count(O)).distinguish : Count.countS = 0 /\ Count.countH = 0 ==> 
                                       Count.countS <= qs /\ Count.countH <= qh ].
 
+(* Since A is query bounded, we can insert CountBound wrappers *)
+(* NOTE: This is complicated by the fact that we do not have that O is lossless. *)
+(* TOTHINK: Why does the final result equire the shape "Count(O)" *)
+
 section C.
 
 declare module O <: Oracle_i{-Adv, -Count}.
 
+(* Game, but counters are initialized (though not used except possibly by O) *)
+(* TOTHINK: define using Game? *)
 local module GameI (Adv: Adversary) (O: Oracle_i) = {
   proc main() = {
     var b, pk, sk;
@@ -503,6 +556,14 @@ proof.
   by proc; sp 0 1; if{2}; swap{1} 1; sim. 
 qed.
 
+(*
+local lemma Pr_CB1_CB2 &m : 
+  Pr[GameB1.main() @ &m : res /\ Count.countS <= qs /\ Count.countH <= qh ] =
+  Pr[GameB2.main() @ &m : res].
+proof.
+byequiv. proc. inline*.
+*)
+
 local lemma Pr_CB1_CB2 &m : 
   Pr[GameB1.main() @ &m : res /\ Count.countS <= qs /\ Count.countH <= qh ] <= 
   Pr[GameB2.main() @ &m : res].
@@ -538,6 +599,9 @@ lemma Pr_Count_CountBound &m :
 proof. by rewrite Pr_Game_GameI Pr_Count_CountBad1 -CB2_CB Pr_CB1_CB2. qed.
 
 end section C.
+
+
+
 
 (* ----------------------------------------------------------------- *)
 declare op kappa_ : int.
@@ -579,6 +643,10 @@ proof.
   by inline *; auto.
 qed.
 
+(* TOTHINK: This "loses" the "Pr_Count_CountBound" difference (which
+should be 0), where do we exploit that Hi stops answering queries? *)
+(* TOTHINK: can we refactor this to use the same direction for the
+"telescoping sums"? *)
 local lemma GReal_GSet_aux &m : 
   Pr[Game(Adv, Count(OReal)).main() @ &m : res] <= 
   Pr[Game_k(Adv, CountBound(OSet)).main(kappa_) @ &m : res] + 
@@ -590,12 +658,21 @@ proof.
   have /# := Pr_Count_CountBound OReal &m.
 qed.
 
-(* We focus on Pr[Hi(Adv, Oi).main(kappa_, i) @ &m : res ] - Pr[Hi(Adv, Oi).main(kappa_, i+1) @ &m : res] *)
+(* We focus on 
+
+Pr[Hi(Adv, Oi).main(kappa_, i ) @ &m : res ] -
+Pr[Hi(Adv, Oi).main(kappa_, i+1) @ &m : res] 
+
+There are in fact two changes that 
+
+for some fixed i *)
 section I.
 
 declare op i : int.
 declare axiom i_bounded : 0 <= i < qs.
 
+(* Variant of Oi that sets [badj] if i-th iteration fails to produce a
+signature *)
 local module OiB1 : Oracle_i_i = {
   include var Oi [-sign]
   var badj : bool
@@ -663,6 +740,7 @@ local module OiB2 : Oracle_i_i = {
           or <@ sign_l(m);
           if (or = None) { 
             OiB1.badj <- true;
+            (* If sign_l fails on i-th query, use sign_r *)
             r <@ sign_r(m); 
           } else r <- oget or;
         } else r <@ sign_r(m);
@@ -671,7 +749,6 @@ local module OiB2 : Oracle_i_i = {
     }
     return r;
   }
-
 }.
 
 local module HiB2 = {
@@ -689,7 +766,8 @@ local lemma HiB1_HiB2 &m :
           Pr[HiB2.main(kappa_, i + 1) @ &m : OiB1.badj].
 proof. byupto. qed.
 
-local lemma sign_i_l_None : ehoare [Oi.sign_i_l : valid_sk Oi.sk `|` p%xr ==> (res.`3 = None)%xr].
+local ehoare sign_i_l_None : 
+  Oi.sign_i_l : valid_sk Oi.sk `|` p%xr ==> (res.`3 = None)%xr.
 proof.
   proc; inline *; auto => &hr. 
   apply xle_cxr_r => *; rewrite Ep_commit_dc_None /=.
@@ -713,6 +791,7 @@ proof.
   by auto => &hr /=; apply xle_cxr => |>; smt (kappa_ge0).
 qed.
 
+(* We can bound both OiB1.badj and OiB2.badj by p^kappa_ *)
 local lemma HiB1_badj &m : Pr[HiB1.main(kappa_, i + 1) @ &m : OiB1.badj] <= p^kappa_.
 proof.
   byehoare (: (kappa_ = Analysis.kappa_ /\ i_i = i + 1) `|` (p^kappa_)%xr ==> OiB1.badj%xr) => //.
@@ -745,6 +824,7 @@ proof.
   rewrite EpC keygen_ll /=; smt(i_bounded).
 qed.
 
+(* second part, virtually the same proof *)
 local lemma HiB2_badj &m : Pr[HiB2.main(kappa_, i + 1) @ &m : OiB1.badj] <= p^kappa_.
 proof.
   byehoare (: (kappa_ = Analysis.kappa_ /\ i_i = i + 1) `|` (p^kappa_)%xr ==> OiB1.badj%xr) => //.
@@ -830,8 +910,12 @@ proof.
 qed.
 
 local lemma HiHi1 &m : 
-  Pr[Hi(Adv, Oi).main(kappa_, i) @ &m : res] - Pr[Hi(Adv, Oi).main(kappa_,i+1) @ &m : res] <=
-    p^kappa_ + bigi predT (fun (j : int) => Pr[Hij(Adv, Oij).main(kappa_,i,j) @ &m : res] - Pr[Hij(Adv, Oij).main(kappa_, i, j+1) @ &m : res]) 0 kappa_.
+  Pr[Hi(Adv, Oi).main(kappa_, i) @ &m : res] - 
+  Pr[Hi(Adv, Oi).main(kappa_,i+1) @ &m : res] <=
+  p^kappa_ + 
+  bigi predT (fun (j : int) => 
+    Pr[Hij(Adv, Oij).main(kappa_,i,j) @ &m : res] - 
+    Pr[Hij(Adv, Oij).main(kappa_, i, j+1) @ &m : res]) 0 kappa_.
 proof.
   have := HiB1_HiB2 &m; have := HiB1_badj &m; have := HiB2_badj &m.
   have /= <- := (telescoping_sum (fun j => Pr[Hij(Adv, Oij).main(kappa_,i, j) @ &m : res]) 0 kappa_).
@@ -839,7 +923,17 @@ proof.
   rewrite Hi_HiB1 Hi_Hij Hi1_Hij /#.
 qed.
 
-(* We focus on Pr[Hij(Adv, Oij).main(i,j) @ &m : res] - Pr[Hij(Adv, Oij).main(i, j+1) @ &m : res] *)
+(* We focus on 
+
+Pr[Hij(Adv, Oij).main(i,j) @ &m : res] - 
+Pr[Hij(Adv, Oij).main(i, j+1) @ &m : res] 
+
+for some fixed j 
+
+Both games behave the same unless the w sampled for the j-th iteration
+has been used in a query to the RO (e.g., if the adversary
+successfully guessed w) *)
+
 section J.
 
 declare op j : int.
@@ -1009,6 +1103,7 @@ proof. byupto. qed.
 (* We focus on  Pr[HijB(Adv, OijB1).main(kappa_,i,j) @ &m : OijB1.badRO] *)
 import var Oi.
 
+(* With every call to [RO.get] the expected size of the domain increases by one *)
 local ehoare ROget : RO.get : (card (fdom RO.m))%xr + 1%xr ==> (card (fdom RO.m))%xr.
 proof.
   proc; auto => &hr.
@@ -1056,6 +1151,7 @@ proof.
   rewrite to_pos_pos //; smt(p_bounded).
 qed.
 
+(* With every call to [sign_l] the expected size of the domain increases by 1 / (1 - p)  *)
 local ehoare e_sign_l : Oi.sign_l :  
   (valid_sk sk /\ OReal.kappa = kappa_) `|` (card (fdom RO.m))%xr + (1.0 / (1.0-p))%xr ==> (card (fdom RO.m))%xr.
 proof.
@@ -1096,6 +1192,8 @@ qed.
 local ehoare e_sign_i_r : Oi.sign_i_r : OijB1.badRO%xr ==> OijB1.badRO%xr.
 proof. by conseq /(fun x => OijB1.badRO%xr) (: 0%xr ==> 0%xr). qed.
 
+(* Main bounding lemma: bounding the probability of [OijB1.badRO] by
+the expected size of [RO.m] at the j-th iteration of the i-th query *)
 local lemma Pr_bad &m : 
   Pr[HijB(Adv, OijB1).main(kappa_,i,j) @ &m : OijB1.badRO] <= p^j * (i%r / (1.0 - p) + qh%r + j%r) * eps.
 proof.
@@ -1244,28 +1342,31 @@ qed.
 
 end section J.
 
+(* We avoid a dependency on kappa for the second part or the bound by
+overapproximating the sum over the Hij steps. This is possible since
+the sum converges as kappa grows to infinity. *)
 lemma concl_i &m : 
-  Pr[Hi(Adv, Oi).main(kappa_, i) @ &m : res] - Pr[Hi(Adv, Oi).main(kappa_, i+1) @ &m : res] <=
-     p^kappa_ + ((i%r / (1%r - p) + qh%r) * eps / (1.0 - p) + eps / (1.0 - p)^2).
+  Pr[Hi(Adv, Oi).main(kappa_, i) @ &m : res] - 
+  Pr[Hi(Adv, Oi).main(kappa_, i+1) @ &m : res] <=
+    p^kappa_ + 
+    ((i%r / (1%r - p) + qh%r) * eps / (1.0 - p) + eps / (1.0 - p)^2).
 proof.
-  apply (ler_trans _ _ _ (HiHi1 &m)).
-  rewrite ler_add2l.
-  apply (ler_trans 
-            (bigi predT (fun (j : int) =>  ((i%r / (1.0 - p) + qh%r) * eps) * p^j + eps * (j%r*p^j))
-                  0 kappa_)).
-  + apply ler_sum_seq => j /mem_range hj _ /=.
-    by have /# := concl_j j hj &m.
-  rewrite -sumrD -!mulr_sumr.
-  apply ler_add.
-  + rewrite ler_wpmul2l.
-    + smt(i_bounded p_bounded qh_ge0 eps_ge0).
-    by apply (sum_pow_le p kappa_ kappa_ge0 p_bounded).
-  rewrite ler_wpmul2l 1:eps_ge0.
-  apply (sum_ipow_le p kappa_ p_bounded).
+apply (ler_trans _ _ _ (HiHi1 &m)); rewrite ler_add2l.
+apply (ler_trans (bigi predT (fun (j : int) =>  
+         ((i%r / (1.0 - p) + qh%r) * eps) * p^j + eps * (j%r*p^j)) 0 kappa_)).
++ apply ler_sum_seq => j /mem_range hj _ /=.
+  by have /# := concl_j j hj &m.
+rewrite -sumrD -!mulr_sumr. 
+apply ler_add.
++ rewrite ler_wpmul2l; 1: smt(i_bounded p_bounded qh_ge0 eps_ge0).
+  by apply (sum_pow_le p kappa_ kappa_ge0 p_bounded).
+rewrite ler_wpmul2l 1:eps_ge0.
+apply (sum_ipow_le p kappa_ p_bounded).
 qed.
 
 end section I.
 
+(* Summing over the Hi steps and simplifying, we obtain : *)
 lemma GReal_GSet &m: 
   Pr[Game(Adv, Count(OReal)).main() @ &m : res] <=
   Pr[Game_k(Adv, CountBound(OSet)).main(kappa_) @ &m : res] + 
@@ -1275,8 +1376,10 @@ proof.
   have ? : 1%r + (- 2%r) * p + p ^ 2 <> 0%r by smt(expr2).
   apply/(ler_trans _ _ _ (GReal_GSet_aux &m))/ler_add2l. 
   apply (ler_trans 
-     (bigi predT (fun (i : int) => p^kappa_ + (i%r * eps / (1.0 -p)^2 + eps * (qh%r / (1.0 - p) + 1.0 / (1.0 - p)^2)))
-        0 qs)).
+     (bigi predT (fun (i : int) => 
+        p^kappa_ + 
+        (i%r * eps / (1.0 -p)^2 + eps * (qh%r / (1.0 - p) + 1.0 / (1.0 - p)^2))) 
+     0 qs)).
   + apply ler_sum_seq => i /mem_range hi _ /=.
     apply (ler_trans _ _ _ (concl_i i hi &m)).
     by apply lerr_eq; field. 
