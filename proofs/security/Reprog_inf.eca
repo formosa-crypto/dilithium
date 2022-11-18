@@ -93,7 +93,7 @@ module Count (O: Oracle_i) : Oracle = {
   }
 }.
 
-(* bounding wrapper to avoid out-of-bounds reasoning *)
+(* bounding wrapper to avoid out-of-bounds reasoning - also stops couniting *)
 module CountBound (O: Oracle_i) : Oracle = {
   import var Count
 
@@ -441,8 +441,78 @@ section C.
 
 declare module O <: Oracle_i{-Adv, -Count}.
 
-(* Game, but counters are initialized (though not used except possibly by O) *)
-(* TOTHINK: define using Game? *)
+(* Bound queries, but keep counting *)
+(* We'll put this into Count, so we need fresh module variables *)
+local module CountB (O: Oracle_i) : Oracle = {
+  var countS : int
+  var countH : int
+
+  proc init (sk : SK) = {
+    O.init(sk);
+    countS <- 0;
+    countH <- 0;
+  }
+  
+  proc h(w : W, m : M) : C = {
+    var y;
+    y <- witness;
+    if (countH < qh) { 
+      y <@ O.h((w, m));
+    }
+    countH <- countH + 1;
+    return y;
+  }
+
+  proc sign(x) = {
+    var y;
+    y <- witness;
+    if (countS < qs) { 
+      y <@ O.sign(x);
+    }
+    countS <- countS + 1;
+    return y;
+  }
+}.
+
+local equiv Count_CountB : 
+  Adv(CountB(O)).distinguish ~ Adv(Count(CountB(O))).distinguish : 
+  ={glob CountB,glob O,glob Adv,arg} ==> ={glob CountB}. 
+proof.
+proc (={glob CountB,glob O}); 1,2: smt().
+proc. inline*. wp. sp. if => //. call(:true). auto => />. 
+proc. inline*. wp. sp. if => //. call(:true). auto => />. 
+qed.
+
+local lemma A_bound2 :  
+  hoare [ Adv(CountB(O)).distinguish : 
+    CountB.countS = 0 /\ CountB.countH = 0 ==> 
+    CountB.countS <= qs /\ CountB.countH <= qh ].
+proof.
+have H := A_bound (CountB(O)).
+conseq Count_CountB (_ :  Count.countS = 0 /\ Count.countH = 0 /\ 
+               CountB.countS = 0 /\ CountB.countH = 0 ==> 
+               CountB.countS <= qs /\ CountB.countH <= qh); 1,2: smt(). 
+conseq (: Count.countS = CountB.countS /\  
+          Count.countH = CountB.countH) H; 1,2: smt().
+proc (Count.countS = CountB.countS /\ Count.countH = CountB.countH); 1,2: smt().
+- by proc; inline*; auto; sp; if; 1: call(: true); auto.
+- by proc; inline*; auto; sp; if; 1: call(: true); auto.
+qed.
+
+local lemma Pr_CountBound_count &m : 
+  Pr[Game(Adv, CountBound(O)).main() @ &m : res] = 
+  Pr[Game(Adv, CountB(O)).main() @ &m : res].
+proof.
+byequiv => //; proc; inline*.
+call (: ={glob O} /\ 
+        (Count.countH{1} < qh) ? Count.countH{1} = CountB.countH{2} : !(CountB.countH{2} < qh) /\
+        (Count.countS{1} < qs) ? Count.countS{1} = CountB.countS{2} : !(CountB.countS{2} < qs)).
+- by proc; sp; if; auto; 2: call(: true); auto => /> /#. 
+- by proc; sp; if; auto; 2: call(: true); auto => /> /#. 
+by auto => />; sim.
+qed.
+
+(* TOTHINK: this is needed because Count does not initialize its counters *)
 local module GameI (Adv: Adversary) (O: Oracle_i) = {
   proc main() = {
     var b, pk, sk;
@@ -467,12 +537,11 @@ local module CountBad1 : Oracle = {
     y <- witness;
     if (countH < qh) { 
       y <@ O.h((w, m)); 
-      countH <- countH + 1; 
     } else {
       bad <- true;
       y <@ O.h((w, m)); 
-      countH <- countH + 1;
     }
+    countH <- countH + 1;
     return y;
   }
 
@@ -481,12 +550,11 @@ local module CountBad1 : Oracle = {
     y <- witness;
     if (countS < qs) {
       y <@ O.sign(x); 
-      countS <- countS + 1; 
     } else {
       bad <- true;
       y <@ O.sign(x);
-      countS <- countS + 1;
     }
+    countS <- countS + 1;
     return y;
   }
 }.
@@ -501,8 +569,8 @@ local module CountBad2 : Oracle = {
     y <- witness;
     if (countH < qh) { 
       y <@ O.h((w, m));
-      countH <- countH + 1;
     } else CountBad1.bad <- true;
+    countH <- countH + 1;
     return y;
   }
 
@@ -511,9 +579,9 @@ local module CountBad2 : Oracle = {
     y <- witness;
     if (countS < qs) { 
       y <@ O.sign(x);
-      countS <- countS + 1;
     }
     else CountBad1.bad <- true;
+    countS <- countS + 1;
     return y;
   }
 }.
@@ -551,56 +619,66 @@ local lemma Pr_Count_CountBad1 &m :
 proof.
   byequiv => //; proc; inline GameI(Adv, CountBad1).main; wp.
   sim (Count(O).h ~ CountBad1.h : ={glob O, Count.countH})
-    (Count(O).sign ~ CountBad1.sign : ={glob O, Count.countS}).
+      (Count(O).sign ~ CountBad1.sign : ={glob O, Count.countS}).
   + by proc; sp 0 1; if{2}; swap{1} 1; sim. 
   by proc; sp 0 1; if{2}; swap{1} 1; sim. 
 qed.
 
-(*
-local lemma Pr_CB1_CB2 &m : 
-  Pr[GameB1.main() @ &m : res /\ Count.countS <= qs /\ Count.countH <= qh ] =
-  Pr[GameB2.main() @ &m : res].
-proof.
-byequiv. proc. inline*.
-*)
-
-local lemma Pr_CB1_CB2 &m : 
-  Pr[GameB1.main() @ &m : res /\ Count.countS <= qs /\ Count.countH <= qh ] <= 
-  Pr[GameB2.main() @ &m : res].
-proof.
-  have : Pr[GameB1.main() @ &m : res /\ Count.countS <= qs /\ Count.countH <= qh] <= 
-         Pr[GameB2.main() @ &m : res] + 
-         Pr[GameB1.main() @ &m : (res /\ Count.countS <= qs /\ Count.countH <= qh) /\CountBad1.bad].
-  + byupto.
-  have -> //: 
-    Pr[GameB1.main() @ &m : (res /\ Count.countS <= qs /\ Count.countH <= qh) /\ CountBad1.bad] = 0%r.
-  byphoare => //.
-  conseq (: _ ==> false)
-         (: true ==>  CountBad1.bad => !(Count.countS <= qs /\ Count.countH <= qh)) => //; 1: smt().
-  proc; inline *; wp.
-  call(: CountBad1.bad => ! (Count.countS <= qs /\ Count.countH <= qh)). 
-  + by proc; sp; if; wp; call (:true); auto => /> /#.
-  + by proc; sp; if; wp; call (:true); auto => /> /#.
-  by wp; call(:true); auto.
+local lemma Pr_CountB_CountBad2 &m : 
+  Pr[Game(Adv, CountB(O)).main() @ &m : res] =  
+  Pr[Game(Adv, CountB(O)).main() @ &m : res /\ CountB.countS <= qs /\ CountB.countH <= qh].
+proof. 
+  byequiv => //.
+  conseq (: _ ==> ={res}) _
+         (: true ==> CountB.countS <= qs /\ CountB.countH <= qh) => />; 2: by sim.
+  by proc; inline*; call A_bound2; auto.
 qed.
 
+
 local lemma CB2_CB &m : 
-  Pr[GameB2.main() @ &m : res] = Pr[Game(Adv, CountBound(O)).main() @ &m : res].
+  Pr[Game(Adv, CountB(O)).main() @ &m : res] = 
+  Pr[GameB2.main() @ &m : res /\ Count.countS <= qs /\ Count.countH <= qh].
 proof.
+rewrite Pr_CountB_CountBad2.
   byequiv => //; proc.
   inline *; wp.
   sim (CountBad2.h ~ CountBound(O).h : ={glob O, Count.countH})
       (CountBad2.sign ~ CountBound(O).sign : ={glob O, Count.countS}).
 qed.
 
+local lemma Pr_CB1_CB2 &m : 
+  Pr[GameB1.main() @ &m : res /\ Count.countS <= qs /\ Count.countH <= qh ] = 
+  Pr[GameB2.main() @ &m : res /\ Count.countS <= qs /\ Count.countH <= qh ].
+proof.
+suff : `| Pr[GameB1.main() @ &m : res /\ Count.countS <= qs /\ Count.countH <= qh ] -
+          Pr[GameB2.main() @ &m : res /\ Count.countS <= qs /\ Count.countH <= qh ] | <= 0%r by smt().
+suff : maxr 
+       Pr[GameB1.main() @ &m : (res /\ Count.countS <= qs /\ Count.countH <= qh) /\ CountBad1.bad ]
+       Pr[GameB2.main() @ &m : (res /\ Count.countS <= qs /\ Count.countH <= qh) /\ CountBad1.bad ] 
+       <= 0%r.
+- by apply: ler_trans; byupto.
+apply/ler_maxrP; split.
+- byphoare => //; hoare; proc; inline*; wp.
+  call (: CountBad1.bad => !(Count.countS <= qs /\ Count.countH <= qh)).
+  + by proc; sp; if; wp; call (:true); auto => /> /#.
+  + by proc; sp; if; wp; call (:true); auto => /> /#.
+  auto; call (: true); auto => /> /#.
+- byphoare => //; hoare; proc; inline*; wp.
+  call (: CountBad1.bad => !(Count.countS <= qs /\ Count.countH <= qh)).
+  + proc; sp; if; auto; 1: call(: true);  auto => /> /#.
+  + proc; sp; if; auto; 1: call(: true);  auto => /> /#.
+  auto; call (: true); auto => /> /#.
+qed.
+
 lemma Pr_Count_CountBound &m : 
-  Pr[Game(Adv, Count(O)).main() @ &m : res] <= 
+  Pr[Game(Adv, Count(O)).main() @ &m : res] = 
   Pr[Game(Adv, CountBound(O)).main() @ &m : res].
-proof. by rewrite Pr_Game_GameI Pr_Count_CountBad1 -CB2_CB Pr_CB1_CB2. qed.
+proof.
+rewrite Pr_Game_GameI Pr_Count_CountBad1. 
+by rewrite Pr_CountBound_count CB2_CB Pr_CB1_CB2.
+qed. 
 
 end section C.
-
-
 
 
 (* ----------------------------------------------------------------- *)

@@ -16,9 +16,7 @@ clone include Reprog_inf.
 with the oracle [OReal] and the oracle [OSet1_inf] below, both having
 no loop bound. *)
 
-print OReal. (* TODO *)
-print OSet. 
-  
+
 module OSet1_inf : Oracle_i = { 
   import var OReal
   include var OSet[init, h]
@@ -1174,6 +1172,7 @@ proof.
   by rewrite limD 1:// 1:cnvC limZ lim_pow //= limC.
 qed.
 
+local clone import Analysis as A0.
 
 lemma GReal_GSet1 &m : 
   Pr[Game(Adv, OReal).main() @ &m : res] <= 
@@ -1188,19 +1187,11 @@ have -> : Pr[Game(Adv, OReal).main() @ &m : res] =
   + proc. inline OReal.sign. wp. by sim. 
   inline*; auto => />.
 have -> : Pr[Game(Adv, OSet1_inf).main() @ &m : res] = 
-          Pr[Game(Adv, CountBound(OSet1_inf)).main() @ &m : res].
-- byequiv => //; proc.
-  conseq (: _ ==> Count.countS{2} <= qs /\ Count.countH{2} <= qh => ={b}) _ 
-         (: _ ==> Count.countS <= qs /\ Count.countH <= qh). smt(). 
-  + (* need to go to [Adv(Count(CountBound(OSet1_inf)))] with disjoint counters ... *)
-    admit.
-  call (: Count.countS{2} <= qs /\ Count.countH{2} <= qh => ={RO.m, OReal.sk}).
-  + admit.
-  + admit.
+          Pr[Game(Adv, Count(OSet1_inf)).main() @ &m : res].
+- byequiv => //; proc;call (: ={RO.m, OReal.sk}). 
+  + proc*. inline Count(OSet1_inf).h. wp. call(: ={RO.m}). sim. auto.
+  + proc. inline OSet1_inf.sign. wp. by sim. 
   inline*; auto => />.
-exact GReal_GSet_inf_aux.
+have -> := Pr_Count_CountBound Adv A_bound OSet1_inf &m. 
+exact (GReal_GSet_inf_aux &m).
 qed.
-
-
-
-end section.
