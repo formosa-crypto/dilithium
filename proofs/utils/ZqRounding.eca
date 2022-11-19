@@ -300,6 +300,221 @@ rewrite (round_unique alpha (x + y) (round alpha x) (lowbits alpha x + lowbits a
 - smt(lowbits_id abs_zp_triangle).
 qed.
 
+(* -- Hints stuff -- *)
+
+op makehint alpha z r =
+  let r1 = highbits alpha r in
+  let v1 = highbits alpha (r + z) in
+  r1 <> v1.
+
+op usehint alpha h r =
+  let m = (q - 1) %/ alpha in
+  let r1 = highbits alpha r in
+  let r0 = lowbits alpha r in
+  if h then
+    if 0 < crepr r0 then
+      if r1 = (q - 1) %/ alpha then 0 else r1 + 1
+    else
+      if r1 = 0 then (q - 1) %/ alpha else r1 - 1
+  else r1.
+
+lemma eq_divz d x y :
+  d %| x =>
+  d %| y =>
+  x %/ d = y %/ d =>
+  x = y.
+proof. smt(divzK). qed.
+
+(**
+lemma highbits_perturb alpha (z r : zmod) :
+  2 <= alpha <= q %/ 2 =>
+  2 %| alpha =>
+  alpha %| (q - 1) =>
+  `|z| <= alpha %/ 2 =>
+  highbits alpha r <> highbits alpha (r + z) =>
+  !(-alpha %/ 2 < crepr (lowbits alpha r + z) <= alpha %/ 2) (* \/ r + z = inzmod (q - 1 - alpha) *).
+proof.
+move => ???? high_ne.
+have {high_ne} round_ne: round alpha r <> round alpha (r + z).
+- smt(eq_divz round_is_multiple asintK).
+
+print round_unique.
+
+(**
+(* corner case; TODO double check this isn't nonsense *)
+case (r + z = inzmod (q - 1 - alpha)) => ? //=.
+**)
+
+(* proof by contradiction *)
+suff: (-alpha %/ 2 < crepr (lowbits alpha r + z) <= alpha %/ 2) => false by auto.
+move => [??].
+(* FIXME: can't do `suff {round_ne}:`; known bug. *)
+suff: round alpha (r + z) = round alpha r by smt().
+clear round_ne.
+apply (round_unique alpha (r + z) _ (lowbits alpha r + z)) => //.
+- rewrite {1}(round_lowP alpha).
+  by field.
+- exact round_is_multiple.
+- smt(rg_round).
+- smt().
+qed. 
+**)
+
+lemma zmodcgr_transitive b a c :
+  zmodcgr a b =>
+  zmodcgr b c =>
+  zmodcgr a c.
+proof. smt(). qed.
+
+lemma creprD (a b : zmod) :
+  crepr (a + b) = to_crepr (crepr a + crepr b).
+proof.
+suff: zmodcgr (crepr (a + b)) (crepr a + crepr b).
+- smt(rg_to_crepr to_crepr_zmodcgr rg_crepr).
+rewrite /crepr addE /=.
+apply (zmodcgr_transitive (asint a + asint b)).
+- smt(modzMDr rg_asint).
+case ((q + 1) %/ 2 <= asint a) => _.
+- case ((q + 1) %/ 2 <= asint b) => _.
+  + have ->: (asint a - q + (asint b - q) = asint a + asint b + (-2) * q) by ring.
+    by rewrite modzMDr.
+  + have ->: (asint a - q + asint b = asint a + asint b + (-1) * q) by ring.
+    by rewrite modzMDr.
+- case ((q + 1) %/ 2 <= asint b) => _ //.
+  have ->: (asint a + (asint b - q) = asint a + asint b + (-1) * q) by ring.
+  by rewrite modzMDr.
+qed.
+
+lemma to_crepr_id x :
+  (q + 1) %/ 2 - q <= x < (q + 1) %/ 2 =>
+  to_crepr x = x.
+proof. smt(). qed.
+
+lemma to_crepr_eq x y :
+  to_crepr x = to_crepr y <=> zmodcgr x y.
+proof. smt(). qed.
+
+lemma hints_up_corner alpha (z r : zmod) :
+  (* IMPORTANT: This isn't q %/ 2 *)
+  2 <= alpha <= q %/ 4 =>
+  2 %| alpha =>
+  alpha %| (q - 1) =>
+  `|z| <= alpha %/ 2 =>
+  0 < crepr (lowbits alpha r) =>
+  highbits alpha r <> highbits alpha (r + z) =>
+  highbits alpha r = (q - alpha - 1) %/ alpha =>
+  highbits alpha (r + z) = 0.
+proof.
+rewrite /highbits /rightshift => ????? high_ne is_corner.
+have {high_ne} round_ne: round alpha r <> round alpha (r + z).
+- smt(eq_divz round_is_multiple asintK).
+have {is_corner} is_corner: asint (round alpha r) = q - alpha - 1.
+- apply (eq_divz alpha) => //.
+  + by apply round_is_multiple => /#.
+  + admit. (* simple divisibility *)
+suff: asint (round alpha (r + z)) = 0.
+- smt(rg_round round_is_multiple).
+suff: round alpha (r + z) = ZModQ.zero.
+- smt(asintK zeroE).
+have low_not_small: !(-alpha %/ 2 < crepr (lowbits alpha r + z) <= alpha %/ 2).
+- (* proof by contradiction *)
+  suff: (-alpha %/ 2 < crepr (lowbits alpha r + z) <= alpha %/ 2) => false by auto.
+  move => [??].
+  (* FIXME: can't do `suff {round_ne}:`; known bug. *)
+  suff: round alpha (r + z) = round alpha r by smt().
+  clear round_ne.
+  apply (round_unique alpha (r + z) _ (lowbits alpha r + z)) => //.
+  + smt().
+  + rewrite {1}(round_lowP alpha).
+    by field.
+  + by apply round_is_multiple => /#.
+  + smt(rg_round).
+  + smt().
+have lowbits_lb {low_not_small} :
+  alpha %/ 2 < crepr (lowbits alpha r + z).
+- suff: - alpha %/ 2 < crepr (lowbits alpha r + z) by smt().
+  rewrite creprD.
+  rewrite to_crepr_id; smt(lowbits_small ge2_p).
+have ? {lowbits_lb}: `|r + z| <= alpha %/ 2.
+- rewrite (round_lowP alpha r) -ZModpRing.addrA /"`|_|" creprD.
+  have ->: round alpha r = inzmod (q - alpha - 1) by smt(asintK).
+  have ->: inzmod (q - alpha - 1) = inzmod (- alpha - 1) by admit.
+  rewrite inzmodK_centered; 1, 2: smt().
+  rewrite to_crepr_id.
+  + split => [|_]; first smt().
+    rewrite creprD.
+    by rewrite to_crepr_id; smt(lowbits_small).
+  suff: (-alpha) - 1 + crepr (lowbits alpha r + z) <= alpha %/ 2 by smt().
+  rewrite creprD to_crepr_id; smt(lowbits_small).
+apply (round_unique alpha (r + z) ZModQ.zero (r + z)) => //.
+- smt().
+- by rewrite ZModule.add0r.
+- by rewrite zeroE.
+- by rewrite zeroE /#.
+- smt().
+- smt().
+qed.
+
+(**
+
+lemma hints_correct alpha (z r : zmod) :
+  2 <= alpha <= q %/ 2 =>
+  2 %| alpha =>
+  alpha %| (q - 1) =>
+  `|z| <= alpha %/ 2 =>
+  let h = makehint alpha z r in
+    usehint alpha h r = highbits alpha (r + z).
+proof.
+rewrite /makehint /usehint /= => *.
+case (highbits alpha r = highbits alpha (r + z)) => ? //=.
+case (0 < crepr (lowbits alpha r)) => ?.
+- (* rounding up *)
+  case (highbits alpha r = (q - 1) %/ alpha) => ?.
+  + (* corner case *)
+    rewrite /highbits /rightshift.
+    
+  have ->: asint (round alpha r) %/ alpha + 1 = (asint (round alpha r) + alpha) %/ alpha.
+  + have ->: 1 = alpha %/ alpha by smt().
+    by rewrite -divzDr /#.
+  rewrite -dvdz_mod_div //; 1,2:smt(ge2_p).
+  suff: (asint (round alpha r) + alpha) %% (q - 1) = asint (round alpha (r + z)).
+  + smt().
+  print round_unique.
+(*  suff: round alpha (r + z) = let lhs = round alpha r in  *)
+  rewrite (round_unique _ (r + z)
+            (round alpha r + inzmod alpha)
+            (lowbits alpha r + z - inzmod alpha)) //.
+  + rewrite {1}(round_lowP alpha).
+    by field.
+  + admit. (* some annoying but simple algebra *)
+  + rewrite addE.
+    have ->: asint (inzmod alpha) = alpha by smt(inzmodK).
+    print rg_round.
+    smt(rg_round modz_small).
+  have ->: round alpha (r + z) = round alpha r + alpha)
+  
+
+  have ->:
+  suff: (asint (round alpha r) + alpha) %% (q - 1) = asint (round alpha (r + z)).
+  + smt().
+
+/round.
+  print lowbits.
+  smt(asintK inzmodK).
+print highbits.
+
+rewrite /highbits /rightshift /round.
+smt(asintK inzmodK).
+print highbits.
+print rightshift.
+
+print highbits.
+search highbits.
+search lowbits.
+print lowbits.
+
+**)
+
 (* -- Polynomial versions -- *)
 
 require PolyReduce.
