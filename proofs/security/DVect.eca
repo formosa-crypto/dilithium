@@ -14,6 +14,14 @@ clone import MatPlus as MatRq
 op shiftV (w1 : high list) = oflist (map (fun x => shift x) w1).
 op lowBitsV v = mapv lowBits v.
 op highBitsV v = map highBits (tolist v).
+(* FIXME: Maybe this combinator should be in the standard library...? *)
+op uncurry (f : 'a -> 'b -> 'c) (ab : 'a * 'b) : 'c = let (a, b) = ab in f a b.
+op makeHintV rv zv = map (uncurry makeHint) (zip (tolist rv) (tolist zv)).
+op useHintV (hv : hint_t list) (rv : vector) : high list = map (uncurry useHint) (zip hv (tolist rv)).
+(* Some kinda weights check for bitpacking *)
+op checkHintV (hv : hint_t list) : bool.
+(* TODO Fill this in using DRing and ConcreteDRing *)
+op roundV (v : vector) : vector.
 
 lemma size_shiftV (w1 : high list) : size (shiftV w1) = size w1.
 proof. by rewrite size_oflist size_map. qed.

@@ -73,12 +73,16 @@ axiom cnormN (r : Rq) : cnorm (-r) = cnorm r.
 
 (* high/low-bits operations (fixed modulus) *)
 
+type hint_t.
+
 theory Flex.
 
 type high.
 op lowBits : int -> Rq -> Rq. 
 op highBits : int -> Rq -> high.
 op shift    : int -> high ->  Rq.
+op makeHint : int -> Rq -> Rq -> hint_t.
+op useHint : int -> hint_t -> Rq -> high.
 
 axiom high_lowP alpha x :
   2 <= alpha && alpha <= q %/ 2 =>
@@ -102,6 +106,7 @@ axiom shift_inj alpha :
   2 %| alpha =>
   alpha %| (q - 1) =>
   injective_in (image (highBits alpha)) (shift alpha).
+
 end Flex.
     
 abstract theory HighLow.
@@ -123,6 +128,8 @@ type high = sT.
 op highBits (r : Rq) = insubd (Flex.highBits alpha r).
 op lowBits (r : Rq) = Flex.lowBits alpha r.
 op shift (h : high) = Flex.shift alpha (val h).
+op makeHint (r z : Rq) = Flex.makeHint alpha r z.
+op useHint (h : hint_t) (r : Rq) : high = insubd (Flex.useHint alpha h r).
 
 lemma high_lowP x : shift (highBits x) + lowBits x = x.
 proof. 

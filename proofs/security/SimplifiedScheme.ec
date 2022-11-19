@@ -82,9 +82,7 @@ type challenge_t = Rq.
 type SK = matrix * vector * vector.
 type PK = matrix * vector.
 type commit_t = high list.
-type response_t = vector. 
-
-(* op dC : challenge_t distr = dC tau.  *)
+type response_t = vector * (hint_t list).
 
 (* Just storing `y` should be good here. *)
 type pstate_t = vector. 
@@ -117,8 +115,9 @@ proof* by smt(dC_ll dC_uni tau_bound). *)
 
 (* -- Procedure-based -- *)
 
-op recover (pk : PK) (c : challenge_t) (z : response_t) : commit_t =
+op recover (pk : PK) (c : challenge_t) (resp : response_t) : commit_t =
   let (mA, t) = pk in
+  let (z, h) = resp in
   highBitsV (mA *^ z - c ** t).
 
 clone FSa.CommRecov as FSaCR with
@@ -144,44 +143,59 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
   }
 
   proc sign(sk: SK, m: M) : Sig = {
-    var z : vector option;
+    var z : vector;
+    var h : hint_t list;
+    var response : response_t option;
     var c : R;
     var ctr : int;
     var y, w, w1;
     var mA, s1, s2;
+    var t0;
     (* silences unused variable warning *)
     c <- witness;
 
     (mA, s1, s2) <- sk;
-    z <- None;
-    while(z = None) {
+    t0 <- lowBitsV (mA *^ s1 + s2);
+    response <- None;
+    while(response = None) {
       y <$ dvector (dRq_ (gamma1 - 1)) l;
       w <- mA *^ y;
       w1 <- highBitsV w;
       c <@ H.get((w1, m));
-      z <- Some (y + c ** s1);
-      if(gamma1 - b <= inf_normv (oget z) \/
-         gamma2 - b <= inf_normv (lowBitsV (mA *^ y - c ** s2))) {
-        z <- None;
+      z <- y + c ** s1;
+      if(inf_normv z < gamma1 - b /\
+         inf_normv (lowBitsV (mA *^ y - c ** s2)) < gamma2 - b) {
+        h <- makeHintV (c ** (-t0)) (w - c ** s2 + c ** t0);
+        if(inf_normv (c ** t0) < gamma2 /\ checkHintV h) {
+          response <- Some (z, h);
+        }
       }
+      
     }
-    return (c, oget z);
+    return (c, oget response);
   }
 
   proc verify(pk: PK, m : M, sig : Sig) = {
-    var w, c, z, c';
-    var mA, t1;
+    var w, c;
+    var response;
+    var z, h;
+    var c';
+    var mA, t, t1;
     var result;
-    (mA, t1) <- pk;
+    (mA, t) <- pk;
+    t1 <- roundV t;
 
-    (c, z) <- sig;
-    w <- highBitsV (mA *^ z - c ** t1);
+    (c, response) <- sig;
+    (z, h) <- response;
+    w <- useHintV h (mA *^ z - c ** t1);
     c' <@ H.get((w, m));
-    result <- size z = l /\ inf_normv z < gamma1 - b /\ c = c';
+    result <- size z = l /\ inf_normv z < gamma1 - b /\ c = c' /\ checkHintV h;
 
     return result;
   }
 }.
+
+(** TODO Fix the rest of the file
 
 (** KOA to MLWE + SelfTargetMSIS *)
 
@@ -1178,3 +1192,5 @@ rewrite pr_code_op.
 admitted.
 
 end section PROOF.
+
+**)
