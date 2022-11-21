@@ -1195,3 +1195,5 @@ have -> : Pr[Game(Adv, OSet1_inf).main() @ &m : res] =
 have -> := Pr_Count_CountBound Adv A_bound OSet1_inf &m. 
 exact (GReal_GSet_inf_aux &m).
 qed.
+
+end section.
