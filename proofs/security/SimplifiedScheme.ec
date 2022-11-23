@@ -80,7 +80,7 @@ type M.
 
 type challenge_t = Rq.
 type SK = matrix * vector * vector.
-type PK = matrix * vector.
+type PK = matrix * (high2 list).
 type commit_t = high list.
 type response_t = vector * (hint_t list).
 
@@ -116,9 +116,9 @@ proof* by smt(dC_ll dC_uni tau_bound). *)
 (* -- Procedure-based -- *)
 
 op recover (pk : PK) (c : challenge_t) (resp : response_t) : commit_t =
-  let (mA, t) = pk in
+  let (mA, t1) = pk in
   let (z, h) = resp in
-  useHintV h (mA *^ z - c ** base2roundV t).
+  useHintV h (mA *^ z - c ** base2leftshiftV t1).
 
 clone FSa.CommRecov as FSaCR with
   op recover <= recover,
@@ -137,7 +137,7 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
     mA <$ dmatrix dRq k l;
     s1 <$ dvector (dRq_ e) l;
     s2 <$ dvector (dRq_ e) k;
-    pk <- (mA, base2roundV (mA *^ s1 + s2));
+    pk <- (mA, base2highbitsV (mA *^ s1 + s2));
     sk <- (mA, s1, s2);
     return (pk, sk);
   }
@@ -186,7 +186,7 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
 
     (c, response) <- sig;
     (z, h) <- response;
-    w1 <- useHintV h (mA *^ z - c ** t1);
+    w1 <- useHintV h (mA *^ z - c ** base2leftshiftV t1);
     c' <@ H.get((w1, m));
     result <- size z = l /\ inf_normv z < gamma1 - b /\ c = c';
 
