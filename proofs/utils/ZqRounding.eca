@@ -411,7 +411,8 @@ have {high_ne} round_ne: round alpha r <> round alpha (r + z).
 have {is_corner} is_corner: asint (round alpha r) = q - alpha - 1.
 - apply (eq_divz alpha) => //.
   + by apply round_is_multiple => /#.
-  + admit. (* simple divisibility *)
+  have ->: q - alpha - 1 = q - 1 + (-1) * alpha by ring.
+  by rewrite /( %| ) (modzMDr (-1) (q - 1) alpha).
 suff: asint (round alpha (r + z)) = 0.
 - smt(rg_round round_is_multiple).
 suff: round alpha (r + z) = ZModQ.zero.
@@ -452,7 +453,10 @@ case (alpha = q %/ 2) => ?.
 have ? {lowbits_lb}: `|r + z| <= alpha %/ 2.
 - rewrite (round_lowP alpha r) -ZModpRing.addrA /"`|_|" creprD.
   have ->: round alpha r = inzmod (q - alpha - 1) by smt(asintK).
-  have ->: inzmod (q - alpha - 1) = inzmod (- alpha - 1) by admit.
+  have ->: inzmod (q - alpha - 1) = inzmod (- alpha - 1).
+  + rewrite -eq_inzmod.
+    have ->: q - alpha - 1 = - alpha - 1 + 1 * q by ring.
+    by rewrite modzMDr.
   rewrite inzmodK_centered; 1, 2: smt().
   rewrite to_crepr_id.
   + split => [|_]; first smt().
