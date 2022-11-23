@@ -461,6 +461,62 @@ apply (round_unique alpha (r + z) ZModQ.zero (r + z)) => //.
 - smt().
 qed.
 
+lemma creprND (a b : zmod) :
+  crepr (a - b) = to_crepr (crepr a - crepr b).
+proof. admitted.
+
+lemma hints_up alpha (z r : zmod) :
+  2 <= alpha <= q %/ 2 =>
+  2 %| alpha =>
+  alpha %| (q - 1) =>
+  `|z| <= alpha %/ 2 =>
+  0 < crepr (lowbits alpha r) =>
+  highbits alpha r <> highbits alpha (r + z) =>
+  highbits alpha r <> (q - alpha - 1) %/ alpha =>
+  highbits alpha (r + z) = highbits alpha r + 1.
+proof.
+rewrite /highbits /rightshift => rg_alpha ???? high_ne not_corner.
+have {not_corner} not_corner: asint (round alpha r) < (q - alpha - 1).
+- have: alpha %| (q - alpha - 1).
+  + have ->: q - alpha - 1 = q - 1 + (-1) * alpha by ring.
+    by rewrite /( %| ) modzMDr.
+  smt(rg_round round_is_multiple).
+suff: asint (round alpha (r + z)) = asint (round alpha r) + alpha.
+- by move => -> /#.
+suff: round alpha (r + z) = round alpha r + inzmod alpha.
+- (* Umm number theory? *)
+  admit. (* smt(rg_round round_is_multiple inzmodK asintK). *)
+have lowbits_lb : alpha %/ 2 < crepr (lowbits alpha r + z) by smt(round_perturb_up).
+(* Need this case separately.
+ * Otherwise some quantities later "overflow" into negatives on taking crepr.
+ *)
+case (alpha = q %/ 2) => [?|alpha_ne_half_q].
+- suff: forall x, asint (round alpha x) = 0 \/ asint (round alpha x) = alpha by smt(asintK).
+  smt(rg_round round_is_multiple).
+have ?: - alpha %/ 2 < crepr (lowbits alpha r + z - inzmod alpha) /\
+        crepr (lowbits alpha r + z - inzmod alpha) <= alpha %/ 2.
+- rewrite creprND.
+  have ->: crepr (inzmod alpha) = alpha by smt(inzmodK_centered).
+  suff: crepr (lowbits alpha r + z) = crepr (lowbits alpha r) + crepr z.
+  - smt(to_crepr_id lowbits_small).
+  rewrite creprD to_crepr_id //.
+  smt(lowbits_small).
+apply (round_unique alpha (r + z)
+        (round alpha r + inzmod alpha) (lowbits alpha r + z - inzmod alpha)).
+- smt().
+- rewrite {1} (round_lowP alpha) //.
+  by ring.
+- (* TODO divisibility *) admit.
+- rewrite addE.
+  have ->: asint (inzmod alpha) = alpha by rewrite inzmodK /#.
+  suff: 0 <= asint (round alpha r) + alpha /\ asint (round alpha r) + alpha <= q - alpha - 1.
+  + smt(modz_small).
+  split; first smt(rg_asint).
+  (* TODO really stupid number theory... *)
+  admit. (* smt(rg_round round_is_multiple). *)
+- smt().
+- smt().
+qed.
 
 (**
 
