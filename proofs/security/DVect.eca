@@ -20,8 +20,12 @@ op makeHintV rv zv = map (uncurry makeHint) (zip (tolist rv) (tolist zv)).
 op useHintV (hv : hint_t list) (rv : vector) : high list = map (uncurry useHint) (zip hv (tolist rv)).
 (* Some kinda weights check for bitpacking *)
 op checkHintV (hv : hint_t list) : bool.
-(* TODO Fill this in using DRing and ConcreteDRing *)
-op roundV (v : vector) : vector.
+
+(* TODO Fill this in starting from DRing and ConcreteDRing *)
+(* base2 stuff *)
+op base2lowbitsV = mapv base2lowbits.
+op base2roundV = mapv base2round.
+(* op roundV (v : vector) : vector. *)
 
 lemma size_shiftV (w1 : high list) : size (shiftV w1) = size w1.
 proof. by rewrite size_oflist size_map. qed.

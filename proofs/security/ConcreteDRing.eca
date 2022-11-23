@@ -151,6 +151,8 @@ rewrite -!StdOrder.IntOrder.Domain.intmulpE; 1,2: smt().
 by rewrite !intmulz.
 qed.
 
+(* -- Hints stuff -- *)
+
 clone DRing as DR with
   op q <= q,
   op n <= Round.n,

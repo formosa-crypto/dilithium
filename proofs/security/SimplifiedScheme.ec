@@ -118,7 +118,7 @@ proof* by smt(dC_ll dC_uni tau_bound). *)
 op recover (pk : PK) (c : challenge_t) (resp : response_t) : commit_t =
   let (mA, t) = pk in
   let (z, h) = resp in
-  highBitsV (mA *^ z - c ** t).
+  useHintV h (mA *^ z - c ** base2roundV t).
 
 clone FSa.CommRecov as FSaCR with
   op recover <= recover,
@@ -137,7 +137,7 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
     mA <$ dmatrix dRq k l;
     s1 <$ dvector (dRq_ e) l;
     s2 <$ dvector (dRq_ e) k;
-    pk <- (mA, mA *^ s1 + s2);
+    pk <- (mA, base2roundV (mA *^ s1 + s2));
     sk <- (mA, s1, s2);
     return (pk, sk);
   }
@@ -155,7 +155,7 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
     c <- witness;
 
     (mA, s1, s2) <- sk;
-    t0 <- lowBitsV (mA *^ s1 + s2);
+    t0 <- base2lowbitsV (mA *^ s1 + s2);
     response <- None;
     while(response = None) {
       y <$ dvector (dRq_ (gamma1 - 1)) l;
@@ -176,20 +176,19 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
   }
 
   proc verify(pk: PK, m : M, sig : Sig) = {
-    var w, c;
+    var w1, c;
     var response;
     var z, h;
     var c';
-    var mA, t, t1;
+    var mA, t1;
     var result;
-    (mA, t) <- pk;
-    t1 <- roundV t;
+    (mA, t1) <- pk;
 
     (c, response) <- sig;
     (z, h) <- response;
-    w <- useHintV h (mA *^ z - c ** t1);
-    c' <@ H.get((w, m));
-    result <- size z = l /\ inf_normv z < gamma1 - b /\ c = c' /\ checkHintV h;
+    w1 <- useHintV h (mA *^ z - c ** t1);
+    c' <@ H.get((w1, m));
+    result <- size z = l /\ inf_normv z < gamma1 - b /\ c = c';
 
     return result;
   }

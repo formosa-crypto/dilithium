@@ -164,4 +164,7 @@ have H : injective_in (image ((Flex.highBits alpha))) ((Flex.shift alpha)).
 smt(val_inj valP).
 qed.
 
+op base2round (z : Rq) : Rq.
+op base2lowbits (z : Rq) : Rq.
+
 end HighLow.
