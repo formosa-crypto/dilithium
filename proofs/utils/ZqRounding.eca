@@ -325,41 +325,6 @@ lemma eq_divz d x y :
   x = y.
 proof. smt(divzK). qed.
 
-(**
-lemma highbits_perturb alpha (z r : zmod) :
-  2 <= alpha <= q %/ 2 =>
-  2 %| alpha =>
-  alpha %| (q - 1) =>
-  `|z| <= alpha %/ 2 =>
-  highbits alpha r <> highbits alpha (r + z) =>
-  !(-alpha %/ 2 < crepr (lowbits alpha r + z) <= alpha %/ 2) (* \/ r + z = inzmod (q - 1 - alpha) *).
-proof.
-move => ???? high_ne.
-have {high_ne} round_ne: round alpha r <> round alpha (r + z).
-- smt(eq_divz round_is_multiple asintK).
-
-print round_unique.
-
-(**
-(* corner case; TODO double check this isn't nonsense *)
-case (r + z = inzmod (q - 1 - alpha)) => ? //=.
-**)
-
-(* proof by contradiction *)
-suff: (-alpha %/ 2 < crepr (lowbits alpha r + z) <= alpha %/ 2) => false by auto.
-move => [??].
-(* FIXME: can't do `suff {round_ne}:`; known bug. *)
-suff: round alpha (r + z) = round alpha r by smt().
-clear round_ne.
-apply (round_unique alpha (r + z) _ (lowbits alpha r + z)) => //.
-- rewrite {1}(round_lowP alpha).
-  by field.
-- exact round_is_multiple.
-- smt(rg_round).
-- smt().
-qed. 
-**)
-
 lemma zmodcgr_transitive b a c :
   zmodcgr a b =>
   zmodcgr b c =>
@@ -399,7 +364,7 @@ lemma round_perturb alpha (z r : zmod) :
   2 %| alpha =>
   alpha %| (q - 1) =>
   `|z| <= alpha %/ 2 =>
-  0 < crepr (lowbits alpha r) =>
+  0 <> crepr (lowbits alpha r) =>
   round alpha r <> round alpha (r + z) =>
   !(-alpha %/ 2 < crepr (lowbits alpha r + z) <= alpha %/ 2).
 proof.
@@ -416,6 +381,24 @@ apply (round_unique alpha (r + z) _ (lowbits alpha r + z)) => //.
 + by apply round_is_multiple => /#.
 + smt(rg_round).
 + smt().
+qed.
+
+lemma round_perturb_up alpha (z r : zmod) :
+  2 <= alpha <= q %/ 2 =>
+  2 %| alpha =>
+  alpha %| (q - 1) =>
+  `|z| <= alpha %/ 2 =>
+  0 < crepr (lowbits alpha r) =>
+  round alpha r <> round alpha (r + z) =>
+  alpha %/ 2 < crepr (lowbits alpha r + z).
+proof.
+move => rg_alpha ???? round_ne.
+suff: - alpha %/ 2 < crepr (lowbits alpha r + z) by smt(round_perturb).
+rewrite creprD.
+rewrite to_crepr_id; last smt(lowbits_small ge2_p).
+split => [|_]; first smt(lowbits_small ge2_p).
+suff: (crepr (lowbits alpha r) + crepr z) <= q %/ 2 by smt().
+smt(lowbits_small ge2_p).
 qed.
 
 lemma hints_up_corner alpha (z r : zmod) :
@@ -445,19 +428,12 @@ case (alpha = q %/ 2) => [?|alpha_ne_half_q].
 have {ub_alpha} {alpha_ne_half_q} ub_alpha : alpha < q %/ 2 by smt().
 suff: round alpha (r + z) = ZModQ.zero.
 - smt(asintK zeroE).
-have lowbits_lb :
-  alpha %/ 2 < crepr (lowbits alpha r + z).
-- suff: - alpha %/ 2 < crepr (lowbits alpha r + z) by smt(round_perturb).
-  rewrite creprD.
-  rewrite to_crepr_id; last smt(lowbits_small ge2_p).
-  split => [|_]; first smt(lowbits_small ge2_p).
-  suff: (crepr (lowbits alpha r) + crepr z) <= q %/ 2 by smt().
-  smt(lowbits_small ge2_p).
 case (alpha = q %/ 2) => ?.
 - suff: forall x, round alpha x = ZModQ.zero \/ round alpha x = inzmod alpha by smt(zeroE).
   move => x.
   suff: asint (round alpha x) = 0 \/ asint (round alpha x) = alpha by smt(asintK).
   smt(rg_round round_is_multiple).
+have lowbits_lb : alpha %/ 2 < crepr (lowbits alpha r + z) by smt(round_perturb_up).
 have ? {lowbits_lb}: `|r + z| <= alpha %/ 2.
 - rewrite (round_lowP alpha r) -ZModpRing.addrA /"`|_|" creprD.
   have ->: round alpha r = inzmod (q - alpha - 1) by smt(asintK).
@@ -484,6 +460,7 @@ apply (round_unique alpha (r + z) ZModQ.zero (r + z)) => //.
 - smt().
 - smt().
 qed.
+
 
 (**
 
