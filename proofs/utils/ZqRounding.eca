@@ -641,7 +641,55 @@ lemma hints_down alpha (z r : zmod) :
   highbits alpha r <> highbits alpha (r + z) =>
   highbits alpha r <> 0 =>
   highbits alpha (r + z) = highbits alpha r - 1.
-proof. admitted.
+proof.
+rewrite /highbits /rightshift => rg_alpha ???? high_ne not_corner.
+case rg_alpha => [ge2_alpha ub_alpha].
+have {high_ne} round_ne: round alpha r <> round alpha (r + z).
+- smt(eq_divz round_is_multiple asintK).
+have {not_corner} not_corner: 0 < asint (round alpha r).
+- smt(rg_asint).
+suff: asint (round alpha (r + z)) = asint (round alpha r) - alpha.
+- by move => -> /#.
+case (alpha = q %/ 2) => [?|alpha_ne_half_q].
+- suff: forall x, asint (round alpha x) = 0 \/ asint (round alpha x) = alpha by smt(asintK).
+  smt(rg_round round_is_multiple).
+suff: round alpha (r + z) = round alpha r - inzmod alpha.
+- (* Umm number theory? *)
+  move => ->.
+  rewrite addE -inzmodN.
+  rewrite [asint (inzmod (-alpha))] inzmodK.
+  rewrite modzDmr.
+  rewrite modz_small //.
+  smt(rg_round round_is_multiple).
+have lowbits_ub : crepr (lowbits alpha r + z) <= - alpha %/ 2 by smt(round_perturb_down).
+have ?: - alpha %/ 2 < crepr (inzmod alpha + lowbits alpha r + z) /\
+        crepr (inzmod alpha + lowbits alpha r + z) <= alpha %/ 2.
+- rewrite -ZModpRing.addrA creprD.
+  rewrite [crepr (inzmod alpha)] inzmodK_centered; 1, 2: smt().
+  rewrite to_crepr_id.
+  + split; first smt(rg_crepr).
+    smt(lowbits_small).
+  split; last smt().
+  rewrite creprD to_crepr_id; last smt(lowbits_small).
+  smt(lowbits_small).
+apply (round_unique alpha (r + z) (round alpha r - inzmod alpha)
+                                  (inzmod alpha + lowbits alpha r + z)) => //.
+- rewrite {1} (round_lowP alpha) //.
+  by ring.
+- rewrite addE -inzmodN.
+  rewrite [_ ( _ (-alpha))]inzmodK.
+  rewrite modzDmr modz_small.
+  + smt(rg_round round_is_multiple).
+  apply dvdz_modzD => [|/#].
+  exact round_is_multiple.
+- rewrite addE -inzmodN.
+  rewrite [_ ( _ (-alpha))]inzmodK.
+  rewrite modzDmr modz_small.
+  + smt(rg_round round_is_multiple).
+  smt(rg_round round_is_multiple).
+- smt().
+- smt().
+qed.
 
 lemma hints_correct alpha (z r : zmod) :
   2 <= alpha <= q %/ 2 =>
