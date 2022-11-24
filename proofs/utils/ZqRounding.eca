@@ -725,8 +725,47 @@ op usehint_round alpha h r =
   else ZModQ.zero.
 
 lemma usehint_round_correct alpha h r :
+  2 <= alpha <= q %/ 2 =>
+  alpha %| (q - 1) =>
   leftshift alpha (usehint alpha h r) = usehint_round alpha h r.
-proof. admitted.
+proof.
+move => rg_alpha ?.
+rewrite /usehint_round /usehint /=.
+case h => [is_h|not_h]; first last.
+- rewrite leftshift_rightshiftK.
+  + smt().
+  + exact round_is_multiple.
+  by rewrite ZModpRing.addr0.
+have ?: alpha %| (q - alpha - 1) by admit.
+case (0 < crepr (lowbits alpha r)) => ?; first last.
+- case (round alpha r = ZModQ.zero) => [round_zero | round_nonzero].
+  + have -> /=: (highbits alpha r = 0) by smt(zeroE).
+    rewrite /leftshift.
+    have ->: (q - alpha - 1) %/ alpha * alpha = q - alpha - 1 by smt().
+    rewrite round_zero ZModpRing.add0r -eq_inzmod.
+    have ->: q - alpha - 1 = -alpha - 1 + 1 * q by ring.
+    by rewrite modzMDr.
+  + have -> /=: highbits alpha r <> 0 by smt(zeroE round_is_multiple asintK).
+    rewrite /leftshift.
+    rewrite /highbits /rightshift.
+    have ->: (asint (round alpha r) %/ alpha - 1) * alpha =
+              asint (round alpha r) - alpha by smt(round_is_multiple).
+    by rewrite inzmodD asintK.
+case (round alpha r = inzmod (q - alpha - 1)) => H.
+- have -> /=: highbits alpha r = (q - alpha - 1) %/ alpha.
+  + rewrite /highbits /rightshift H.
+    by rewrite inzmodK modz_small /#.
+  have ->: leftshift alpha 0 = ZModQ.zero by smt().
+  rewrite H -inzmodD /=.
+  smt(inzmodK).
+have -> /=: highbits alpha r <> (q - alpha - 1) %/ alpha.
+- rewrite /highbits /rightshift.
+  smt(asintK round_is_multiple).
+rewrite /highbits /leftshift /rightshift.
+have ->: (asint (round alpha r) %/ alpha + 1) * alpha =
+          asint (round alpha r) + alpha by smt(round_is_multiple).
+by rewrite inzmodD asintK.
+qed.
 
 lemma hide_low2 alpha (r : zmod) (h : bool) :
   2 <= alpha <= q %/ 2 =>
@@ -735,7 +774,7 @@ lemma hide_low2 alpha (r : zmod) (h : bool) :
   `|r - leftshift alpha (usehint alpha h r)| <= alpha + 1.
 proof.
 move => rg_alpha ??.
-rewrite usehint_round_correct.
+rewrite usehint_round_correct //.
 case (alpha = q %/ 2) => [alpha_halfq|alpha_not_halfq].
 - smt(rg_crepr).
 have {alpha_not_halfq} {rg_alpha} rg_alpha: 2 <= alpha < q %/ 2 by smt().
