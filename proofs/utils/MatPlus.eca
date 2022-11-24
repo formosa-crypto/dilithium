@@ -6,47 +6,6 @@ require Mat.
 clone include Mat.
 import ZR.
 
-(* TOTHINK: this proof seems very low-level *)
-lemma colmxc v c : (colmx v) *^ vectc 1 c = c ** v. 
-proof. 
-apply eq_vectorP; rewrite size_scalarv size_mulmxv //= => i Hi.
-rewrite get_mulmxv /dotp /= lez_maxr //=.
-by rewrite (Big.BAdd.big_int1 0) /= get_vectc 1:/# mulrC get_scalarv.
-qed.
-
-lemma dotp_scalarv_r (v1 v2 : vector) s : 
-  dotp v1 (s ** v2) = s * dotp v1 v2.
-proof. 
-by rewrite -[v1]scalar1v -dotp_scalarv scalar1v mul1r mulrC.
-qed.
-
-(* TODO: name *)
-lemma mulmsv (m : matrix) (s : t) (v : vector) :
-  cols m = size v =>
-  m *^ (s ** v) = s ** (m *^ v).
-proof.
-move => size_match; apply eq_vectorP.
-rewrite size_scalarv size_mulmxv ?size_scalarv // -andaE.
-split => [|? i Hi]; first by rewrite size_mulmxv.
-by rewrite get_scalarv !get_mulmxv dotp_scalarv_r.
-qed.
-
-(* Proof doesn't even exist for `mulvs`? *)
-(* This probably still holds even if sizes aren't equal? *)
-lemma scalarvDr s (v1 v2 : vector) :
-  size v1 = size v2 =>
-  s ** (v1 + v2) = s ** v1 + s ** v2.
-proof.
-move => eq_size.
-apply eq_vectorP.
-split => [|i rg_i].
-- rewrite size_scalarv !size_addv !size_scalarv //.
-rewrite get_scalarv !get_addv //.
-- by rewrite !size_scalarv.
-rewrite !get_scalarv.
-by rewrite mulrDr.
-qed.
-
 lemma is_finite_vector (P : t -> bool) (k : int) :
   is_finite P =>
   is_finite (fun (v : vector) => size v = k /\ forall i, 0 <= i < k => P v.[i]).
