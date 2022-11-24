@@ -308,7 +308,6 @@ op makehint alpha z r =
   r1 <> v1.
 
 op usehint alpha h r =
-  let m = (q - 1) %/ alpha in
   let r1 = highbits alpha r in
   let r0 = lowbits alpha r in
   if h then
@@ -691,7 +690,7 @@ apply (round_unique alpha (r + z) (round alpha r - inzmod alpha)
 - smt().
 qed.
 
-lemma hints_correct alpha (z r : zmod) :
+lemma usehint_correct alpha (z r : zmod) :
   2 <= alpha <= q %/ 2 =>
   2 %| alpha =>
   alpha %| (q - 1) =>
@@ -712,6 +711,63 @@ case (0 < crepr (lowbits alpha r)) => ?.
   + (* corner case *)
     by rewrite hints_down_corner // /#.
   by rewrite hints_down // /#.
+qed.
+
+op usehint_round alpha h r =
+  let r1 = round alpha r in
+  let r0 = lowbits alpha r in
+  r1 + 
+  if h then
+    if 0 < crepr r0 then
+      if r1 = inzmod (q - alpha - 1) then inzmod (alpha + 1) else inzmod alpha
+    else
+      if r1 = ZModQ.zero then inzmod (- alpha - 1) else inzmod (- alpha)
+  else ZModQ.zero.
+
+lemma usehint_round_correct alpha h r :
+  leftshift alpha (usehint alpha h r) = usehint_round alpha h r.
+proof. admitted.
+
+lemma hide_low2 alpha (r : zmod) (h : bool) :
+  2 <= alpha <= q %/ 2 =>
+  2 %| alpha =>
+  alpha %| (q - 1) =>
+  `|r - leftshift alpha (usehint alpha h r)| <= alpha + 1.
+proof.
+move => rg_alpha ??.
+rewrite usehint_round_correct.
+case (alpha = q %/ 2) => [alpha_halfq|alpha_not_halfq].
+- smt(rg_crepr).
+have {alpha_not_halfq} {rg_alpha} rg_alpha: 2 <= alpha < q %/ 2 by smt().
+rewrite {1} (round_lowP alpha).
+rewrite /usehint_round /=.
+case h => [is_h|not_h]; first last.
+- have ->: (round alpha r + lowbits alpha r - (round alpha r + ZModQ.zero)) = lowbits alpha r.
+  + by ring.
+  smt(lowbits_small).
+case (0 < crepr (lowbits alpha r)) => ?.
+- case (round alpha r = inzmod (q - alpha - 1)) => ?.
+  + have ->: (round alpha r + lowbits alpha r - (round alpha r + inzmod (alpha + 1)) =
+              lowbits alpha r - inzmod (alpha + 1)) by ring.
+    rewrite /"`|_|" creprD -inzmodN.
+    rewrite inzmodK_centered; 1, 2: smt().
+    by rewrite to_crepr_id; smt(lowbits_small).
+  + have ->: (round alpha r + lowbits alpha r - (round alpha r + inzmod alpha) =
+              lowbits alpha r - inzmod alpha) by ring.
+    rewrite /"`|_|" creprD -inzmodN.
+    rewrite inzmodK_centered; 1, 2: smt().
+    by rewrite to_crepr_id; smt(lowbits_small).
+- case (round alpha r = ZModQ.zero) => ?.
+  + have ->: (round alpha r + lowbits alpha r - (round alpha r + inzmod ((-alpha) - 1)) =
+              lowbits alpha r - inzmod (-alpha - 1)) by ring.
+    rewrite /"`|_|" creprD creprN.
+    rewrite inzmodK_centered; 1, 2: smt().
+    by rewrite to_crepr_id; smt(lowbits_small).
+  + have ->: (round alpha r + lowbits alpha r - (round alpha r + inzmod (-alpha)) =
+              lowbits alpha r - inzmod (-alpha)) by ring.
+    rewrite /"`|_|" creprD creprN.
+    rewrite inzmodK_centered; 1, 2: smt().
+    by rewrite to_crepr_id; smt(lowbits_small).
 qed.
 
 (* -- Polynomial versions -- *)
