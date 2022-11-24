@@ -375,14 +375,15 @@ lemma round_perturb alpha (z r : zmod) :
   2 %| alpha =>
   alpha %| (q - 1) =>
   `|z| <= alpha %/ 2 =>
-  0 <> crepr (lowbits alpha r) =>
   round alpha r <> round alpha (r + z) =>
-  !(-alpha %/ 2 < crepr (lowbits alpha r + z) <= alpha %/ 2).
+  !(-alpha %/ 2 < crepr (lowbits alpha r + z) <= alpha %/ 2 \/
+    round alpha r = ZModQ.zero /\ crepr (lowbits alpha r + z) = - alpha %/ 2).
 proof.
-move => rg_alpha ???? round_ne.
+move => rg_alpha ??? round_ne.
 (* proof by contradiction *)
-suff: (-alpha %/ 2 < crepr (lowbits alpha r + z) <= alpha %/ 2) => false by auto.
-move => [??].
+suff: (-alpha %/ 2 < crepr (lowbits alpha r + z) <= alpha %/ 2 \/
+       round alpha r = ZModQ.zero /\ crepr (lowbits alpha r + z) = - alpha %/ 2) => false by auto.
+move => ?.
 (* FIXME: can't do `suff {round_ne}:`; known bug. *)
 suff: round alpha (r + z) = round alpha r by smt().
 clear round_ne.
@@ -391,6 +392,7 @@ apply (round_unique alpha (r + z) _ (lowbits alpha r + z)) => //.
   by field.
 + by apply round_is_multiple => /#.
 + smt(rg_round).
++ smt().
 + smt().
 qed.
 
@@ -548,6 +550,31 @@ apply (round_unique alpha (r + z)
 - smt().
 qed.
 
+lemma round_perturb_down alpha (z r : zmod) :
+  2 <= alpha <= q %/ 2 =>
+  2 %| alpha =>
+  alpha %| (q - 1) =>
+  `|z| <= alpha %/ 2 =>
+  crepr (lowbits alpha r) <= 0 =>
+  round alpha r <> round alpha (r + z) =>
+  crepr (lowbits alpha r + z) <= -alpha %/ 2 /\
+  (round alpha r = ZModQ.zero => crepr (lowbits alpha r + z) < -alpha %/ 2).
+proof.
+move => rg_alpha ???? round_ne.
+suff: crepr (lowbits alpha r + z) <= alpha %/ 2 by  smt(round_perturb).
+rewrite creprD.
+rewrite to_crepr_id; last smt(lowbits_small ge2_p).
+split => [|_]; first smt(lowbits_small ge2_p).
+suff: (crepr (lowbits alpha r) + crepr z) <= q %/ 2 by smt().
+smt(lowbits_small ge2_p).
+qed.
+
+lemma crepr0 : crepr ZModQ.zero = 0.
+proof.
+rewrite /crepr zeroE /=.
+smt(ge2_p).
+qed.
+
 lemma hints_down_corner alpha (z r : zmod) :
   2 <= alpha <= q %/ 2 =>
   2 %| alpha =>
@@ -557,7 +584,53 @@ lemma hints_down_corner alpha (z r : zmod) :
   highbits alpha r <> highbits alpha (r + z) =>
   highbits alpha r = 0 =>
   highbits alpha (r + z) = (q - alpha - 1) %/ alpha.
-proof. admitted.
+proof.
+rewrite /highbits /rightshift => rg_alpha ???? high_ne is_corner.
+case rg_alpha => [ge2_alpha ub_alpha].
+have {high_ne} round_ne: round alpha r <> round alpha (r + z).
+- smt(eq_divz round_is_multiple asintK).
+have {is_corner} is_corner: asint (round alpha r) = 0.
+- smt(round_is_multiple rg_round).
+have {is_corner} is_corner: round alpha r = ZModQ.zero.
+- smt(asintK).
+suff: asint (round alpha (r + z)) = q - alpha - 1.
+- smt(round_is_multiple).
+case (alpha = q %/ 2) => [?|alpha_ne_half_q].
+- suff: forall x, asint (round alpha x) = 0 \/ asint (round alpha x) = alpha by smt(asintK).
+  smt(rg_round round_is_multiple).
+have {ub_alpha} {alpha_ne_half_q} ub_alpha : alpha < q %/ 2 by smt().
+suff: round alpha (r + z) = inzmod (q - alpha - 1).
+- move => ->.
+  by rewrite inzmodK modz_small /#.
+have ?: alpha %| (q - alpha - 1).
+- rewrite /( %| ).
+  have ->: q - alpha - 1 = q - 1 + (-1) * alpha by ring.
+  by rewrite modzMDr /#.
+have ?: - alpha %/ 2 < crepr (r + z - inzmod (q - alpha - 1)) <= alpha %/ 2.
+- have ?: crepr (lowbits alpha r + z) < - alpha %/ 2 by smt(round_perturb_down).
+  have ?: crepr (lowbits alpha r + z) = crepr (lowbits alpha r) + crepr z.
+  + rewrite creprD to_crepr_id //.
+    smt(lowbits_small).
+  have ->: - inzmod (q - alpha - 1) = inzmod (alpha + 1).
+  + by rewrite -inzmodN -eq_inzmod /#.
+  rewrite creprD.
+  rewrite [crepr (inzmod (alpha + 1))]inzmodK_centered; 1, 2: smt().
+  rewrite (round_lowP alpha r) -ZModpRing.addrA creprD is_corner crepr0 /=.
+  have ->: to_crepr (crepr (lowbits alpha r + z)) = crepr (lowbits alpha r + z).
+  + smt(to_crepr_id rg_crepr).
+  rewrite to_crepr_id.
+  + smt(lowbits_small).
+  smt(lowbits_small).
+apply (round_unique alpha (r + z) (inzmod (q - alpha - 1)) (r + z - inzmod (q - alpha - 1))) => //.
+- smt().
+- by ring.
+- rewrite inzmodK.
+  by rewrite modz_small /#.
+- rewrite inzmodK.
+  by rewrite modz_small /#.
+- smt().
+- smt().
+qed.
 
 lemma hints_down alpha (z r : zmod) :
   2 <= alpha <= q %/ 2 =>
