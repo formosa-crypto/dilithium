@@ -184,3 +184,13 @@ move => i rg_i.
 rewrite get_zerov.
 by rewrite cnorm0 //.
 qed.
+
+lemma usehint_correctV (z r : vector) :
+  inf_normv z <= alpha %/ 2 =>
+  let h = makeHintV z r in
+    useHintV h r = highBitsV (r + z).
+proof. admitted.
+
+lemma hide_low2 (r : vector) (h : hint_t list) :
+  inf_normv (r - shiftV (useHintV h r)) <= alpha + 1.
+proof. admitted.

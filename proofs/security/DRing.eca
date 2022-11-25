@@ -107,6 +107,24 @@ axiom shift_inj alpha :
   alpha %| (q - 1) =>
   injective_in (image (highBits alpha)) (shift alpha).
 
+axiom usehint_correct alpha (z r : Rq) :
+  2 <= alpha <= q %/ 2 =>
+  2 %| alpha =>
+  alpha %| (q - 1) =>
+  cnorm z <= alpha %/ 2 =>
+  let h = makeHint alpha z r in
+    useHint alpha h r = highBits alpha (r + z).
+
+(* TODO probably need side conditions *)
+axiom usehint_insub alpha h r :
+  image (highBits alpha) (Flex.useHint alpha h r).
+
+axiom hide_low2 alpha (r : Rq) (h : hint_t) :
+  2 <= alpha <= q %/ 2 =>
+  2 %| alpha =>
+  alpha %| (q - 1) =>
+  cnorm (r - shift alpha (useHint alpha h r)) <= alpha + 1.
+
 end Flex.
     
 abstract theory HighLow.
@@ -162,6 +180,20 @@ have H : injective_in (image ((Flex.highBits alpha))) ((Flex.shift alpha)).
   + exact even_alpha.
   + exact alpha_almost_divides_q.
 smt(val_inj valP).
+qed.
+
+lemma usehint_correct (z r : Rq) :
+  cnorm z <= alpha %/ 2 =>
+  let h = makeHint z r in
+    useHint h r = highBits (r + z).
+proof.
+smt(Flex.usehint_correct rg_alpha even_alpha alpha_almost_divides_q).
+qed.
+
+lemma hide_low2 (r : Rq) (h : hint_t) :
+  cnorm (r - shift (useHint h r)) <= alpha + 1.
+proof.
+smt(Flex.hide_low2 rg_alpha even_alpha alpha_almost_divides_q insubdK Flex.usehint_insub).
 qed.
 
 type high2.
