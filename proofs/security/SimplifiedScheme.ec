@@ -80,9 +80,9 @@ type M.
 
 type challenge_t = Rq.
 type SK = matrix * vector * vector.
-type PK = matrix * (high2 list).
+type PK = matrix * vector.
 type commit_t = high list.
-type response_t = vector * (hint_t list).
+type response_t = vector * hint_t list.
 
 (* Just storing `y` should be good here. *)
 type pstate_t = vector. 
@@ -116,9 +116,9 @@ proof* by smt(dC_ll dC_uni tau_bound). *)
 (* -- Procedure-based -- *)
 
 op recover (pk : PK) (c : challenge_t) (resp : response_t) : commit_t =
-  let (mA, t1) = pk in
+  let (mA, t) = pk in
   let (z, h) = resp in
-  useHintV h (mA *^ z - c ** base2leftshiftV t1).
+  useHintV h (mA *^ z - c ** base2leftshiftV (base2highbitsV t)).
 
 clone FSa.CommRecov as FSaCR with
   op recover <= recover,
@@ -130,14 +130,26 @@ section.
 import FSaCR.
 import FSaCR.DSS.
 
+(* This scheme corresponds to the scheme in KLS18 Figure 13, whith the
+following minor differences:
+
+- We (uniformly) sample the matrix A rather than a seed
+- The public key is (A,t) rather than (A,t1,t0)
+- The secret key is (A,s1,s2) rather than (A,s1,s2,t0) 
+- sign (resp. verify) computes t0 (t1) from s1 and s2 (t).
+
+This avoids having to split/merge t (e.g., in the MLWE reduction). We
+eliminate these differences using a separate reduction *)
+
 module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
   proc keygen() : PK * SK = {
     var pk, sk;
-    var mA, s1, s2;
+    var mA, s1, s2,t;
     mA <$ dmatrix dRq k l;
     s1 <$ dvector (dRq_ e) l;
     s2 <$ dvector (dRq_ e) k;
-    pk <- (mA, base2highbitsV (mA *^ s1 + s2));
+    t  <- mA *^ s1 + s2;
+    pk <- (mA, t);
     sk <- (mA, s1, s2);
     return (pk, sk);
   }
@@ -155,7 +167,8 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
     c <- witness;
 
     (mA, s1, s2) <- sk;
-    t0 <- base2lowbitsV (mA *^ s1 + s2);
+    t0 <- base2lowbitsV (mA *^ s1 + s2); (* compute t0 *)
+
     response <- None;
     while(response = None) {
       y <$ dvector (dRq_ (gamma1 - 1)) l;
@@ -165,12 +178,9 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
       z <- y + c ** s1;
       if(inf_normv z < gamma1 - b /\
          inf_normv (lowBitsV (mA *^ y - c ** s2)) < gamma2 - b) {
-        h <- makeHintV (c ** (-t0)) (w - c ** s2 + c ** t0);
-        if(inf_normv (c ** t0) < gamma2 /\ checkHintV h) {
-          response <- Some (z, h);
-        }
+        h <- makeHintV (- c ** t0) (w - c ** s2 + c ** t0);
+        response <- Some(z,h);
       }
-      
     }
     return (c, oget response);
   }
@@ -180,9 +190,10 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
     var response;
     var z, h;
     var c';
-    var mA, t1;
+    var mA, t, t1;
     var result;
-    (mA, t1) <- pk;
+    (mA, t) <- pk;
+    t1 <- base2highbitsV t; (* t only used to compure t1 *)
 
     (c, response) <- sig;
     (z, h) <- response;
@@ -194,8 +205,6 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
   }
 }.
 
-(** TODO Fix the rest of the file
-
 (** KOA to MLWE + SelfTargetMSIS *)
 
 clone import MLWE as RqMLWE with 
@@ -206,6 +215,8 @@ clone import MLWE as RqMLWE with
   op l <- l
 proof* by smt(gt0_k gt0_l).
 
+op todo_magic_number : int.
+
 clone import SelfTargetMSIS as RqStMSIS with
   theory M <- MatRq,
   type M <- M,
@@ -214,7 +225,7 @@ clone import SelfTargetMSIS as RqStMSIS with
   op dR <- dRq,
   op dC <- dC tau,
   op inf_norm <- inf_normv,
-  op gamma <- max (gamma1 - b) (gamma2+1)
+  op gamma <- max (gamma1 - b) (gamma2+1+todo_magic_number)
 proof* by smt(Top.gt0_k Top.gt0_l). 
 (* Where do dout_ll and enum_spec come from? Why are they not picked up by proof* *)
 
@@ -244,14 +255,14 @@ module H' : Hash_i = {
 
 module RedMSIS (A : Adv_EFKOA_RO) (H : RqStMSIS.PRO.RO) = { 
   proc guess(mB : matrix) : vector * M = { 
-    var mA,tbar,t,mu,sig,c,z,w,e,y;
+    var mA,tbar,t,mu,sig,resp,c,z,w,e,y;
     mA <- subm mB 0 k 0 l;
     tbar <- col mB l;
     t <- -tbar;
     (mu,sig) <@ A(H').forge(mA,t); (* discard H, use H' *)
     y <- witness;
-
-    (c,z) <- sig;
+    (c,resp) <- sig;
+    (z,h) <- resp;
     w <- (mA *^ z - c ** t);
     e <- -lowBitsV w;
     y <- e || z || vectc 1 c;
@@ -409,6 +420,8 @@ by rewrite hop2 hop3.
 qed.
 
 end section PROOF.
+
+(** TODO Fix the rest of the file
 
 (* -- Operator-based -- *)
 
