@@ -346,17 +346,16 @@ lemma im_highbits alpha x :
 proof.
 move => *.
 rewrite /highbits /rightshift /=.
-have ?: alpha %| (q - alpha - 1) by admit.
+have ?: alpha %| (q - alpha - 1).
+- rewrite /( %| ).
+  have ->: (q - alpha - 1) = ((q - 1) + (-1) * alpha) by ring.
+  by rewrite modzMDr.
 split => H.
 - case H => y ?.
   subst.
   suff: 0 <= asint (round alpha y) <= q - alpha - 1 by smt().
   have ?: image (round alpha) (round alpha y) by exists y.
   smt(im_round).
-have ?: alpha %| (q - alpha - 1).
-- rewrite /( %| ).
-  have ->: (q - alpha - 1) = ((q - 1) + (-1) * alpha) by ring.
-  by rewrite modzMDr.
 have ?: alpha * x <= q - alpha - 1 by smt().
 have [y ?]: image (round alpha) (inzmod (x * alpha)).
 - apply im_round => //.
