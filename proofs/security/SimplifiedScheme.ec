@@ -317,7 +317,6 @@ seq 3 3 : (={m,sig,pk} /\
     if; 1,3: by auto => /> /#.
     auto => />. smt(get_setE set_set_sameE shiftV_inj).
   by inline*; auto => />; smt(emptyE).
-(* Ethan: Not sure if good way to patch things *)
 inline*; auto => />; smt(get_set_sameE).
 qed.
 
@@ -356,46 +355,41 @@ seq 6 7 : (={sig,PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in
     move: (supp_A) => /size_dmatrix /(_ _ _) /=; 1,2: smt(Top.gt0_k Top.gt0_l).
     move: (supp_t) => /size_dvector. rewrite lez_maxr; 1:smt(Top.gt0_k). move => s_t [r_A c_A].
     (* case => /supp_dmatrix_Rqkl /= [[r_A c_A] Rq_A] /supp_dvector_Rqk [s_t Rq_t]. *)
-    rewrite r_A c_A s_t /= -{2}r_A -{2}c_A subm_catmrCl /= 1:/#.
+    rewrite r_A c_A s_t /= -{2}r_A -{2}c_A subm_catmrCl /=.
     rewrite col_catmrR /= ?r_A ?c_A ?s_t // subrr. 
     rewrite colN oppmK colK /=; apply supp_dmatrix_catmr => //;1,2: smt(Top.gt0_k Top.gt0_l).
     rewrite supp_dmatrix_full ?dRq_fu //; smt(Top.gt0_k Top.gt0_l). 
   call (: ={PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in dC tau){1}).
     proc; inline*; auto => />; smt(get_setE get_set_sameE).
   auto => /> &1 &2 RO_dC r_mA c_mA s_t. split => [|E1 E2]. 
-  + rewrite -r_mA -c_mA subm_catmrCl /= 1:/#. 
+  + rewrite -r_mA -c_mA subm_catmrCl /=.
     rewrite col_catmrR //= 1:/#. 
     by rewrite colN oppmK colK. 
   move => _ _.     
   by rewrite -E1 -E2 /= rows_catmr //=; smt(Top.gt0_k Top.gt0_l).
+(* If A forges successfully the reduction succeeds in the SelfTargetMSIS game *)
 inline S1(H').verify  H'.get. wp. sp.
-
 (* need [size z{1} = l] to prove equality of the RO argument *)
 case (size z{1} = l /\ inf_normv z{1} < gamma1 - b);
   last by conseq (:_ ==> true); [ smt() | inline*; auto].
 call(: ={arg,glob G} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in dC tau){1} 
        ==> ={res} /\ res{1} \in dC tau).
-  proc; inline*; auto => />. smt(get_set_sameE).
-
+- by proc; inline*; auto => />; smt(get_set_sameE).
 auto => /> &1 ? r_mA c_mA size_t size_z normv_z.
-
+(* Recover some definitions *)
 pose w := (_ - Vectors.(**) _ _). (* FIXME: why is XInt.(**) in scope? *)
 pose w1 := highBitsV _. 
 pose e := - lowBitsV _.
-
 have size_w : size w{1} = k.
 - by rewrite size_addv /= size_scalarv size_mulmxv /#. 
 have size_e : size e = k.
 - by rewrite size_oppv size_lowBitsV.
 split => [|? c_dC]; last split.
-- rewrite mulmxv_cat.
-  + smt(gt0_k). 
-  + rewrite cols_catmr /= 1:/# size_catv /=. smt().
-  + rewrite rows_catmr /=; smt(). 
-  rewrite -size_e mulmx1v mulmxv_cat;  1..3: smt().
-  rewrite colmxN colmxc scalarvN.  
-  rewrite addvC -sub_eqv 2://; 1: by rewrite size_shiftV size_highBitsV /#.
-  by rewrite /w1 /e oppvK high_lowPv. 
+- rewrite mulmxv_cat; 1: smt(gt0_k). 
+  rewrite -size_e mulmx1v mulmxv_cat 1:/# colmxN.
+  rewrite mul_colmxc addvC -sub_eqv; 1: by rewrite size_shiftV size_highBitsV /#.
+  + rewrite size_addv /= size_scalarv /= size_mulmxv 1:/#.
+  by rewrite /w1 /e oppvK high_lowPv scalarvN.
 - rewrite 2!inf_normv_cat !StdOrder.IntOrder.ltr_maxrP !max_ltrP.
   rewrite normv_z /= 1!inf_normv_vectc //.
   have -> /= : cnorm c0{1} < gamma2+1 by smt(cnorm_dC gamma2_bound).
@@ -588,12 +582,11 @@ rewrite ifF 1:/# /recover /=.
 (* From here, highbits Ay is close to highbits (Az - ct).
  * First expand out Az-ct. *)
 have ->: mA *^ (y' + c' ** s1) - c' ** (mA *^ s1 + s2) = mA *^ y' - c' ** s2.
-- rewrite mulmxvDr; 1: smt(size_dvector size_scalarv).
-  rewrite scalarvDr ?size_mulmxv 1,2:/#.
-  rewrite [mA *^ (c' ** s1)]mulmsv 1:/#. (* FIXME: why is this rewrite slow? *)
-  rewrite oppvD addvA. 
-  suff: c' ** (mA *^ s1) - c' ** (mA *^ s1) - c' ** s2 = - c' ** s2 by smt(addvA).
-  rewrite addvN lin_add0v //; smt(size_oppv size_scalarv size_mulmxv).
+- rewrite mulmxvDr scalarvDr mulmx_scalarv -addvA; congr.
+  rewrite oppvD addvA addvN. 
+  have -> : size (c' ** (mA *^ s1)) = size (- c' ** s2)
+    by smt(size_scalarv size_mulmxv size_oppv).
+  by rewrite add0v.
 (* Now line things up for `hide_lowV` *)
 have {1}->: mA *^ y' = mA *^ y' - c' ** s2 + c' ** s2. 
 - rewrite -addvA [_ + c' ** _]addvC addvN [_ + zerov _]addvC lin_add0v //.
@@ -668,7 +661,7 @@ apply supp_dvector; first smt(Top.gt0_l).
 split => [|i rg_i].
 - by rewrite size_addv size_oppv size_scalarv; smt(size_dvector).
 rewrite supp_dRq; first smt(b_gamma1_lt gt0_b).
-rewrite get_addv; first smt(size_addv size_oppv size_scalarv size_dvector).
+rewrite get_addv.
 apply (StdOrder.IntOrder.ler_trans (cnorm z.[i] + cnorm (- c ** s1).[i])).
 - exact cnorm_triangle.
 suff: cnorm z.[i] < gamma1 - b /\ cnorm (- c ** s1).[i] <= tau * e by smt(eta_tau_leq_b).
@@ -972,18 +965,16 @@ local equiv hop3_correct :
 proof.
 proc.
 seq 5 5: (#pre /\ ={mA, s1, s2, t, c, y, z} /\
-          mA{1} *^ y{1} - c{1} ** s2{1} = mA{2} *^ z{2} - c{2} ** t{2}); 2: by auto => /#.
+          mA{1} *^ y{1} - c{1} ** s2{1} = mA{2} *^ z{2} - c{2} ** t{2}); 
+  last by auto => /#.
 auto => /> &2 valid_key c c_valid y y_valid.
 have: size (sk{2}.`1) = (k, l) /\ size (sk{2}.`2) = l /\ size (sk{2}.`3) = k.
 - apply (sk_size (sk{2}.`1) (sk{2}.`2) (sk{2}.`3)).
   by exists pk{2} => /#.
 (* Annoying proof of some simple vector calculations below... *)
 case (sk{2}) => mA s1 s2 /= /> *.
-rewrite mulmxvDr; first smt(size_scalarv size_dvector).
-rewrite -addvA; congr.
-rewrite mulmsv; first smt().
-rewrite scalarvDr; first by rewrite size_mulmxv /#.
-rewrite oppvD addvA addvN.
+rewrite mulmxvDr -addvA; congr.
+rewrite mulmx_scalarv scalarvDr oppvD addvA addvN.
 by rewrite lin_add0v // size_oppv !size_scalarv size_mulmxv /#.
 qed.
 
