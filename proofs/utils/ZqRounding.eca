@@ -317,6 +317,67 @@ op usehint alpha h r =
       if r1 = 0 then (q - alpha - 1) %/ alpha else r1 - 1
   else r1.
 
+lemma crepr0 : crepr ZModQ.zero = 0.
+proof.
+rewrite /crepr zeroE /=.
+smt(ge2_p).
+qed.
+
+lemma im_round alpha x :
+  2 <= alpha <= q %/ 2 =>
+  2 %| alpha =>
+  alpha %| (q - 1) =>
+  image (round alpha) x <=>
+  0 <= asint x <= (q - alpha - 1) /\ alpha %| asint x.
+proof.
+move => *.
+split => [|?].
+- smt(rg_round round_is_multiple).
+exists x.
+by apply (round_unique alpha x x ZModQ.zero); smt(ZModpRing.addr0 crepr0).
+qed.
+
+lemma im_highbits alpha x :
+  2 <= alpha <= q %/ 2 =>
+  2 %| alpha =>
+  alpha %| (q - 1) =>
+  image (highbits alpha) x <=>
+  0 <= x <= (q - alpha - 1) %/ alpha.
+proof.
+move => *.
+rewrite /highbits /rightshift /=.
+have ?: alpha %| (q - alpha - 1) by admit.
+split => H.
+- case H => y ?.
+  subst.
+  suff: 0 <= asint (round alpha y) <= q - alpha - 1 by smt().
+  have ?: image (round alpha) (round alpha y) by exists y.
+  smt(im_round).
+have ?: alpha %| (q - alpha - 1).
+- rewrite /( %| ).
+  have ->: (q - alpha - 1) = ((q - 1) + (-1) * alpha) by ring.
+  by rewrite modzMDr.
+have ?: alpha * x <= q - alpha - 1 by smt().
+have [y ?]: image (round alpha) (inzmod (x * alpha)).
+- apply im_round => //.
+  smt(inzmodK modz_small).
+exists y.
+suff: asint (round alpha y) = x * alpha by smt(round_is_multiple).
+smt(inzmodK modz_small).
+qed.
+
+lemma usehint_im alpha h r :
+  2 <= alpha <= q %/ 2 =>
+  2 %| alpha =>
+  alpha %| (q - 1) =>
+  image (highbits alpha) (usehint alpha h r).
+proof.
+move => *.
+rewrite im_highbits //.
+have ?: image (highbits alpha) (highbits alpha r) by exists r.
+smt(rg_highbits).
+qed.
+
 lemma eq_divz d x y :
   d %| x =>
   d %| y =>
@@ -568,12 +629,6 @@ suff: (crepr (lowbits alpha r) + crepr z) <= q %/ 2 by smt().
 smt(lowbits_small ge2_p).
 qed.
 
-lemma crepr0 : crepr ZModQ.zero = 0.
-proof.
-rewrite /crepr zeroE /=.
-smt(ge2_p).
-qed.
-
 lemma hints_down_corner alpha (z r : zmod) :
   2 <= alpha <= q %/ 2 =>
   2 %| alpha =>
@@ -736,7 +791,10 @@ case h => [is_h|not_h]; first last.
   + smt().
   + exact round_is_multiple.
   by rewrite ZModpRing.addr0.
-have ?: alpha %| (q - alpha - 1) by admit.
+have ?: alpha %| (q - alpha - 1).
+- rewrite /( %| ).
+  have ->: (q - alpha - 1) = ((q - 1) + (-1) * alpha) by ring.
+  by rewrite modzMDr.
 case (0 < crepr (lowbits alpha r)) => ?; first last.
 - case (round alpha r = ZModQ.zero) => [round_zero | round_nonzero].
   + have -> /=: (highbits alpha r = 0) by smt(zeroE).
