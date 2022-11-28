@@ -207,6 +207,8 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
 
 (** KOA to MLWE + SelfTargetMSIS *)
 
+(*
+
 clone import MLWE as RqMLWE with 
   theory M <- MatRq,
   op dR <- dRq,
