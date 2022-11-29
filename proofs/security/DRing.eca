@@ -77,12 +77,15 @@ type hint_t.
 
 theory Flex.
 
-type high.
+type high, high2.
 op lowBits : int -> Rq -> Rq. 
 op highBits : int -> Rq -> high.
 op shift    : int -> high ->  Rq.
 op makeHint : int -> Rq -> Rq -> hint_t.
 op useHint : int -> hint_t -> Rq -> high.
+
+op power2round : int -> Rq -> high2.
+op shift2 : int -> high2 -> Rq.
 
 axiom high_lowP alpha x :
   2 <= alpha && alpha <= q %/ 2 =>
@@ -124,6 +127,9 @@ axiom hide_low2 alpha (r : Rq) (h : hint_t) :
   2 %| alpha =>
   alpha %| (q - 1) =>
   cnorm (r - shift alpha (useHint alpha h r)) <= alpha + 1.
+
+axiom power2round_bound d (r : Rq) : 
+  cnorm (r - shift2 d (power2round d r)) <= 2^(d-1).
 
 end Flex.
     
@@ -197,11 +203,16 @@ proof.
 smt(Flex.hide_low2 rg_alpha even_alpha alpha_almost_divides_q insubdK Flex.usehint_insub).
 qed.
 
-type high2.
+type high2 = Flex.high2.
 
-op base2highbits (z : Rq) : high2.
-op base2lowbits (z : Rq) : Rq.
-op base2leftshift (x : high2) : Rq.
+op base2highbits (z : Rq) = Flex.power2round d z.
+op base2shift (z0 : high2) = Flex.shift2 d z0.
+op base2lowbits (z : Rq) = z - base2shift (base2highbits z).
 
+axiom base2low_bound z : cnorm (base2lowbits z) <= 2^(d-1).
+
+lemma base2high_low (z : Rq) : 
+  base2shift (base2highbits z) + base2lowbits z = z.
+proof. smt(addrC addrA subrr addr0). qed.
 
 end HighLow.

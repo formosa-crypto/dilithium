@@ -24,7 +24,7 @@ op checkHintV (hv : hint_t list) : bool.
 (* base2 stuff *)
 op base2lowbitsV = mapv base2lowbits.
 op base2highbitsV v = map base2highbits (tolist v).
-op base2shiftV lst = oflist (map base2leftshift lst).
+op base2shiftV lst = oflist (map base2shift lst).
 op base2roundV = base2shiftV \o base2highbitsV.
 
 lemma size_shiftV (w1 : high list) : size (shiftV w1) = size w1.
@@ -68,6 +68,10 @@ proof.
 rewrite /inf_normv /normv /pnormv /tolist /(\o); congr. 
 by rewrite /inf_norm !big_map /(\o) /= &(eq_bigr) => i _ /=; rewrite cnormN.
 qed.
+
+lemma ler_inf_normv (v1 v2 : vector) : 
+  inf_normv (v1 + v2) <= inf_normv v1 + inf_normv v2.
+admitted.
 
 lemma inf_normv_low v : inf_normv (lowBitsV v) <= alpha %/ 2.
 proof.
@@ -191,37 +195,53 @@ lemma usehint_correctV (z r : vector) :
     useHintV h r = highBitsV (r + z).
 proof. admitted.
 
-lemma hide_low2 (r : vector) (h : hint_t list) :
-  inf_normv (r - shiftV (useHintV h r)) <= alpha + 1.
-proof. admitted.
+(* lemma hide_low2 (r : vector) (h : hint_t list) : *)
+(*   inf_normv (r - shiftV (useHintV h r)) <= alpha + 1. *)
+(* proof. admitted. *)
 
 lemma size_base2shiftV t1 : 
     size (base2shiftV t1) = size t1.
-admitted.
+proof. by rewrite size_oflist size_map. qed.
 
 lemma size_base2highbitsV t : 
     size (base2highbitsV t) = size t.
-admitted.
+proof. by rewrite size_map size_tolist. qed.
 
 lemma size_base2lowbitsV t : 
     size (base2lowbitsV t) = size t.
-admitted.
+proof. by rewrite size_mapv. qed.
 
 lemma size_useHintV h r : 
   size (useHintV h r) = min (size h) (size r).
-admitted.
+proof. by rewrite size_map size_zip size_tolist. qed.
 
 lemma b2high_lowPv (t : vector) : 
   base2shiftV (base2highbitsV t) + base2lowbitsV t = t.
-admitted.
+proof.
+apply/eq_vectorP.
+rewrite size_addv size_base2shiftV size_base2highbitsV size_base2lowbitsV.
+split => // i Hi; rewrite get_addv get_mapv 1:/#.
+rewrite (get_oflist witness); 1: smt(size_map size_base2highbitsV).
+rewrite (nth_map witness); 1: smt(size_base2highbitsV).
+rewrite (nth_map witness); 1: smt(size_tolist).
+by rewrite nth_tolist 1:/# base2high_low.
+qed.
 
-lemma ler_inf_normv (v1 v2 : vector) : 
-  inf_normv (v1 + v2) <= inf_normv v1 + inf_normv v2.
-admitted.
 
-lemma hint_error (r : vector) h : 
+lemma hint_error (r : vector) (h : hint_t list) : size r = size h => 
   inf_normv (r - shiftV (useHintV h r)) <= alpha + 1. 
-admitted.
+proof.
+move => eq_r_h; apply/inf_normv_ler => [|i ?]; 1: smt(ge2_alpha).
+rewrite get_addv getvN (get_oflist witness).
+- smt(size_map size_addv size_oppv size_shiftV size_useHintV).
+rewrite (nth_map witness) /=. 
+- smt(size_map size_addv size_oppv size_shiftV size_useHintV).
+rewrite (nth_map (witness,witness)) /=.
+- smt(size_map size_addv size_oppv size_shiftV size_useHintV size_zip size_tolist).
+rewrite nth_zip ?size_tolist 1:/# /uncurry /= nth_tolist.
+- smt(size_map size_addv size_oppv size_shiftV size_useHintV).
+exact hide_low2.
+qed.
 
 lemma b2low_bound t : inf_normv (base2lowbitsV t) <= 2 ^ (d - 1).
 admitted.
