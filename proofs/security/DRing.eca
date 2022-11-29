@@ -128,7 +128,8 @@ axiom hide_low2 alpha (r : Rq) (h : hint_t) :
 end Flex.
     
 abstract theory HighLow.
-op alpha : int. 
+op alpha : int. (* low-order rounding range - 2 * gamma2 *)
+op d : int.     (* dropped bits from t      - d *)
 
 axiom ge2_alpha : 2 <= alpha.
 axiom alpha_halfq_le : alpha <= q %/ 2.
@@ -201,5 +202,6 @@ type high2.
 op base2highbits (z : Rq) : high2.
 op base2lowbits (z : Rq) : Rq.
 op base2leftshift (x : high2) : Rq.
+
 
 end HighLow.

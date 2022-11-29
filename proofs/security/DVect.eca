@@ -24,8 +24,8 @@ op checkHintV (hv : hint_t list) : bool.
 (* base2 stuff *)
 op base2lowbitsV = mapv base2lowbits.
 op base2highbitsV v = map base2highbits (tolist v).
-op base2leftshiftV lst = oflist (map base2leftshift lst).
-op base2roundV = base2leftshiftV \o base2highbitsV.
+op base2shiftV lst = oflist (map base2leftshift lst).
+op base2roundV = base2shiftV \o base2highbitsV.
 
 lemma size_shiftV (w1 : high list) : size (shiftV w1) = size w1.
 proof. by rewrite size_oflist size_map. qed.
@@ -194,3 +194,34 @@ proof. admitted.
 lemma hide_low2 (r : vector) (h : hint_t list) :
   inf_normv (r - shiftV (useHintV h r)) <= alpha + 1.
 proof. admitted.
+
+lemma size_base2shiftV t1 : 
+    size (base2shiftV t1) = size t1.
+admitted.
+
+lemma size_base2highbitsV t : 
+    size (base2highbitsV t) = size t.
+admitted.
+
+lemma size_base2lowbitsV t : 
+    size (base2lowbitsV t) = size t.
+admitted.
+
+lemma size_useHintV h r : 
+  size (useHintV h r) = min (size h) (size r).
+admitted.
+
+lemma b2high_lowPv (t : vector) : 
+  base2shiftV (base2highbitsV t) + base2lowbitsV t = t.
+admitted.
+
+lemma ler_inf_normv (v1 v2 : vector) : 
+  inf_normv (v1 + v2) <= inf_normv v1 + inf_normv v2.
+admitted.
+
+lemma hint_error (r : vector) h : 
+  inf_normv (r - shiftV (useHintV h r)) <= alpha + 1. 
+admitted.
+
+lemma b2low_bound t : inf_normv (base2lowbitsV t) <= 2 ^ (d - 1).
+admitted.
