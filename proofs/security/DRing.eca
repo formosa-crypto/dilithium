@@ -209,7 +209,8 @@ op base2highbits (z : Rq) = Flex.power2round d z.
 op base2shift (z0 : high2) = Flex.shift2 d z0.
 op base2lowbits (z : Rq) = z - base2shift (base2highbits z).
 
-axiom base2low_bound z : cnorm (base2lowbits z) <= 2^(d-1).
+lemma base2low_bound z : cnorm (base2lowbits z) <= 2^(d-1).
+proof. exact Flex.power2round_bound. qed.
 
 lemma base2high_low (z : Rq) : 
   base2shift (base2highbits z) + base2lowbits z = z.

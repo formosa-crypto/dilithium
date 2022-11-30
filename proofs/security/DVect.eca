@@ -69,10 +69,6 @@ rewrite /inf_normv /normv /pnormv /tolist /(\o); congr.
 by rewrite /inf_norm !big_map /(\o) /= &(eq_bigr) => i _ /=; rewrite cnormN.
 qed.
 
-lemma ler_inf_normv (v1 v2 : vector) : 
-  inf_normv (v1 + v2) <= inf_normv v1 + inf_normv v2.
-admitted.
-
 lemma inf_normv_low v : inf_normv (lowBitsV v) <= alpha %/ 2.
 proof.
 rewrite ler_ofnat ;split;1:smt(ge2_alpha). 
@@ -189,15 +185,28 @@ rewrite get_zerov.
 by rewrite cnorm0 //.
 qed.
 
+import StdOrder.IntOrder.
+
+lemma ler_cnorm_inf_normv i (v : vector) : cnorm v.[i] <= inf_normv v.
+proof.
+wlog : / (0 <= i < size v) /\ (0 < cnorm v.[i]). 
+  smt (ge0_inf_normv getv0E cnorm0).
+by move => [? ?]; rewrite lerNgt inf_normv_ltr /#.
+qed.
+
+lemma ler_inf_normv (v1 v2 : vector) : 
+  inf_normv (v1 + v2) <= inf_normv v1 + inf_normv v2.
+proof.
+rewrite inf_normv_ler => [|i ran_i]; 1: smt(ge0_inf_normv).
+rewrite get_addv; apply (ler_trans _ _ _ (cnorm_triangle _ _)).
+by rewrite ler_add ler_cnorm_inf_normv.
+qed.
+
 lemma usehint_correctV (z r : vector) :
   inf_normv z <= alpha %/ 2 =>
   let h = makeHintV z r in
     useHintV h r = highBitsV (r + z).
 proof. admitted.
-
-(* lemma hide_low2 (r : vector) (h : hint_t list) : *)
-(*   inf_normv (r - shiftV (useHintV h r)) <= alpha + 1. *)
-(* proof. admitted. *)
 
 lemma size_base2shiftV t1 : 
     size (base2shiftV t1) = size t1.
@@ -227,7 +236,6 @@ rewrite (nth_map witness); 1: smt(size_tolist).
 by rewrite nth_tolist 1:/# base2high_low.
 qed.
 
-
 lemma hint_error (r : vector) (h : hint_t list) : size r = size h => 
   inf_normv (r - shiftV (useHintV h r)) <= alpha + 1. 
 proof.
@@ -244,4 +252,7 @@ exact hide_low2.
 qed.
 
 lemma b2low_bound t : inf_normv (base2lowbitsV t) <= 2 ^ (d - 1).
-admitted.
+proof.
+rewrite inf_normv_ler ?expr_ge0 // => i; rewrite size_base2lowbitsV => Hi.
+by rewrite !get_mapv // base2low_bound.
+qed.
