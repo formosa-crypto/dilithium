@@ -57,9 +57,12 @@ op b : {int | 0 < b} as gt0_b.
 axiom b_gamma1_lt : b < gamma1.
 axiom b_round_gamma2_lt : b < 2 * gamma2 %/ 2.
 
+op d : { int | 0 < d } as gt0_d.
+
 clone import DVect as DV with 
   theory DR <- DR,
-  op HL.alpha <- 2*gamma2 
+  op HL.alpha <- 2*gamma2,
+  op HL.d     <- d
 proof HL.ge2_alpha, HL.alpha_halfq_le, HL.even_alpha, HL.alpha_almost_divides_q.
 realize HL.ge2_alpha by smt(gamma2_bound).
 realize HL.even_alpha by smt().
@@ -67,7 +70,7 @@ realize HL.alpha_halfq_le by smt(gamma2_bound).
 realize HL.alpha_almost_divides_q by apply gamma2_div.
 
 import DV.MatRq. (* Matrices and Vectors over Rq *)
-import DV.HL.    (* highBitsV and lowBitsV with alpha = 2 * gamma2 *)
+import DV.HL.    (* highBitsV and lowBitsV with HL.alpha = 2 * gamma2 and HL.d = d *)
 
 (* challenge weight *)
 op tau : { int | 1 <= tau <= n } as tau_bound.
@@ -118,7 +121,7 @@ proof* by smt(dC_ll dC_uni tau_bound). *)
 op recover (pk : PK) (c : challenge_t) (resp : response_t) : commit_t =
   let (mA, t) = pk in
   let (z, h) = resp in
-  useHintV h (mA *^ z - c ** base2leftshiftV (base2highbitsV t)).
+  useHintV h (mA *^ z - c ** base2shiftV (base2highbitsV t)).
 
 clone FSa.CommRecov as FSaCR with
   op recover <= recover,
@@ -137,6 +140,7 @@ following minor differences:
 - The public key is (A,t) rather than (A,t1,t0)
 - The secret key is (A,s1,s2) rather than (A,s1,s2,t0) 
 - sign (resp. verify) computes t0 (t1) from s1 and s2 (t).
+- due to liberal typing, verify needs to check the size (length) of the signature
 
 This avoids having to split/merge t (e.g., in the MLWE reduction). We
 eliminate these differences using a separate reduction *)
@@ -197,17 +201,15 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
 
     (c, response) <- sig;
     (z, h) <- response;
-    w1 <- useHintV h (mA *^ z - c ** base2leftshiftV t1);
+    w1 <- useHintV h (mA *^ z - c ** base2shiftV t1);
     c' <@ H.get((w1, m));
-    result <- size z = l /\ inf_normv z < gamma1 - b /\ c = c';
+    result <- size z = l /\ size h = k /\ inf_normv z < gamma1 - b /\ c = c';
 
     return result;
   }
 }.
 
 (** KOA to MLWE + SelfTargetMSIS *)
-
-(*
 
 clone import MLWE as RqMLWE with 
   theory M <- MatRq,
@@ -217,8 +219,6 @@ clone import MLWE as RqMLWE with
   op l <- l
 proof* by smt(gt0_k gt0_l).
 
-op todo_magic_number : int.
-
 clone import SelfTargetMSIS as RqStMSIS with
   theory M <- MatRq,
   type M <- M,
@@ -227,7 +227,7 @@ clone import SelfTargetMSIS as RqStMSIS with
   op dR <- dRq,
   op dC <- dC tau,
   op inf_norm <- inf_normv,
-  op gamma <- max (gamma1 - b) (gamma2+1+todo_magic_number)
+  op gamma <- max (gamma1 - b) (tau * 2^(d-1) + (2*gamma2+1))
 proof* by smt(Top.gt0_k Top.gt0_l). 
 (* Where do dout_ll and enum_spec come from? Why are they not picked up by proof* *)
 
@@ -257,17 +257,20 @@ module H' : Hash_i = {
 
 module RedMSIS (A : Adv_EFKOA_RO) (H : RqStMSIS.PRO.RO) = { 
   proc guess(mB : matrix) : vector * M = { 
-    var mA,tbar,t,mu,sig,resp,c,z,w,e,y;
+    var mA,tbar,t,mu,sig,c,zh,z,h;
+    var t1,r,u1,u2,y;
     mA <- subm mB 0 k 0 l;
     tbar <- col mB l;
     t <- -tbar;
     (mu,sig) <@ A(H').forge(mA,t); (* discard H, use H' *)
     y <- witness;
-    (c,resp) <- sig;
-    (z,h) <- resp;
-    w <- (mA *^ z - c ** t);
-    e <- -lowBitsV w;
-    y <- e || z || vectc 1 c;
+    (c,zh) <- sig;
+    (z,h) <- zh;
+    t1 <- base2highbitsV t;
+    r <- mA *^z - c ** base2shiftV t1;
+    u1 <- r - shiftV (useHintV h r);
+    u2 <- c ** base2lowbitsV t;
+    y <- (u2 - u1) || z || vectc 1 c;
 
     return (y,mu);
   }
@@ -336,9 +339,8 @@ qed.
 import StdOrder.RealOrder.
 
 (* move to EC lib? *)
-lemma max_ltrP (i j k : int) : i < max j k <=> i < j \/ i < k by smt().
+lemma maxr_lerP (i j k : int) : i <= max j k <=> i <= j \/ i <= k by smt().
 
-(* Ethan: This proof was broken; I tried fixing it. *)
 local lemma hop3 &m : 
   Pr[EF_KOA_RO(S1, A, H').main() @ &m : res] <= Pr[Game(RedMSIS(A), G).main() @ &m : res].
 proof.
@@ -382,33 +384,57 @@ seq 6 7 : (={sig,PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in
   by rewrite -E1 -E2 /= rows_catmr //=; smt(Top.gt0_k Top.gt0_l).
 (* If A forges successfully the reduction succeeds in the SelfTargetMSIS game *)
 inline S1(H').verify  H'.get. wp. sp.
-(* need [size z{1} = l] to prove equality of the RO argument *)
-case (size z{1} = l /\ inf_normv z{1} < gamma1 - b);
+(* need [size z{1} = l /\ size h{1} = l] to prove equality of the RO argument *)
+case (size z{1} = l /\ size h{1} = k);
   last by conseq (:_ ==> true); [ smt() | inline*; auto].
 call(: ={arg,glob G} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in dC tau){1} 
        ==> ={res} /\ res{1} \in dC tau).
 - by proc; inline*; auto => />; smt(get_set_sameE).
-auto => /> &1 ? r_mA c_mA size_t size_z normv_z.
-(* Recover some definitions *)
-pose w := (_ - Vectors.(**) _ _). (* FIXME: why is XInt.(**) in scope? *)
-pose w1 := highBitsV _. 
-pose e := - lowBitsV _.
-have size_w : size w{1} = k.
-- by rewrite size_addv /= size_scalarv size_mulmxv /#. 
-have size_e : size e = k.
-- by rewrite size_oppv size_lowBitsV.
-split => [|? c_dC]; last split.
-- rewrite mulmxv_cat; 1: smt(gt0_k). 
-  rewrite -size_e mulmx1v mulmxv_cat 1:/# colmxN.
-  rewrite mul_colmxc addvC -sub_eqv; 1: by rewrite size_shiftV size_highBitsV /#.
-  + rewrite size_addv /= size_scalarv /= size_mulmxv 1:/#.
-  by rewrite /w1 /e oppvK high_lowPv scalarvN.
-- rewrite 2!inf_normv_cat !StdOrder.IntOrder.ltr_maxrP !max_ltrP.
-  rewrite normv_z /= 1!inf_normv_vectc //.
-  have -> /= : cnorm c0{1} < gamma2+1 by smt(cnorm_dC gamma2_bound).
-  right. rewrite /e inf_normvN. smt(inf_normv_low gamma2_bound).
+auto => /> &1 _.
+move: (mA0{1}) (t{1}) (z{1}) (c0{1}) (h{1}) => mA t z c h {&1 &m}.
+move => r_mA c_mA size_t size_z size_h.
+(* Recover the definitions from the reduction *)
+pose t0 := base2lowbitsV t.
+pose t1 := base2highbitsV t.
+pose r  := mA *^ z - c ** base2shiftV t1.
+pose r' := shiftV (useHintV h r).
+pose u1 := r - r'; pose u2 := c ** t0.
+have size_Az : size (mA *^ z) = k by rewrite size_mulmxv.
+have [size_r size_r'] : size r = k /\ size r' = k.
+  rewrite /r' /r. rewrite !size_addv size_shiftV size_useHintV size_addv.
+  rewrite size_Az size_oppv size_scalarv size_base2shiftV.
+  rewrite size_base2highbitsV /#.
+have size_u : size (u2 - u1) = k. 
+  rewrite size_addv size_scalarv size_oppv size_addv size_oppv size_base2lowbitsV /#.
+split => [|_ c_dC normv_z]; last split. 
+- (* StMSIS Oracle is called on the same arguments *)
+  rewrite mulmxv_cat; 1: smt(size_addv size_oppv gt0_k).
+  rewrite mulmxv_cat 1:/#. 
+  rewrite colmxN mul_colmxc -size_u mulmx1v scalarvN.
+  suff : u2 - r + (mA *^ z - c ** t) = zerov k by smt(addvA addvC addv0 oppvD oppvK).
+  suff : (mA *^ z - mA *^ z) + (c ** base2shiftV t1 + c ** t0 - c** t) = zerov k.
+     smt(addvA addvC oppvD oppvK).
+  rewrite addvN lin_add0v. 
+  + rewrite ?size_Az ?size_addv ?size_oppv ?size_scalarv ?size_base2shiftV.
+    rewrite size_base2highbitsV size_base2lowbitsV /#.
+  by rewrite -scalarvDr b2high_lowPv addvN size_scalarv size_t.
+- (* The StMSIS solution is "short" *)  
+  rewrite 2!inf_normv_cat !StdOrder.IntOrder.ler_maxrP !maxr_lerP.
+  rewrite [inf_normv z <= _]StdOrder.IntOrder.ltrW 1:normv_z /= 1!inf_normv_vectc //.
+  have ? : 0 <= tau * (2 ^ (d - 1)). 
+    smt(StdOrder.IntOrder.mulr_ge0 tau_bound StdOrder.IntOrder.expr_ge0).
+  suff: inf_normv (u2 - u1) <= 2 * gamma2 + 1 + tau * 2 ^ (d - 1)
+    by smt(cnorm_dC gamma2_bound).
+  rewrite /u1 /u2 oppvD oppvK [_ + r']addvC addrC. 
+  have X := ler_inf_normv (c ** t0) (r' - r).
+  apply (StdOrder.IntOrder.ler_trans _ _ _ X) => {X}.
+  apply (StdOrder.IntOrder.ler_add); last first.
+  + by rewrite -inf_normvN oppvD addvC oppvK /r' hint_error.
+  apply l1_inf_norm_product_ub; 
+    1,2,3: smt(tau_bound StdOrder.IntOrder.expr_gt0 gt0_d supp_dC).
+  exact b2low_bound.
 - rewrite catvA get_catv_r ?size_catv 1:/#. 
-  have -> : k + (l + 1) - 1 - (size e + size z{1}) = 0 by smt().
+  have -> : k + (l + 1) - 1 - (size (u2-u1) + size z) = 0 by smt().
   by rewrite get_vectc.
 qed.
 
