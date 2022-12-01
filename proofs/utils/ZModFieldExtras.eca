@@ -118,6 +118,57 @@ case ((p + 1) %/ 2 <= asint x * asint y %% p) => _.
       smt(modz_mod).
 qed.
 
+lemma zmodcgr_transitive b a c :
+  zmodcgr a b =>
+  zmodcgr b c =>
+  zmodcgr a c.
+proof. smt(). qed.
+
+lemma creprD (a b : zmod) :
+  crepr (a + b) = to_crepr (crepr a + crepr b).
+proof.
+suff: zmodcgr (crepr (a + b)) (crepr a + crepr b).
+- smt(rg_to_crepr to_crepr_zmodcgr rg_crepr).
+rewrite /crepr addE /=.
+apply (zmodcgr_transitive (asint a + asint b)).
+- smt(modzMDr rg_asint).
+case ((p + 1) %/ 2 <= asint a) => _.
+- case ((p + 1) %/ 2 <= asint b) => _.
+  + have ->: (asint a - p + (asint b - p) = asint a + asint b + (-2) * p) by ring.
+    by rewrite modzMDr.
+  + have ->: (asint a - p + asint b = asint a + asint b + (-1) * p) by ring.
+    by rewrite modzMDr.
+- case ((p + 1) %/ 2 <= asint b) => _ //.
+  have ->: (asint a + (asint b - p) = asint a + asint b + (-1) * p) by ring.
+  by rewrite modzMDr.
+qed.
+
+lemma creprN (a : zmod) :
+  crepr (-a) = -crepr a.
+proof.
+rewrite /crepr.
+smt(rg_asint inzmodK).
+qed.
+
+lemma creprND (a b : zmod) :
+  crepr (a - b) = to_crepr (crepr a - crepr b).
+proof. smt(creprD creprN). qed.
+
+lemma to_crepr_id x :
+  (p + 1) %/ 2 - p <= x < (p + 1) %/ 2 =>
+  to_crepr x = x.
+proof. smt(). qed.
+
+lemma to_crepr_eq x y :
+  to_crepr x = to_crepr y <=> zmodcgr x y.
+proof. smt(). qed.
+
+lemma inzmodK_centered x :
+  (p + 1) %/ 2 - p <= x =>
+  x < (p + 1) %/ 2 =>
+  crepr (inzmod x) = x.
+proof. smt(rg_asint inzmodK). qed.
+
 op "`|_|" x = `|crepr x|.
 
 lemma abs_zp_small (x: int) :

@@ -28,12 +28,6 @@ lemma positive_multiples_lower_bound d x :
   d <= x.
 proof. smt(dvdz_eq). qed.
 
-lemma inzmodK_centered x :
-  (q + 1) %/ 2 - q <= x =>
-  x < (q + 1) %/ 2 =>
-  crepr (inzmod x) = x.
-proof. smt(rg_asint inzmodK). qed.
-
 (* -- Actual high-low bits rounding facts -- *)
 
 op lowbits alpha r =
@@ -383,51 +377,6 @@ lemma eq_divz d x y :
   x %/ d = y %/ d =>
   x = y.
 proof. smt(divzK). qed.
-
-lemma zmodcgr_transitive b a c :
-  zmodcgr a b =>
-  zmodcgr b c =>
-  zmodcgr a c.
-proof. smt(). qed.
-
-lemma creprD (a b : zmod) :
-  crepr (a + b) = to_crepr (crepr a + crepr b).
-proof.
-suff: zmodcgr (crepr (a + b)) (crepr a + crepr b).
-- smt(rg_to_crepr to_crepr_zmodcgr rg_crepr).
-rewrite /crepr addE /=.
-apply (zmodcgr_transitive (asint a + asint b)).
-- smt(modzMDr rg_asint).
-case ((q + 1) %/ 2 <= asint a) => _.
-- case ((q + 1) %/ 2 <= asint b) => _.
-  + have ->: (asint a - q + (asint b - q) = asint a + asint b + (-2) * q) by ring.
-    by rewrite modzMDr.
-  + have ->: (asint a - q + asint b = asint a + asint b + (-1) * q) by ring.
-    by rewrite modzMDr.
-- case ((q + 1) %/ 2 <= asint b) => _ //.
-  have ->: (asint a + (asint b - q) = asint a + asint b + (-1) * q) by ring.
-  by rewrite modzMDr.
-qed.
-
-lemma creprN (a : zmod) :
-  crepr (-a) = -crepr a.
-proof.
-rewrite /crepr.
-smt(rg_asint inzmodK).
-qed.
-
-lemma creprND (a b : zmod) :
-  crepr (a - b) = to_crepr (crepr a - crepr b).
-proof. smt(creprD creprN). qed.
-
-lemma to_crepr_id x :
-  (q + 1) %/ 2 - q <= x < (q + 1) %/ 2 =>
-  to_crepr x = x.
-proof. smt(). qed.
-
-lemma to_crepr_eq x y :
-  to_crepr x = to_crepr y <=> zmodcgr x y.
-proof. smt(). qed.
 
 lemma round_perturb alpha (z r : zmod) :
   2 <= alpha <= q %/ 2 =>
