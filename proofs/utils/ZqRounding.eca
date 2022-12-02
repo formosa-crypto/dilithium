@@ -1077,3 +1077,40 @@ apply (eq_from_nth 0); first by smt().
 move => i rg_i.
 apply (leftshift_injective alpha); smt(mem_nth).
 qed.
+
+op poly_usehint alpha (h : bool list) (p : polyXnD1) =
+  mkseq (fun i => usehint alpha (nth false h i) p.[i]) n.
+
+lemma poly_usehint_correct alpha h p i :
+  0 <= i < n =>
+  nth 0 (poly_usehint alpha h p) i = usehint alpha (nth false h i) p.[i].
+proof.
+move => rg_i.
+rewrite /poly_usehint /=.
+by rewrite nth_mkseq.
+qed.
+
+lemma size_poly_usehint alpha h p :
+  size (poly_usehint alpha h p) = n.
+proof.
+rewrite /poly_usehint.
+rewrite size_mkseq.
+smt(ge0_n).
+qed.
+
+import ComRing.
+
+lemma poly_hide_low2 alpha (r : polyXnD1) (h : bool list) :
+  2 <= alpha <= q %/ 2 =>
+  2 %| alpha =>
+  alpha %| (q - 1) =>
+  `|r - poly_leftshift alpha (poly_usehint alpha h r)| <= alpha + 1.
+proof.
+move => *.
+apply inf_norm_le; first smt().
+move => i rg_i.
+rewrite rcoeffD -rcoeffN.
+rewrite -poly_leftshift_correct; first smt(size_poly_usehint).
+rewrite poly_usehint_correct //.
+exact hide_low2.
+qed.

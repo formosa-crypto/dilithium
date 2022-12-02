@@ -118,8 +118,10 @@ axiom usehint_correct alpha (z r : Rq) :
   let h = makeHint alpha z r in
     useHint alpha h r = highBits alpha (r + z).
 
-(* TODO probably need side conditions *)
 axiom usehint_insub alpha h r :
+  2 <= alpha <= q %/ 2 =>
+  2 %| alpha =>
+  alpha %| (q - 1) =>
   image (highBits alpha) (Flex.useHint alpha h r).
 
 axiom hide_low2 alpha (r : Rq) (h : hint_t) :
