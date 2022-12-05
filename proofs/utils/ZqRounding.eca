@@ -1114,3 +1114,40 @@ rewrite -poly_leftshift_correct; first smt(size_poly_usehint).
 rewrite poly_usehint_correct //.
 exact hide_low2.
 qed.
+
+(* powers of 2 stuff *)
+
+op lowbits2 (d : int) (r : zmod) = inzmod (cmod (asint r) (2 ^ d)).
+op round2 (d : int) (r : zmod) = asint r - asint (lowbits2 d r).
+op rightshift2 (d : int) (r : int) = r %/ (2 ^ d).
+op highbits2 (d : int) (r : zmod) = rightshift2 d (round2 d r).
+op leftshift2 (d : int) (r : int) = inzmod ((2 ^ d) * r).
+
+lemma abs_zp_contract x :
+  `|inzmod x| <= `|x|.
+proof.
+rewrite /"`|_|" /crepr.
+rewrite inzmodK /=.
+smt(ge2_p).
+qed.
+
+lemma lowbits2_small d x :
+  1 <= d =>
+  `|lowbits2 d x| <= 2 ^ (d - 1).
+proof.
+move => ge1_d.
+rewrite /lowbits2.
+apply (ler_trans (`|cmod (asint x) (2 ^ d)|)).
+- exact abs_zp_contract.
+apply (ler_trans ((2 ^ d) %/ 2)).
+- apply cmod_small.
+  smt(ler_eexpr).
+by rewrite expr_pred /#.
+qed.
+
+lemma round2_is_multiple d x :
+  1 <= d =>
+  (2 ^ d) %| round2 d x.
+proof.
+move => ge1_d.
+admitted.
