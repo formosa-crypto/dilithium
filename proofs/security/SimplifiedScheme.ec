@@ -567,19 +567,14 @@ conseq />. auto => /> &m. split => [|pass_chk].
 + by rewrite /respond /= ifF.
 qed.
 
-(*
 equiv verify_opbased_correct :
   OpBasedSig(H).verify ~ SimplifiedDilithium(H).verify :
   ={arg,glob H} ==> ={res,glob H}.
 proof.
 proc; inline *.
-sp.
-seq 1 1: (#pre /\ ={c, z, w, c'} /\
-          w{1} = recover pk{1} c{1} z{1}).
-- by sp; call (: true).
-if{1}; by auto => />.
+wp; call (: true).
+auto => /> /#.
 qed.
-*)
 
 end section OpBasedCorrectness.
 
@@ -631,31 +626,43 @@ case /pk_decomp valid_keys => [??]; subst.
 move => [w0 y] @/commit /= /supp_dmap [y' [y'_supp [??]]] c c_supp H w c' z; subst.
 have {H} H /=: (respond (mA, s1, s2) c y' <> None) by smt().
 rewrite H /respond /= => [#] *; subst.
-(**
-rewrite ifF 1:/# /recover /=.
+rewrite ifT 1:/# /recover /=.
 (* From here, highbits Ay is close to highbits (Az - ct).
  * First expand out Az-ct. *)
-have ->: mA *^ (y' + c' ** s1) - c' ** (mA *^ s1 + s2) = mA *^ y' - c' ** s2.
-- rewrite mulmxvDr scalarvDr mulmx_scalarv -addvA; congr.
+have ->: (mA *^ (y' + c' ** s1) - c' ** base2shiftV (base2highbitsV (mA *^ s1 + s2)) =
+         mA *^ y' - c' ** s2 + c' ** base2lowbitsV (mA *^ s1 + s2)).
+- (* AYYYYYYYYYY ARITHMATICS *)
+(**
+  rewrite mulmxvDr scalarvDr mulmx_scalarv -addvA; congr.
   rewrite oppvD addvA addvN. 
   have -> : size (c' ** (mA *^ s1)) = size (- c' ** s2)
     by smt(size_scalarv size_mulmxv size_oppv).
   by rewrite add0v.
-(* Now line things up for `hide_lowV` *)
-have {1}->: mA *^ y' = mA *^ y' - c' ** s2 + c' ** s2. 
-- rewrite -addvA [_ + c' ** _]addvC addvN [_ + zerov _]addvC lin_add0v //.
+**) admit.
+rewrite usehint_correctV.
+- (* stuff that looks terrible. *)
+  (* depends on bound on lowbits2V. *)
+  admit.
+have ->: mA *^ y' - c' ** s2 + c' ** base2lowbitsV (mA *^ s1 + s2) -
+   c' ** base2lowbitsV (mA *^ s1 + s2) =
+   mA *^ y' - c' ** s2.
+- (* arithematic at its finest *)
+  (* smt(addvA addvC addvN size_scalarv size_mulmxv size_dvector). *)
+  admit.
+have ->: highBitsV (mA *^ y') = highBitsV (mA *^ y' - c' ** s2 + c' ** s2).
+- (* more arithmatics *)
+  rewrite -addvA [_ + c' ** _]addvC addvN [_ + zerov _]addvC lin_add0v //.
   smt(size_scalarv size_mulmxv size_dvector).
-apply (hide_lowV _ _ b); 2,3,5:smt(gt0_b b_round_gamma2_lt).
-- smt(size_oppv size_scalarv size_mulmxv size_dvector size_addv).
-apply: StdOrder.IntOrder.ler_trans eta_tau_leq_b. 
-rewrite mulrC; apply l1_inf_norm_product_ub; 1..3: smt(tau_bound gt0_eta supp_dC).
-(* FIXME: Turn this into a lemma? *)
-apply inf_normv_ler => [|i rg_i]; first by smt(gt0_eta).
+apply (hide_lowV _ _ b);
+  1,2,3,5: smt(size_oppv size_scalarv size_mulmxv size_dvector size_addv
+               gt0_b b_round_gamma2_lt).
+apply: StdOrder.IntOrder.ler_trans eta_tau_leq_b.
+rewrite mulrC.
+apply l1_inf_norm_product_ub; 1..3: smt(tau_bound gt0_eta supp_dC).
+apply inf_normv_ler =>[|i rg_i]; first by smt(gt0_eta).
 rewrite supp_dvector in rg_s2; first by smt(Top.gt0_k).
-rewrite -supp_dRq; smt(gt0_eta).
+by rewrite -supp_dRq; smt(gt0_eta).
 qed.
-**)
-admitted.
 
 (* -- OpBased is indeed zero-knowledge -- *)
 
