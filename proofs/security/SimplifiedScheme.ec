@@ -429,7 +429,7 @@ split => [|_ c_dC normv_z]; last split.
   have X := ler_inf_normv (c ** t0) (r' - r).
   apply (StdOrder.IntOrder.ler_trans _ _ _ X) => {X}.
   apply (StdOrder.IntOrder.ler_add); last first.
-  + by rewrite -inf_normvN oppvD addvC oppvK /r' hint_error.
+  + by rewrite -inf_normvN oppvD addvC oppvK /r' hint_error /#.
   apply l1_inf_norm_product_ub; 
     1,2,3: smt(tau_bound StdOrder.IntOrder.expr_gt0 gt0_d supp_dC).
   exact b2low_bound.
@@ -448,8 +448,6 @@ by rewrite hop2 hop3.
 qed.
 
 end section PROOF.
-
-(** TODO Fix the rest of the file
 
 (* -- Operator-based -- *)
 
@@ -475,17 +473,23 @@ op commit (sk : SK) : (commit_t * pstate_t) distr =
 
 op respond (sk : SK) (c : challenge_t) (y: pstate_t) : response_t option =
   let (mA, s1, s2) = sk in
+  let t0 = base2lowbitsV (mA *^ s1 + s2) in
+  let w = mA *^ y in
   let z = y + c ** s1 in
-  if gamma1 - b <= inf_normv z \/
-     gamma2 - b <= inf_normv (lowBitsV (mA *^ y - c ** s2) ) then
-    None else
-    Some z.
+  if inf_normv z < gamma1 - b /\
+     inf_normv (lowBitsV (mA *^ y - c ** s2) ) < gamma2 - b then
+    let h = makeHintV (- c ** t0) (w - c ** s2 + c ** t0) in
+    Some (z, h)
+    else None.
 
-op verify (pk : PK) (w1 : commit_t) (c : challenge_t) (z : response_t) : bool =
+op verify (pk : PK) (w1 : commit_t) (c : challenge_t) (resp : response_t) : bool =
   let (mA, t) = pk in
+  let t1 = base2highbitsV t in
+  let (z, h) = resp in
   size z = l /\ 
+  size h = k /\
   inf_normv z < gamma1 - b /\
-  w1 = highBitsV (mA *^ z - c ** t).
+  w1 = useHintV h (mA *^ z - c ** base2shiftV t1).
 
 lemma keygen_ll : is_lossless keygen. 
 proof. 
@@ -540,23 +544,30 @@ equiv sign_opbased_correct :
   ={arg,glob H} ==> ={res,glob H}.
 proof.
 proc; inline *. 
-while (oz{1} = z{2} /\ ={c,sk,glob H,m} /\ (sk = (mA,s1,s2)){2}); 
+sp.
+while (oz{1} = response{2} /\ ={c,sk,glob H,m} /\
+       t0{2} = base2lowbitsV (mA{2} *^ s1{2} + s2{2}) /\
+       (sk = (mA,s1,s2)){2}); 
   last by auto => /> /#.
 conseq (: _ ==> ={c, sk, glob H, m} /\ (sk = (mA,s1,s2)){2} 
-                 /\ oz{1} = z{2}); 1: smt().
-seq 4 4 : (#pre /\ w{1} = w1{2} /\ P.pstate{1} = y{2}).
-- call(: true). conseq />. 
-  rnd: *0 *0.
+                 /\ oz{1} = response{2}); 1: smt().
+seq 4 4 : (#pre /\ w{1} = w1{2} /\ P.pstate{1} = y{2} /\
+           (w = mA *^ y){2}).
+- call(: true). conseq />.
+  sp; wp.
+  rnd (fun (wy : DID.W * vector) => wy.`2) (fun y => (highBitsV (mA{2} *^ y), y)).
   skip => /> &m.
-  split => [[y w1] ?|_]. 
-  + apply/eq_sym. congr. (* symmetry as hack for RHS pattern selection *)
-    by rewrite /commit /= dmap_comp /(\o) /=. 
-  move => ?. by rewrite /commit /= dmap_comp /(\o).
+  split => [y ? | ? [w y] * /=].
+  - rewrite /commit /=.
+    admit.
+  print commit.
+  admit.
 conseq />. auto => /> &m. split => [|pass_chk]. 
-+ by rewrite /respond /= => ->.
++ rewrite /respond /= => -> -> //=.
 + by rewrite /respond /= ifF.
 qed.
 
+(*
 equiv verify_opbased_correct :
   OpBasedSig(H).verify ~ SimplifiedDilithium(H).verify :
   ={arg,glob H} ==> ={res,glob H}.
@@ -568,6 +579,7 @@ seq 1 1: (#pre /\ ={c, z, w, c'} /\
 - by sp; call (: true).
 if{1}; by auto => />.
 qed.
+*)
 
 end section OpBasedCorrectness.
 
@@ -619,6 +631,7 @@ case /pk_decomp valid_keys => [??]; subst.
 move => [w0 y] @/commit /= /supp_dmap [y' [y'_supp [??]]] c c_supp H w c' z; subst.
 have {H} H /=: (respond (mA, s1, s2) c y' <> None) by smt().
 rewrite H /respond /= => [#] *; subst.
+(**
 rewrite ifF 1:/# /recover /=.
 (* From here, highbits Ay is close to highbits (Az - ct).
  * First expand out Az-ct. *)
@@ -641,6 +654,8 @@ apply inf_normv_ler => [|i rg_i]; first by smt(gt0_eta).
 rewrite supp_dvector in rg_s2; first by smt(Top.gt0_k).
 rewrite -supp_dRq; smt(gt0_eta).
 qed.
+**)
+admitted.
 
 (* -- OpBased is indeed zero-knowledge -- *)
 
@@ -648,23 +663,27 @@ op check_znorm (v : vector) = (size v = l) /\ (inf_normv v < gamma1 - b).
 op dsimz = dvector (dRq_open (gamma1 - b)) l.
 
 op line12_magic_number = (size (to_seq check_znorm))%r / (size (to_seq (support dy)))%r.
-op dsimoz : response_t option distr = dlet (dbiased line12_magic_number) (fun b => if b then dmap dsimz Some else dunit None).
+op dsimoz : vector option distr = dlet (dbiased line12_magic_number) (fun b => if b then dmap dsimz Some else dunit None).
 
 module HVZK_Sim_Inst : DID.HVZK_Sim = {
   proc get_trans(pk : PK) = {
-    var mA, t, w', c, oz, z;
-    var resp;
+    var mA, w', c, z, t, resp;
+    var oz, t0;
+
     (mA, t) <- pk;
+    t0 <- base2lowbitsV t;
     c <$ FSa.dC;
     oz <$ dsimoz;
     if(oz <> None) {
       z <- oget oz;
       w' <- mA *^ z - c ** t;
-      resp <- if gamma2 - b <= inf_normv (lowBitsV w') then None else Some z;
+      resp <- if inf_normv (lowBitsV w') < gamma2 - b then
+        let h = makeHintV (- c ** t0) (w' + c ** t0) in Some (z, h)
+      else None;
     } else {
       resp <- None;
     }
-    return if resp = None then None else Some (recover pk c (oget resp), c, oget resp);
+    return omap (fun z => (recover pk c z, c, z)) resp;
   }
 }.
 
@@ -863,15 +882,19 @@ local module HVZK_Hops = {
   (* unfold everything *)
   proc game2(pk: PK, sk: SK) : (challenge_t * response_t) option = {
     var mA, s1, s2, w', y, c, z, t, resp;
+    var t0;
 
     (mA, s1, s2) <- sk;
     t <- mA *^ s1 + s2;
+    t0 <- base2lowbitsV t;
     c <$ FSa.dC;
     y <$ dy;
     z <- y + c ** s1;
     if(check_znorm z) {
       w' <- mA *^ y - c ** s2;
-      resp <- if gamma2 - b <= inf_normv (lowBitsV w') then None else Some z;
+      resp <- if inf_normv (lowBitsV w') < gamma2 - b then
+        let h = makeHintV (- c ** t0) (mA *^ y - c ** s2 + c ** t0) in Some (z, h)
+      else None;
     } else {
       resp <- None;
     }
@@ -881,15 +904,19 @@ local module HVZK_Hops = {
   (* Compute w' using only public information *)
   proc game3(pk: PK, sk: SK) : (challenge_t * response_t) option = {
     var mA, s1, s2, w', y, c, z, t, resp;
+    var t0;
 
     (mA, s1, s2) <- sk;
     t <- mA *^ s1 + s2;
+    t0 <- base2lowbitsV t;
     c <$ FSa.dC;
     y <$ dy;
     z <- y + c ** s1;
     if(check_znorm z) {
       w' <- mA *^ z - c ** t;
-      resp <- if gamma2 - b <= inf_normv (lowBitsV w') then None else Some z;
+      resp <- if inf_normv (lowBitsV w') < gamma2 - b then
+        let h = makeHintV (- c ** t0) (w' + c ** t0) in Some (z, h)
+      else None;
     } else {
       resp <- None;
     }
@@ -899,10 +926,11 @@ local module HVZK_Hops = {
   (* Change conditional on `oz` *)
   proc game4(pk: PK, sk: SK) : (challenge_t * response_t) option = {
     var mA, s1, s2, w', y, c, z, t, resp;
-    var oz;
+    var oz, t0;
 
     (mA, s1, s2) <- sk;
     t <- mA *^ s1 + s2;
+    t0 <- base2lowbitsV t;
     c <$ FSa.dC;
     y <$ dy;
     z <- y + c ** s1;
@@ -910,7 +938,9 @@ local module HVZK_Hops = {
     if(oz <> None) {
       z <- oget oz;
       w' <- mA *^ z - c ** t;
-      resp <- if gamma2 - b <= inf_normv (lowBitsV w') then None else Some z;
+      resp <- if inf_normv (lowBitsV w') < gamma2 - b then
+        let h = makeHintV (- c ** t0) (w' + c ** t0) in Some (z, h)
+      else None;
     } else {
       resp <- None;
     }
@@ -920,16 +950,19 @@ local module HVZK_Hops = {
   (* Rewrite relevant parts of above as operator *)
   proc game5(pk: PK, sk: SK) : (challenge_t * response_t) option = {
     var mA, s1, s2, w', c, z, t, resp;
-    var oz;
+    var oz, t0;
 
     (mA, s1, s2) <- sk;
     t <- mA *^ s1 + s2;
+    t0 <- base2lowbitsV t;
     c <$ FSa.dC;
     oz <$ transz c s1;
     if(oz <> None) {
       z <- oget oz;
       w' <- mA *^ z - c ** t;
-      resp <- if gamma2 - b <= inf_normv (lowBitsV w') then None else Some z;
+      resp <- if inf_normv (lowBitsV w') < gamma2 - b then
+        let h = makeHintV (- c ** t0) (w' + c ** t0) in Some (z, h)
+      else None;
     } else {
       resp <- None;
     }
@@ -939,34 +972,40 @@ local module HVZK_Hops = {
   (* Get (a, t) from public key *)
   proc game6(pk: PK, sk: SK) : (challenge_t * response_t) option = {
     var mA, mA', s1, s2, w', c, z, t, resp;
-    var oz;
+    var oz, t0;
 
     (mA', s1, s2) <- sk;
     (mA, t) <- pk;
+    t0 <- base2lowbitsV t;
     c <$ FSa.dC;
     oz <$ transz c s1;
     if(oz <> None) {
       z <- oget oz;
       w' <- mA *^ z - c ** t;
-      resp <- if gamma2 - b <= inf_normv (lowBitsV w') then None else Some z;
+      resp <- if inf_normv (lowBitsV w') < gamma2 - b then
+        let h = makeHintV (- c ** t0) (w' + c ** t0) in Some (z, h)
+      else None;
     } else {
       resp <- None;
     }
     return omap (fun z => (c, z)) resp;
   }
 
-  (* simulator *)
+  (* simulator: dropping secret key *)
   proc game7(pk: PK) : (challenge_t * response_t) option = {
     var mA, w', c, z, t, resp;
-    var oz;
+    var oz, t0;
 
     (mA, t) <- pk;
+    t0 <- base2lowbitsV t;
     c <$ FSa.dC;
     oz <$ dsimoz;
     if(oz <> None) {
       z <- oget oz;
       w' <- mA *^ z - c ** t;
-      resp <- if gamma2 - b <= inf_normv (lowBitsV w') then None else Some z;
+      resp <- if inf_normv (lowBitsV w') < gamma2 - b then
+        let h = makeHintV (- c ** t0) (w' + c ** t0) in Some (z, h)
+      else None;
     } else {
       resp <- None;
     }
@@ -982,7 +1021,7 @@ proof.
 case sk_i => mA' s1' s2'.
 proc; inline*.
 swap{1} 1 1.
-swap{2} [1..2] 1.
+swap{2} [1..3] 1.
 seq 1 1: (#pre /\ ={c}); first by auto.
 sp.
 (* Sample `y` and discard unused `w` *)
@@ -1005,7 +1044,7 @@ local equiv hop3_correct :
   ={arg} /\ arg{1} \in keygen ==> ={res}.
 proof.
 proc.
-seq 5 5: (#pre /\ ={mA, s1, s2, t, c, y, z} /\
+seq 6 6 : (#pre /\ ={mA, s1, s2, t, c, y, z, t0} /\
           mA{1} *^ y{1} - c{1} ** s2{1} = mA{2} *^ z{2} - c{2} ** t{2}); 
   last by auto => /#.
 auto => /> &2 valid_key c c_valid y y_valid.
@@ -1029,7 +1068,7 @@ local equiv hop5_correct pk_i sk_i :
   ={arg} /\ arg{1} = (pk_i, sk_i) /\ (pk_i, sk_i) \in keygen ==> ={res}.
 proof.
 proc.
-seq 3 3: (#pre /\ ={mA, s1, s2, t, c} /\ (mA{1}, s1{1}, s2{1}) = sk_i).
+seq 4 4: (#pre /\ ={mA, s1, s2, t, t0, c} /\ (mA{1}, s1{1}, s2{1}) = sk_i).
 - by auto => /#.
 seq 3 1: (#pre /\ ={oz}); last by sim.
 rnd: *0 *0.
@@ -1060,11 +1099,13 @@ local equiv hop7_correct pk_i sk_i :
   arg{1} = (pk_i, sk_i) /\ arg{2} = pk_i /\ (pk_i, sk_i) \in keygen ==> ={res}.
 proof.
 proc.
-seq 3 2 : (#pre /\ ={mA, t, c} /\ mA{1} = mA'{1} /\ sk{1} = (mA'{1}, s1{1}, s2{1}) /\ pk{1} = (mA{1}, t{1}) /\ c{1} \in FSa.dC).
+seq 2 1 : (#pre /\ ={mA, t} /\ mA{1} = mA'{1} /\ sk{1} = (mA'{1}, s1{1}, s2{1}) /\ pk{1} = (mA{1}, t{1})).
 - by auto; smt(pk_decomp).
+sp.
+seq 1 1 : (#pre /\ ={c} /\ c{1} \in FSa.dC); first by auto.
 seq 1 1 : (#pre /\ ={oz}); last by sim.
 rnd; auto => //= &1 &2.
-move => [#] ??? valid_keys ?????? c_valid ; subst.
+move => [#] ????? valid_keys ?????? c_valid ; subst.
 rewrite line12_magic //.
 by case /keygen_supp_decomp valid_keys.
 qed.
@@ -1103,30 +1144,33 @@ equiv HVZK_Sim_correct k :
   DID.Honest_Execution(OpBased.P, OpBased.V).get_trans ~ HVZK_Sim_Inst.get_trans :
   k \in keygen /\ arg{1} = k /\ arg{2} = k.`1 ==> ={res}.
 proof.
-case k => pk sk.
+case k => pk_i sk_i.
 (* Commitment recoverable - can drop the commitment *)
-conseq (_: (pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==>
+conseq (_: (pk_i, sk_i) \in keygen /\ arg{1} = (pk_i, sk_i) /\ arg{2} = pk_i ==>
        omap drop_commitment res{1} = omap drop_commitment res{2})
-  (_: arg = (pk, sk) /\ (pk, sk) \in keygen ==>
-      res <> None => let (w, c, z) = oget res in w = (recover pk c z))
-  (_: arg = pk ==>
-      res <> None => let (w, c, z) = oget res in w = (recover pk c z)); 1, 2: smt().
-- by conseq (recover_correct pk sk).
-- by proc; auto => /#.
+  (_: arg = (pk_i, sk_i) /\ (pk, sk) \in keygen ==>
+      res <> None => let (w, c, z) = oget res in w = (recover pk_i c z))
+  (_: arg = pk_i ==>
+      res <> None => let (w, c, z) = oget res in w = (recover pk_i c z)); 1, 2: smt().
+- by conseq (recover_correct pk_i sk_i).
+- proc; seq 5: (pk = pk_i); first by auto.
+  by auto => /> /#.
 (* left hand side equiv to KLS HVZK first game *)
 transitivity HVZK_Hops.game1
- ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==>
+ ((pk_i, sk_i) \in keygen /\ arg{1} = (pk_i, sk_i) /\ arg{2} = (pk_i, sk_i) ==>
    omap drop_commitment res{1} = res{2})
- ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==>
+ ((pk_i, sk_i) \in keygen /\ arg{1} = (pk_i, sk_i) /\ arg{2} = pk_i ==>
    res{1} = omap drop_commitment res{2}); 1, 2: smt().
 - by proc; inline *; auto => /#.
 (* right hand side equiv to KLS HVZK final game *)
 transitivity HVZK_Hops.game7
-  ((pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res})
-  ((pk, sk) \in keygen /\ arg{1} = pk /\ arg{2} = pk ==>
+  ((pk_i, sk_i) \in keygen /\ arg{1} = (pk_i, sk_i) /\ arg{2} = pk_i ==> ={res})
+  ((pk_i, sk_i) \in keygen /\ arg{1} = pk_i /\ arg{2} = pk_i ==>
    res{1} = omap drop_commitment res{2}); 1, 2: smt().
-- by conseq (KLS_HVZK pk sk).
-by proc; auto => /#.
+- by conseq (KLS_HVZK pk_i sk_i).
+proc.
+seq 5 5: (={pk, c, resp}); first by sim.
+by auto => /#.
 qed.
 
 end section OpBasedHVZK.
