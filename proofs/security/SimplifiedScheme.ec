@@ -79,6 +79,10 @@ axiom eta_tau_leq_b : e * tau <= b.
 
 lemma cnorm_dC c tau : c \in dC tau => cnorm c <= 1 by smt(supp_dC).
 
+(* RHS supposedly 2 * gamma2 + 1 instead?
+ * but this is equivalent due to LHS being even. *)
+axiom ub_d : tau * 2 ^ d <= 2 * gamma2.
+
 type M.
 
 type challenge_t = Rq.
@@ -645,8 +649,23 @@ have W' : w - c ** s2 + c ** t0 =  mA *^ z - c ** base2shiftV t1.
   by rewrite !size_scalarv size_base2lowbitsV size_base2shiftV size_base2highbitsV.
 rewrite W'.
 have -> : w + c ** (mA *^ s1) = mA *^ z by rewrite /w /z mulmxvDr mulmx_scalarv.
-rewrite usehint_correctV. 
-  admit. (* inf_normv (c ** t0) <= gamma2 *)
+rewrite usehint_correctV.
+- rewrite size_addv !size_oppv !size_scalarv size_base2shiftV size_mulmxv.
+  have ->: size t0 = size t by smt(size_base2lowbitsV).
+  have ->: size t1 = size t by smt(size_base2highbitsV).
+  suff: size t = rows mA by smt().
+  by rewrite size_addv size_mulmxv /#.
+- have ->: 2 * gamma2 %/ 2 = gamma2 by smt().
+  rewrite inf_normvN.
+  apply (StdOrder.IntOrder.ler_trans (tau * (2 ^ d %/ 2))).
+  apply l1_inf_norm_product_ub.
+  + smt(tau_bound).
+  + admit.
+  + smt(supp_dC).
+  + suff: 2 ^ (d - 1) = 2 ^ d %/ 2 by smt(b2low_bound).
+    suff: 2 * 2 ^ (d - 1) = 2 ^ d by smt(Ring.IntID.expr_pred).
+    smt(Ring.IntID.exprS gt0_d).
+  + smt(tau_bound ub_d gt0_d).
 rewrite -addvA [(_ - _)%Vectors]addvC addvA -W.
 have {1}-> : w = w - c**s2 + c**s2. 
   rewrite -addvA [_+ c**s2]addvC addvN size_scalarv. 

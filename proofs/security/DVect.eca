@@ -223,16 +223,33 @@ lemma size_makeHintV z r :
 proof. by rewrite size_map size_zip !size_tolist. qed.
 
 lemma usehint_correctV (z r : vector) :
+  size z = size r =>
   inf_normv z <= alpha %/ 2 =>
   let h = makeHintV z r in
     useHintV h r = highBitsV (r + z).
 proof.
-move => ? /=.
-apply (eq_from_nth witness) => [|i rg_i].
-- rewrite size_useHintV size_highBitsV size_makeHintV size_addv.
-  (* Not true; need `size z = size r`. *)
-  admit.
-admitted.
+move => ?? /=.
+apply (eq_from_nth witness) => [|i [ge0_i ub_i]].
+- rewrite size_useHintV size_highBitsV size_makeHintV size_addv /#.
+have {ub_i} ub_i : i < size z by smt(size_useHintV).
+rewrite (nth_map (witness, witness)).
+- by rewrite size_zip size_makeHintV size_tolist /#.
+rewrite (nth_map witness).
+- by rewrite size_tolist size_addv /#.
+rewrite nth_zip.
+- by rewrite size_makeHintV size_tolist /#.
+rewrite (nth_map (witness, witness)).
+- by rewrite size_zip !size_tolist /#.
+rewrite nth_zip; first smt(size_tolist).
+rewrite /uncurry /=.
+rewrite nth_tolist //.
+rewrite nth_tolist => [/#|].
+rewrite nth_tolist; first smt(size_addv).
+rewrite get_addv.
+rewrite usehint_correct //.
+apply inf_normv_ler => //.
+smt(ge2_alpha).
+qed.
 
 lemma b2high_lowPv (t : vector) : 
   base2shiftV (base2highbitsV t) + base2lowbitsV t = t.
