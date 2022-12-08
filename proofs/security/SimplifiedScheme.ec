@@ -543,25 +543,23 @@ equiv sign_opbased_correct :
   OpBasedSig(H).sign ~ SimplifiedDilithium(H).sign :
   ={arg,glob H} ==> ={res,glob H}.
 proof.
-proc; inline *. 
-sp.
+proc; inline *; sp. 
 while (oz{1} = response{2} /\ ={c,sk,glob H,m} /\
        t0{2} = base2lowbitsV (mA{2} *^ s1{2} + s2{2}) /\
        (sk = (mA,s1,s2)){2}); 
   last by auto => /> /#.
 conseq (: _ ==> ={c, sk, glob H, m} /\ (sk = (mA,s1,s2)){2} 
                  /\ oz{1} = response{2}); 1: smt().
-seq 4 4 : (#pre /\ w{1} = w1{2} /\ P.pstate{1} = y{2} /\
-           (w = mA *^ y){2}).
-- call(: true). conseq />.
-  sp; wp.
+seq 4 4 : (#pre /\ w{1} = w1{2} /\ P.pstate{1} = y{2} /\ (w = mA *^ y){2} (* /\ y{2} \in dy *)).
+- call(: true); conseq />; sp; wp.
   rnd (fun (wy : DID.W * vector) => wy.`2) (fun y => (highBitsV (mA{2} *^ y), y)).
   skip => /> &m.
-  split => [y ? | ? [w y] * /=].
-  - rewrite /commit /=.
-    admit.
-  print commit.
-  admit.
+  split => [y ? | ? [w y] HR /=].
+  - rewrite /commit /= /dy /=. 
+    rewrite [mu1 _ (_,_)]dmap1E &(mu_eq) => y'. 
+    by rewrite /pred1 /(\o) /=; smt().
+  (* fixme: the rewrite below should not be necessary *)
+  by move: HR; rewrite /commit /=; case/supp_dmap => /#.
 conseq />. auto => /> &m. split => [|pass_chk]. 
 + rewrite /respond /= => -> -> //=.
 + by rewrite /respond /= ifF.
@@ -666,11 +664,17 @@ qed.
 
 (* -- OpBased is indeed zero-knowledge -- *)
 
-op check_znorm (v : vector) = (size v = l) /\ (inf_normv v < gamma1 - b).
-op dsimz = dvector (dRq_open (gamma1 - b)) l.
+(* predicate of "good" z vectors, i.e., correct length and small inf norm *)
+op goodz (z : vector) = (size z = l) /\ (inf_normv z < gamma1 - b).
 
-op line12_magic_number = (size (to_seq check_znorm))%r / (size (to_seq (support dy)))%r.
-op dsimoz : vector option distr = dlet (dbiased line12_magic_number) (fun b => if b then dmap dsimz Some else dunit None).
+(* fraction of "good" z compared to the domain of y *)
+op line12_magic_number = (size (to_seq goodz))%r / (size (to_seq (support dy)))%r.
+
+(* Dicectly sample oz (either a some good z or None) *)
+op dsimz = dvector (dRq_open (gamma1 - b)) l.
+op dsimoz : vector option distr = 
+   dlet (dbiased line12_magic_number) 
+        (fun b => if b then dmap dsimz Some else dunit None).
 
 module HVZK_Sim_Inst : DID.HVZK_Sim = {
   proc get_trans(pk : PK) = {
@@ -704,23 +708,23 @@ local lemma dsimz_ll :
   is_lossless dsimz.
 proof. smt(dRq_open_ll dvector_ll). qed.
 
-local lemma dsimz_supp : support dsimz = check_znorm.
+local lemma dsimz_supp : support dsimz = goodz.
 proof.
 apply fun_ext => z.
 rewrite supp_dvector; first smt(Top.gt0_l).
-rewrite /check_znorm inf_normv_ltr; first smt(b_gamma1_lt).
+rewrite /goodz inf_normv_ltr; first smt(b_gamma1_lt).
 smt(supp_dRq_open b_gamma1_lt).
 qed.
 
 local lemma dsimz1E z :
-  check_znorm z =>
-  mu1 dsimz z = inv (size (to_seq check_znorm))%r.
+  goodz z =>
+  mu1 dsimz z = inv (size (to_seq goodz))%r.
 proof.
 by rewrite mu1_uni_ll ?dsimz_uni ?dsimz_ll; smt(dsimz_supp).
 qed.
 
 local lemma masking_range c s1 z:
-  c \in FSa.dC => s1 \in ds1 => check_znorm z =>
+  c \in FSa.dC => s1 \in ds1 => goodz z =>
   (z - c ** s1) \in dy.
 proof.
 move => c_supp s1_supp z_supp.
@@ -742,10 +746,10 @@ split.
   smt(supp_dvector supp_dRq gt0_eta Top.gt0_l).
 qed.
 
-local lemma is_finite_check_znorm :
-  is_finite check_znorm.
+local lemma is_finite_goodz :
+  is_finite goodz.
 proof.
-suff: check_znorm = (fun (v : vector) => size v = l /\
+suff: goodz = (fun (v : vector) => size v = l /\
     forall i, 0 <= i < l => (fun r => cnorm r < gamma1 - b) v.[i]).
 - move => ->.
   by rewrite is_finite_vector (finite_leq predT) // is_finite_Rq.
@@ -769,24 +773,24 @@ rewrite supp_dvector //; smt(Top.gt0_l).
 qed.
 
 local lemma mask_size :
-  size (to_seq check_znorm) <= size (to_seq (support dy)).
+  size (to_seq goodz) <= size (to_seq (support dy)).
 proof.
 apply uniq_leq_size => [|v].
-- apply uniq_to_seq; exact is_finite_check_znorm.
-rewrite mem_to_seq; first exact is_finite_check_znorm.
+- apply uniq_to_seq; exact is_finite_goodz.
+rewrite mem_to_seq; first exact is_finite_goodz.
 rewrite mem_to_seq; first exact is_finite_dy.
 rewrite supp_dvector; first smt(Top.gt0_l).
-rewrite /check_znorm inf_normv_ltr; first smt(b_gamma1_lt).
+rewrite /goodz inf_normv_ltr; first smt(b_gamma1_lt).
 suff: (forall x, (cnorm x < gamma1 - b => x \in dRq_ (gamma1 - 1))) by smt().
 move => x H.
 by rewrite supp_dRq; smt(gt0_b b_gamma1_lt).
 qed.
 
 local lemma mask_nonzero :
-  0 < size (to_seq check_znorm).
+  0 < size (to_seq goodz).
 proof.
-suff: zerov l \in (to_seq check_znorm) by smt(size_eq0 List.size_ge0).
-rewrite mem_to_seq; first exact is_finite_check_znorm.
+suff: zerov l \in (to_seq goodz) by smt(size_eq0 List.size_ge0).
+rewrite mem_to_seq; first exact is_finite_goodz.
 split; first smt(size_zerov Top.gt0_l).
 by rewrite inf_normv_zero; smt(b_gamma1_lt).
 qed.
@@ -802,10 +806,10 @@ proof. smt(dvector_uni dRq__uni). qed.
 local op transz (c : Rq) s1 =
   dmap dy (fun y =>
     let z' = y + c ** s1 in
-    if check_znorm z' then Some z' else None).
+    if goodz z' then Some z' else None).
 
 local lemma line12_magic_some :
-  forall c s1 z0, c \in FSa.dC => s1 \in ds1 => check_znorm z0 =>
+  forall c s1 z0, c \in FSa.dC => s1 \in ds1 => goodz z0 =>
     mu1 (transz c s1) (Some z0) = 1%r / (size (to_seq (support dy)))%r.
 proof.
 move => c s1 z0 c_valid s1_valid z0_valid.
@@ -823,7 +827,7 @@ by rewrite mu1_uni_ll ?dy_uni ?dy_ll; smt(masking_range).
 qed.
 
 local lemma line12_outofbound :
-  forall c s1 z0, c \in FSa.dC => s1 \in ds1 => ! (check_znorm z0) =>
+  forall c s1 z0, c \in FSa.dC => s1 \in ds1 => ! (goodz z0) =>
     (Some z0) \notin (transz c s1).
 proof.
 move => c s1 z0 c_valid s1_valid z0_invalid.
@@ -832,7 +836,7 @@ qed.
 
 local lemma line12_magic_none :
   forall c s1, c \in FSa.dC => s1 \in ds1 =>
-    mu1 (transz c s1) None = 1%r - (size (to_seq check_znorm))%r / (size (to_seq (support dy)))%r.
+    mu1 (transz c s1) None = 1%r - (size (to_seq goodz))%r / (size (to_seq (support dy)))%r.
 proof.
 move => c s1 c_valid s1_valid.
 have sumz : (sum (fun z => mu1 (transz c s1) z) = 1%r).
@@ -840,15 +844,15 @@ have sumz : (sum (fun z => mu1 (transz c s1) z) = 1%r).
 rewrite sumD1_None /= in sumz.
 - by apply summable_mu1.
 suff: sum (fun (y : vector) => mu1 (transz c s1) (Some y)) = 
-  (size (to_seq check_znorm))%r / (size (to_seq (support dy)))%r by smt().
+  (size (to_seq goodz))%r / (size (to_seq (support dy)))%r by smt().
 (* bug: Doesn't let me do `suff {sumz}: ...` *)
 clear sumz.
 have -> :
   (fun z => mu1 (transz c s1) (Some z)) =
-  (fun z => if check_znorm z then 1%r / (size (to_seq (support dy)))%r else 0%r).
+  (fun z => if goodz z then 1%r / (size (to_seq (support dy)))%r else 0%r).
 - apply fun_ext.
   smt(line12_magic_some supportPn line12_outofbound).
-by rewrite sum_characteristic // is_finite_check_znorm.
+by rewrite sum_characteristic // is_finite_goodz.
 qed.
 
 local lemma line12_magic c s1 :
@@ -863,7 +867,7 @@ apply eq_distr => z; case z.
   rewrite dunit1E dbiased1E /line12_magicnumber /=.
   rewrite clamp_id; smt(mask_nonzero mask_size).
 - move => z.
-  case (check_znorm z).
+  case (goodz z).
   + move => z_valid.
     rewrite line12_magic_some // dlet1E sum_over_bool /=.
     rewrite dunit1E /= dmap1E /pred1 /(\o) /=.
@@ -897,7 +901,7 @@ local module HVZK_Hops = {
     c <$ FSa.dC;
     y <$ dy;
     z <- y + c ** s1;
-    if(check_znorm z) {
+    if(goodz z) {
       w' <- mA *^ y - c ** s2;
       resp <- if inf_normv (lowBitsV w') < gamma2 - b then
         let h = makeHintV (- c ** t0) (mA *^ y - c ** s2 + c ** t0) in Some (z, h)
@@ -919,7 +923,7 @@ local module HVZK_Hops = {
     c <$ FSa.dC;
     y <$ dy;
     z <- y + c ** s1;
-    if(check_znorm z) {
+    if(goodz z) {
       w' <- mA *^ z - c ** t;
       resp <- if inf_normv (lowBitsV w') < gamma2 - b then
         let h = makeHintV (- c ** t0) (w' + c ** t0) in Some (z, h)
@@ -941,7 +945,7 @@ local module HVZK_Hops = {
     c <$ FSa.dC;
     y <$ dy;
     z <- y + c ** s1;
-    oz <- if check_znorm z then Some z else None;
+    oz <- if goodz z then Some z else None;
     if(oz <> None) {
       z <- oget oz;
       w' <- mA *^ z - c ** t;
@@ -1145,16 +1149,16 @@ transitivity HVZK_Hops.game6
 by conseq (hop7_correct pk sk) => /#.
 qed.
 
-op drop_commitment (wcz : commit_t * challenge_t * response_t) = (wcz.`2, wcz.`3).
-
 equiv HVZK_Sim_correct k :
   DID.Honest_Execution(OpBased.P, OpBased.V).get_trans ~ HVZK_Sim_Inst.get_trans :
   k \in keygen /\ arg{1} = k /\ arg{2} = k.`1 ==> ={res}.
 proof.
 case k => pk_i sk_i.
+pose drop_commitment (wcz : commit_t * challenge_t * response_t) := (wcz.`2, wcz.`3).
 (* Commitment recoverable - can drop the commitment *)
-conseq (_: (pk_i, sk_i) \in keygen /\ arg{1} = (pk_i, sk_i) /\ arg{2} = pk_i ==>
-       omap drop_commitment res{1} = omap drop_commitment res{2})
+conseq 
+  (_: (pk_i, sk_i) \in keygen /\ arg{1} = (pk_i, sk_i) /\ arg{2} = pk_i ==>
+      omap drop_commitment res{1} = omap drop_commitment res{2})
   (_: arg = (pk_i, sk_i) /\ (pk, sk) \in keygen ==>
       res <> None => let (w, c, z) = oget res in w = (recover pk_i c z))
   (_: arg = pk_i ==>
@@ -1168,7 +1172,7 @@ transitivity HVZK_Hops.game1
    omap drop_commitment res{1} = res{2})
  ((pk_i, sk_i) \in keygen /\ arg{1} = (pk_i, sk_i) /\ arg{2} = pk_i ==>
    res{1} = omap drop_commitment res{2}); 1, 2: smt().
-- by proc; inline *; auto => /#.
+ - by proc; inline *; auto => /#.
 (* right hand side equiv to KLS HVZK final game *)
 transitivity HVZK_Hops.game7
   ((pk_i, sk_i) \in keygen /\ arg{1} = (pk_i, sk_i) /\ arg{2} = pk_i ==> ={res})
@@ -1176,8 +1180,7 @@ transitivity HVZK_Hops.game7
    res{1} = omap drop_commitment res{2}); 1, 2: smt().
 - by conseq (KLS_HVZK pk_i sk_i).
 proc.
-seq 5 5: (={pk, c, resp}); first by sim.
-by auto => /#.
+by sim : (={pk, c, resp}); smt().
 qed.
 
 end section OpBasedHVZK.
