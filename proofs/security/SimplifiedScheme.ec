@@ -623,45 +623,45 @@ have sk_sizes: size mA = (k, l) /\ size s1 = l /\ size s2 = k.
 - by apply sk_size; exists (mA', t').
 have rg_s2: s2 \in ds2 by smt(keygen_supp_decomp).
 case /pk_decomp valid_keys => [??]; subst.
-move => [w0 y] @/commit /= /supp_dmap [y' [y'_supp [??]]] c c_supp H w c' z; subst.
-have {H} H /=: (respond (mA, s1, s2) c y' <> None) by smt().
-rewrite H /respond /= => [#] *; subst.
+move => [w0 y0] @/commit /= /supp_dmap [y [y_supp [??]]] c c_supp H w c' z; subst.
+have {H} H /=: (respond (mA, s1, s2) c y <> None) by smt().
+rewrite H /respond /= => [#] *; subst c' w z.
 rewrite ifT 1:/# /recover /=.
-(* From here, highbits Ay is close to highbits (Az - ct).
- * First expand out Az-ct. *)
-have ->: (mA *^ (y' + c' ** s1) - c' ** base2shiftV (base2highbitsV (mA *^ s1 + s2)) =
-         mA *^ y' - c' ** s2 + c' ** base2lowbitsV (mA *^ s1 + s2)).
-- (* AYYYYYYYYYY ARITHMATICS *)
-(**
-  rewrite mulmxvDr scalarvDr mulmx_scalarv -addvA; congr.
-  rewrite oppvD addvA addvN. 
-  have -> : size (c' ** (mA *^ s1)) = size (- c' ** s2)
-    by smt(size_scalarv size_mulmxv size_oppv).
-  by rewrite add0v.
-**) admit.
-rewrite usehint_correctV.
-- (* stuff that looks terrible. *)
-  (* depends on bound on lowbits2V. *)
-  admit.
-have ->: mA *^ y' - c' ** s2 + c' ** base2lowbitsV (mA *^ s1 + s2) -
-   c' ** base2lowbitsV (mA *^ s1 + s2) =
-   mA *^ y' - c' ** s2.
-- (* arithematic at its finest *)
-  (* smt(addvA addvC addvN size_scalarv size_mulmxv size_dvector). *)
-  admit.
-have ->: highBitsV (mA *^ y') = highBitsV (mA *^ y' - c' ** s2 + c' ** s2).
-- (* more arithmatics *)
-  rewrite -addvA [_ + c' ** _]addvC addvN [_ + zerov _]addvC lin_add0v //.
-  smt(size_scalarv size_mulmxv size_dvector).
-apply (hide_lowV _ _ b);
+(* recover some definitions *)
+pose t := mA *^ s1 + s2.
+pose t1 := base2highbitsV t.
+pose t0 := base2lowbitsV t.
+pose w := mA *^ y.
+pose z := y + c ** s1.
+rewrite mulmxvDr mulmx_scalarv -/w. 
+have W : w - c ** s2 = mA *^ z - c ** t0 - c ** base2shiftV t1.
+  rewrite /w /z mulmxvDr -!addvA; congr.
+  rewrite mulmx_scalarv -!scalarvN -2!scalarvDr. congr. 
+  rewrite -oppvD [t0+_]addvC b2high_lowPv /t. 
+  by rewrite oppvD addvA addvN size_mulmxv /= lin_add0v /#.
+have W' : w - c ** s2 + c ** t0 =  mA *^ z - c ** base2shiftV t1.
+  rewrite W -!addvA; congr; rewrite [_ + c**t0]addvC addvA [_ + c**t0]addvC addvN.
+  rewrite lin_add0v // size_oppv.
+  by rewrite !size_scalarv size_base2lowbitsV size_base2shiftV size_base2highbitsV.
+rewrite W'.
+have -> : w + c ** (mA *^ s1) = mA *^ z by rewrite /w /z mulmxvDr mulmx_scalarv.
+rewrite usehint_correctV. 
+  admit. (* inf_normv (c ** t0) <= gamma2 *)
+rewrite -addvA [(_ - _)%Vectors]addvC addvA -W.
+have {1}-> : w = w - c**s2 + c**s2. 
+  rewrite -addvA [_+ c**s2]addvC addvN size_scalarv. 
+  rewrite addvC lin_add0v //; smt(size_mulmxv size_dvector).
+have [C1 C2] {H} : inf_normv z < gamma1 - b /\ 
+                   inf_normv (lowBitsV (mA *^ y - c ** s2)) < gamma2 - b by smt(). 
+apply (hide_lowV _ _ b); 
   1,2,3,5: smt(size_oppv size_scalarv size_mulmxv size_dvector size_addv
                gt0_b b_round_gamma2_lt).
-apply: StdOrder.IntOrder.ler_trans eta_tau_leq_b.
-rewrite mulrC.
+apply: StdOrder.IntOrder.ler_trans eta_tau_leq_b; rewrite mulrC.
 apply l1_inf_norm_product_ub; 1..3: smt(tau_bound gt0_eta supp_dC).
+(* Lemma *)
 apply inf_normv_ler =>[|i rg_i]; first by smt(gt0_eta).
 rewrite supp_dvector in rg_s2; first by smt(Top.gt0_k).
-by rewrite -supp_dRq; smt(gt0_eta).
+by rewrite -supp_dRq; smt(gt0_eta). 
 qed.
 
 (* -- OpBased is indeed zero-knowledge -- *)
@@ -1275,4 +1275,3 @@ admitted.
 
 end section PROOF.
 
-**)
