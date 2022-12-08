@@ -1250,10 +1250,11 @@ rewrite polyLXE; first smt(size_mkseq).
 exact nth_mkseq.
 qed.
 
+(*
 lemma poly_high2_low2P d r :
   1 <= d =>
   2 ^ d < q =>
-  (poly_leftshift2 d (poly_highbits2 d r) + poly_lowbits2 d r)%PolyReduceZq = r.  
+  (poly_leftshift2 d (poly_highbits2 d r) + poly_lowbits2 d r)%PolyReduceZq.ComRing = r.  
 proof.
 move => ??.
 apply polyXnD1_eqP => i ?.
@@ -1263,8 +1264,26 @@ rewrite poly_highbits2_correct //.
 rewrite poly_lowbits2_correct //.
 exact high2_low2P.
 qed.
+*)
 
-lemma polylowbits2_small d x :
+lemma poly_rm_high2 d r :
+  1 <= d =>
+  2 ^ d < q =>
+  r - poly_leftshift2 d (poly_highbits2 d r) = poly_lowbits2 d r.
+proof.
+move => ??.
+apply polyXnD1_eqP => i ?.
+rewrite rcoeffD -rcoeffN.
+rewrite poly_leftshift2_correct //.
+rewrite poly_highbits2_correct //.
+rewrite poly_lowbits2_correct //.
+suff: r.[i] = leftshift2 d (highbits2 d r.[i]) + lowbits2 d r.[i].
+- move => {1}->.
+  by ring.
+smt(high2_low2P).
+qed.
+
+lemma poly_lowbits2_small d x :
   1 <= d =>
   `|poly_lowbits2 d x| <= 2 ^ (d - 1).
 proof.
@@ -1272,4 +1291,35 @@ move => ?.
 apply inf_norm_le => [|i rg_i]; first exact expr_ge0.
 rewrite poly_lowbits2_correct //.
 exact lowbits2_small.
+qed.
+
+op usehint_preimage alpha h r = choiceb (fun x => highbits alpha x = usehint alpha h r) witness.
+
+lemma usehint_preimageP alpha h r :
+  2 <= alpha <= q %/ 2 =>
+  2 %| alpha =>
+  alpha %| (q - 1) =>
+  highbits alpha (usehint_preimage alpha h r) = usehint alpha h r.
+proof.
+move => *.
+rewrite /usehint_preimage.
+apply (choicebP (fun (x : zmod) => highbits alpha x = usehint alpha h r) witness).
+print usehint_im.
+have [x' ?]: exists x, highbits alpha x = usehint alpha h r.
+- exact usehint_im.
+by exists x'.
+qed.
+
+lemma poly_usehint_im alpha hs r :
+  2 <= alpha <= q %/ 2 =>
+  2 %| alpha =>
+  alpha %| (q - 1) =>
+  image (poly_highbits alpha) (poly_usehint alpha hs r).
+proof.
+move => *.
+exists (polyLX (mkseq (fun i => usehint_preimage alpha (nth false hs i) r.[i]) n)).
+apply eq_in_mkseq => i rg_i /=.
+rewrite polyLXE; first smt(size_mkseq).
+rewrite nth_mkseq //=.
+exact usehint_preimageP.
 qed.

@@ -132,7 +132,7 @@ axiom hide_low2 alpha (r : Rq) (h : hint_t) :
 
 axiom power2round_bound d (r : Rq) :
   1 <= d =>
-  2 ^ (d + 1) <= q =>
+  2 ^ d < q =>
   cnorm (r - shift2 d (power2round d r)) <= 2^(d-1).
 
 end Flex.

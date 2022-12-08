@@ -151,6 +151,9 @@ rewrite -!StdOrder.IntOrder.Domain.intmulpE; 1,2: smt().
 by rewrite !intmulz.
 qed.
 
+import PolyReduceZq.
+import PolyReduceZq.ComRing.
+
 clone DRing as DR with
   op q <= q,
   op n <= Round.n,
@@ -167,10 +170,10 @@ clone DRing as DR with
   op Flex.lowBits <= poly_lowbits,
   type Flex.high2 <= int list,
   type hint_t <= bool list,
-  (* TODO poly_makehint missing *)
+  op Flex.makeHint <= poly_makehint,
   op Flex.useHint <= poly_usehint,
-  op Flex.power2round <= fun d => poly_highbits (2 ^ d),
-  op Flex.shift2 <= fun d => poly_leftshift (2 ^ d)
+  op Flex.power2round <= fun d => poly_highbits2 d,
+  op Flex.shift2 <= fun d => poly_leftshift2 d
 proof *.
 realize prime_q by exact prime_q.
 realize gt0_n by exact gt0_n.
@@ -230,7 +233,11 @@ qed.
 realize l1_cnorm_product_ub by exact l1_inf_norm_product.
 realize cnorm0 by exact inf_norm0.
 realize cnorm_triangle by exact inf_norm_triangle.
-realize Flex.usehint_correct by admit.
-realize Flex.usehint_insub by admit.
+realize Flex.usehint_correct by exact poly_use_makehint.
+realize Flex.usehint_insub by exact poly_usehint_im.
 realize Flex.hide_low2 by exact poly_hide_low2.
-realize Flex.power2round_bound by admit.
+realize Flex.power2round_bound.
+move => d r *.
+rewrite poly_rm_high2 //.
+exact poly_lowbits2_small.
+qed.
