@@ -1118,7 +1118,7 @@ qed.
 (* powers of 2 stuff *)
 
 op lowbits2 (d : int) (r : zmod) = inzmod (cmod (asint r) (2 ^ d)).
-op round2 (d : int) (r : zmod) = asint r - asint (lowbits2 d r).
+op round2 (d : int) (r : zmod) = asint r - crepr (lowbits2 d r).
 op rightshift2 (d : int) (r : int) = r %/ (2 ^ d).
 op highbits2 (d : int) (r : zmod) = rightshift2 d (round2 d r).
 op leftshift2 (d : int) (r : int) = inzmod ((2 ^ d) * r).
@@ -1147,7 +1147,48 @@ qed.
 
 lemma round2_is_multiple d x :
   1 <= d =>
+  (2 ^ d) < q =>
   (2 ^ d) %| round2 d x.
 proof.
-move => ge1_d.
-admitted.
+move => ge1_d rg_d.
+rewrite /round2 /lowbits2.
+pose y := asint x.
+rewrite inzmodK_centered; 1,2: smt(cmod_small ler_eexpr).
+rewrite /(%|) /cmod /mod_to_cmod /=.
+case (y %% 2 ^ d <= 2 ^ d %/ 2) => *.
+- by rewrite modzNDmr.
+have ->: y - (y %% 2 ^ d - 2 ^ d) = y - y %% 2 ^ d + 2 ^ d by ring.
+by rewrite modzDr modzNDmr.
+qed.
+
+lemma leftshift2_rightshift2K d r :
+  ((2 ^ d) %| r) => leftshift2 d (rightshift2 d r) = inzmod r.
+proof.
+move => power2_r.
+rewrite /leftshift2 /rightshift2.
+congr.
+suff: r = (r %/ 2 ^ d) * (2 ^ d) by smt().
+apply eqz_mul => //.
+smt(expr_gt0).
+qed.
+
+lemma round2_low2P d r :
+  inzmod (round2 d r) + lowbits2 d r = r.
+proof.
+rewrite /round2.
+rewrite inzmodD inzmodN.
+rewrite creprK asintK.
+by ring.
+qed.
+
+lemma high2_low2P d r :
+  1 <= d =>
+  2 ^ d < q =>
+  leftshift2 d (highbits2 d r) + lowbits2 d r = r.
+proof.
+move => ??.
+rewrite /highbits2.
+rewrite leftshift2_rightshift2K.
+- exact round2_is_multiple.
+exact round2_low2P.
+qed.
