@@ -1062,7 +1062,6 @@ lemma poly_leftshift_inj alpha xs ys :
   2 <= alpha && alpha <= q %/ 2 =>
   2 %| alpha =>
   alpha %| (q - 1) =>
-
   size xs = n =>
   size ys = n =>
   (forall x, x \in xs => image (highbits alpha) x) =>
@@ -1086,7 +1085,6 @@ lemma poly_usehint_correct alpha h p i :
   nth 0 (poly_usehint alpha h p) i = usehint alpha (nth false h i) p.[i].
 proof.
 move => rg_i.
-rewrite /poly_usehint /=.
 by rewrite nth_mkseq.
 qed.
 
@@ -1096,6 +1094,31 @@ proof.
 rewrite /poly_usehint.
 rewrite size_mkseq.
 smt(ge0_n).
+qed.
+
+op poly_makehint alpha (zs rs : polyXnD1) =
+  mkseq (fun i => makehint alpha zs.[i] rs.[i]) n.
+
+lemma poly_makehint_correct alpha zs rs i :
+  0 <= i < n =>
+  nth false (poly_makehint alpha zs rs) i = makehint alpha zs.[i] rs.[i].
+proof.
+move => rg_i.
+by rewrite nth_mkseq.
+qed.
+
+lemma poly_use_makehint alpha (zs rs : polyXnD1) :
+  2 <= alpha <= q %/ 2 =>
+  2 %| alpha =>
+  alpha %| (q - 1) =>
+  `|zs| <= alpha %/ 2 =>
+  let hs = poly_makehint alpha zs rs in poly_usehint alpha hs rs = poly_highbits alpha (rs + zs).
+proof.
+move => /= *.
+apply eq_in_mkseq => i rg_i /=.
+rewrite poly_makehint_correct //.
+rewrite rcoeffD usehint_correct //.
+smt(inf_norm_poly_ler).
 qed.
 
 import ComRing.
@@ -1191,4 +1214,62 @@ rewrite /highbits2.
 rewrite leftshift2_rightshift2K.
 - exact round2_is_multiple.
 exact round2_low2P.
+qed.
+
+(* Poly ver. of base2 stuff *)
+
+op poly_lowbits2 d p = polyLX (mkseq (fun i => lowbits2 d p.[i]) n).
+(* op poly_round2 d p = mkseq (fun i => round2 d p.[i]) n.
+   op poly_rightshift2 d p = mkseq (fun i => rightshift2 d (nth 0 p i)) n. *)
+op poly_highbits2 d p = mkseq (fun i => highbits2 d p.[i]) n.
+op poly_leftshift2 d p = polyLX (mkseq (fun i => leftshift2 d (nth 0 p i)) n).
+
+lemma poly_lowbits2_correct d p i :
+  0 <= i < n =>
+  (poly_lowbits2 d p).[i] = lowbits2 d p.[i].
+proof.
+move => rg_i.
+rewrite polyLXE; first smt(size_mkseq).
+exact nth_mkseq.
+qed.
+
+lemma poly_highbits2_correct d p i :
+  0 <= i < n =>
+  nth 0 (poly_highbits2 d p) i = highbits2 d p.[i].
+proof.
+move => ?.
+exact nth_mkseq.
+qed.
+
+lemma poly_leftshift2_correct d p i :
+  0 <= i < n =>
+  (poly_leftshift2 d p).[i] = leftshift2 d (nth 0 p i).
+proof.
+move => rg_i.
+rewrite polyLXE; first smt(size_mkseq).
+exact nth_mkseq.
+qed.
+
+lemma poly_high2_low2P d r :
+  1 <= d =>
+  2 ^ d < q =>
+  (poly_leftshift2 d (poly_highbits2 d r) + poly_lowbits2 d r)%PolyReduceZq = r.  
+proof.
+move => ??.
+apply polyXnD1_eqP => i ?.
+rewrite rcoeffD.
+rewrite poly_leftshift2_correct //.
+rewrite poly_highbits2_correct //.
+rewrite poly_lowbits2_correct //.
+exact high2_low2P.
+qed.
+
+lemma polylowbits2_small d x :
+  1 <= d =>
+  `|poly_lowbits2 d x| <= 2 ^ (d - 1).
+proof.
+move => ?.
+apply inf_norm_le => [|i rg_i]; first exact expr_ge0.
+rewrite poly_lowbits2_correct //.
+exact lowbits2_small.
 qed.
