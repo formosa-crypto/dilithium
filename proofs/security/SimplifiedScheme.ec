@@ -658,7 +658,9 @@ rewrite usehint_correctV.
   apply (StdOrder.IntOrder.ler_trans (tau * (2 ^ d %/ 2))).
   apply l1_inf_norm_product_ub.
   + smt(tau_bound).
-  + admit.
+  + suff: 2 <= (2 ^ d) by smt().
+    apply StdOrder.IntOrder.ler_eexpr => //.
+    exact gt0_d.
   + smt(supp_dC).
   + suff: 2 ^ (d - 1) = 2 ^ d %/ 2 by smt(b2low_bound).
     suff: 2 * 2 ^ (d - 1) = 2 ^ d by smt(Ring.IntID.expr_pred).
