@@ -2,7 +2,7 @@ require import Int Real List FSet Distr RealExp SmtMap SDist StdOrder.
 require import DistrExtras.
 import RealOrder.
 
-require DigitalSignaturesRO PROM ReprogOnce Collision.
+require DigitalSignaturesRO PROM.
 require FSabort.
 
 (* ID scheme types and definitions *)

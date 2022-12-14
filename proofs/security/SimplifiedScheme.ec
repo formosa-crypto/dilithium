@@ -1231,9 +1231,67 @@ proc*; call (: ={glob H}); last done.
 - by symmetry; conseq (verify_opbased_correct H) => /#.
 qed.
 
+clone Generic as FSaG with
+  op qS <= qS,
+  op qH <= qH + Top.qS
+proof* by smt(qS_ge0 qH_ge0). (* FIXME: track down global axioms in section ... *)
+
+(* Generic FS+abort transform of the OpBased ID scheme *)
+module OpBasedSigG     = FSaG.IDS_Sig(OpBased.P,OpBased.V).
+module O_CMA_Default_G = FSaG.DSS.DS.Stateless.O_CMA_Default.
+module RO_G            = FSaG.DSS.PRO.RO.
+
+module EF_CMA_RO_G = FSaG.DSS.EF_CMA_RO.
+module EF_KOA_RO_G = FSaG.DSS.EF_KOA_RO.
+
+clone FSa_CRtoGen as CG with
+  theory FSa <- FSa,
+  theory FSaCR <- FSaCR,
+  theory FSaG <- FSaG. (* FIXME: track down global axioms in section ... *)
+
+(* TODO: give reasonable instantiations for alpha and gamma (and rename these ...) *)
+clone import FSa_CMAtoKOA as CMAtoKOA with
+  theory FSa <- FSa,
+  theory FSaG <- FSaG,
+  theory OP <- OpBased
+proof *. (* FIXME: track down global axioms in section *)
+realize alpha_gt0 by admit.
+realize gamma_gt0 by admit. 
+realize check_entropy_correct by admit. 
+realize most_keys_high_entropy by admit. 
+realize p_rej_bounded by admit. 
+realize rej_bound by admit. 
+realize sk0P by admit. 
+
+
+module (RedCR (A : Top.FSaG.DSS.Adv_EFKOA_RO) : Adv_EFKOA_RO) (H : Hash) = { 
+  proc forge (pk : PK) : M*Sig = { 
+    var m,sig,w,z,c;
+    (m,sig) <@ A(H).forge(pk);
+    (w,z) <- sig;
+    c <@ H.get(w,m);
+    return (m,(c,z));
+  }
+}.
+
+require import SmtMap.
+
 section PROOF.
 
-declare module A <: Adv_EFCMA_RO{-O_CMA_Default,-RO,-OpBasedSig}.
+declare module A <: Adv_EFCMA_RO{
+  -O_CMA_Default,-RO,-OpBasedSig,
+  -O_CMA_Default_G, -RO_G, -OpBasedSigG,
+  -ORedKOA,-CountS,-CountH
+}.
+
+(* TODO: counting wappers for CR transform ... 
+adeclare axiom A_bound 
+ (SO <: FSaCR.DSS.DS.Stateless.SOracle_CMA{-A,-CountH, -CountS}) 
+ (H <: Hash{-A,-CountH,-CountS}) : 
+ hoare[ A(CountH(H),CountS(SO)).forge : 
+        CountH.qh = 0 /\ CountS.qs = 0 ==> 
+        CountH.qh <= qH /\ CountS.qs <= qS].
+*)
 
 op bound : real. (* TODO *)
 
@@ -1267,34 +1325,73 @@ qed.
 
 (*** Step 2 : Reduce to the case for general (i.e., not commitment recoverable schemes) ***)
 
-local clone Generic as FSaG with
-  op qS <= qS,
-  op qH <= qH + Top.qS 
-proof* by smt(qS_ge0 qH_ge0).
-
-(* Generic FS+abort transform of the OpBased ID scheme *)
-local module OpBasedSigG = FSaG.IDS_Sig(OpBased.P,OpBased.V).
-
-local module EF_CMA_RO_G = FSaG.DSS.EF_CMA_RO.
-
-(* raises : module `FSa.ID.Imp_Game` is incompatible 
-local clone import FSa_CRtoGen as CG with
-  theory FSa <= FSa,
-  theory FSaCR <= FSaCR,
-  theory FSaG <= FSaG.
-*)
-
-(* Need the reduction from the cloned theory ... 
 local lemma pr_cr_gen &m : 
-  Pr [ EF_CMA_RO(OpBasedSig, A, RO,O_CMA_Default).main() @ &m : res ] = 
-  Pr [ EF_CMA_RO_G(OpBasedSigG, A, RO,O_CMA_Default).main() @ &m : res ].
-*)
-
-lemma SimplifiedDilithium_secure &m : 
-  Pr [ EF_CMA_RO(SimplifiedDilithium, A, RO,O_CMA_Default).main() @ &m : res ] <= bound.
+  Pr [ EF_CMA_RO  (OpBasedSig , A            , RO, O_CMA_Default).main() @ &m : res ] <=
+  Pr [ EF_CMA_RO_G(OpBasedSigG, CG.RedFSaG(A), RO_G, O_CMA_Default_G).main() @ &m : res ].
 proof.
-(* Step 1 *)
+have H := CG.FSa_CommRecov_Generic OpBased.P OpBased.V _ A &m; 1: by islossless.
+exact (StdOrder.RealOrder.ler_trans _ _ _ H).
+qed.
+
+(*** Step 3 : Instantiate the CMA to KOA reduction *)
+
+local module B = RedKOA(CG.RedFSaG(A),HVZK_Sim_Inst).
+
+local lemma pr_cma_koa &m : 
+  Pr [ EF_CMA_RO_G(OpBasedSigG, CG.RedFSaG(A), RO_G, O_CMA_Default_G).main() @ &m : res ] <= 
+  Pr [ EF_KOA_RO_G(OpBasedSigG, B,RO_G).main() @ &m : res ] + 
+  reprog_bound + 2%r * gamma.
+proof.
+have H := CMAtoKOA.FSabort_bound (CG.RedFSaG(A)) _ _ HVZK_Sim_Inst _ &m.
+- admit. (* Query bound for RedFSaG *)
+- admit. (* RedFSaG.forge is lossless *)
+- apply HVZK_Sim_correct.
+exact (StdOrder.RealOrder.ler_trans _ _ _ H).
+qed.
+
+(*** Step 4 : Go back to the KOA propblem for the actual scheme *)
+
+local lemma verify_recover pk w c z : 
+  verify pk w c z => recover pk c z = w.
+proof. rewrite /verify /recover. smt(). qed.
+
+local lemma pr_koa_cr &m (B <: Top.FSaG.DSS.Adv_EFKOA_RO{-RO.m, -Top.FSaG.DSS.PRO.RO}) : 
+  Pr [ EF_KOA_RO_G(OpBasedSigG, B,RO_G).main() @ &m : res ] <= 
+  Pr [ EF_KOA_RO(OpBasedSig,RedCR(B),RO).main() @ &m : res].
+proof.
+byequiv => //; proc. 
+inline{1}2; inline{2}2. inline{2}3.
+seq 3 4 : (={pk} /\ m{1} = m0{2} /\ sig{1} = sig0{2} /\ Top.FSaG.DSS.PRO.RO.m{1} = RO.m{2}). 
+- inline*. 
+  call(: Top.FSaG.DSS.PRO.RO.m{1} = RO.m{2}); [by proc;inline*; auto| by auto].
+wp.
+inline{1} 1. inline{2} 4. wp. sp. 
+seq 1 1 : (#pre /\ ={c} /\ (RO.m.[w,m0] = Some c){2}).
+- inline*; conseq />; auto => />; smt(get_setE).
+inline V.verify. sp.
+inline RO.get. 
+case (result{1}); last by conseq (:_ ==> true); [smt()|islossless].
+rcondf{2} ^if; 1: by move => &h; auto => &h' />; smt(verify_recover).
+rcondt{2} ^if; 1: by move => &h; auto => &h' />; smt(verify_recover).
+auto => />; smt(verify_recover).
+qed.
+
+(* lemma eq_KOA &m :  *)
+(*   Pr [EF_KOA_RO_G(OpBasedSigG, B,RO_G).main() @ &m : res ] =  *)
+(*   Pr [EF_KOA_RO(SimplifiedDilithium,B,H).main() @ &m : res ]. *)
+  
+(* TODO: spell out bound *)
+lemma SimplifiedDilithium_secure &m : 
+  Pr [ EF_CMA_RO(SimplifiedDilithium, A, RO,O_CMA_Default).main() @ &m : res ] <= 
+  bound + reprog_bound + 2%r * gamma.
+proof.
 rewrite pr_code_op.
+apply (StdOrder.RealOrder.ler_trans _ _ _ (pr_cr_gen &m)).
+apply (StdOrder.RealOrder.ler_trans _ _ _ (pr_cma_koa &m)).
+rewrite !StdOrder.RealOrder.ler_add2r.
+apply (StdOrder.RealOrder.ler_trans _ _ _ (pr_koa_cr &m B)).
+ (* have := KOA_bound (RedCR(B)). *) (* WHY IS THE ARGUMENT NOT ALLOWED TO USE A??? *)
+(* apply (StdOrder.RealOrder.ler_trans _ _ _ (KOA_bound (RedCR(B)) &m)). *)
 admitted.
 
 end section PROOF.
