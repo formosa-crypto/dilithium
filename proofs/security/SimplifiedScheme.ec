@@ -1274,26 +1274,59 @@ module (RedCR (A : Top.FSaG.DSS.Adv_EFKOA_RO) : Adv_EFKOA_RO) (H : Hash) = {
   }
 }.
 
+module RedNMA(A : Adv_EFCMA_RO) = RedCR(RedKOA(CG.RedFSaG(A),HVZK_Sim_Inst)).
+
 require import SmtMap.
+
+
+module CountS (O : SOracle_CMA) = { 
+  var qs : int
+  proc init() = { qs <- 0; }
+
+  proc sign (m : M) = { 
+    var s;
+    qs <- qs + 1;
+    s <@ O.sign(m);
+    return s;
+  } 
+}.
+
+module CountH (H : Hash) = { 
+  var qh : int
+  proc init() = { qh <- 0; }
+
+  proc get (w,m) = { 
+    var c;
+    qh <- qh + 1;
+    c <@ H.get(w,m);
+    return c;
+  } 
+}.
 
 section PROOF.
 
 declare module A <: Adv_EFCMA_RO{
-  -O_CMA_Default,-RO,-OpBasedSig,
+  -O_CMA_Default,-H,-OpBasedSig,
   -O_CMA_Default_G, -RO_G, -OpBasedSigG,
-  -ORedKOA,-CountS,-CountH
+  -ORedKOA,-CMAtoKOA.CountS,-CMAtoKOA.CountH,
+  -CountS,-CountH,
+  -G
 }.
 
-(* TODO: counting wappers for CR transform ... 
-adeclare axiom A_bound 
- (SO <: FSaCR.DSS.DS.Stateless.SOracle_CMA{-A,-CountH, -CountS}) 
- (H <: Hash{-A,-CountH,-CountS}) : 
- hoare[ A(CountH(H),CountS(SO)).forge : 
-        CountH.qh = 0 /\ CountS.qs = 0 ==> 
+(* A makes at most qS queries to [sign] and at most qH queries to [H.get] *)
+declare axiom A_bound
+ (H' <: Hash{-A,-CountH,-CountS}) 
+ (SO' <: SOracle_CMA{-A,-CountH, -CountS})
+ :
+ hoare[ A(CountH(H'),CountS(SO')).forge :
+        CountH.qh = 0 /\ CountS.qs = 0 ==>
         CountH.qh <= qH /\ CountS.qs <= qS].
-*)
 
-op bound : real. (* TODO *)
+(* The adversary will output a forgery attempt, procided all oracle calls terminate *)
+declare axiom A_ll
+ (SO <: SOracle_CMA{-A})
+ (H <: Hash{-A}) :
+ islossless SO.sign => islossless H.get => islossless A(H,SO).forge.
 
 (*** Step 1 : Replace the code-based scheme with an operator-based one ***)
 
@@ -1311,17 +1344,14 @@ local lemma pr_code_op &m :
   Pr [ EF_CMA_RO(SimplifiedDilithium, A, RO,O_CMA_Default).main() @ &m : res ] = 
   Pr [ EF_CMA_RO(OpBasedSig, A, RO,O_CMA_Default).main() @ &m : res ].
 proof.
-byequiv (_: ={glob A,glob RO,glob O_CMA_Default} ==> ={res}) => //.
-transitivity SD(SimplifiedDilithium(RO),RO).distinguish 
-   (={glob A,glob RO,glob O_CMA_Default} ==> ={res}) 
-   (={glob A,glob RO,glob O_CMA_Default} ==> ={res}); 
-   [smt()| smt() | by sim |].
-transitivity SD(OpBasedSig(RO),RO).distinguish 
-   (={glob A,glob RO,glob O_CMA_Default} ==> ={res}) 
-   (={glob A,glob RO,glob O_CMA_Default} ==> ={res}); 
-   [smt()| smt() | | by sim].
-by conseq (eqv_code_op SD RO).
+byequiv (_: ={glob A,glob RO,glob O_CMA_Default} ==> ={res}) => //; proc*.
+transitivity*{1} { r <@ SD(SimplifiedDilithium(RO),RO).distinguish();}; 1,2:smt();
+  first by sim.
+transitivity*{2} { r <@ SD(OpBasedSig(RO),RO).distinguish();}; 1,2: smt(); 
+  last by sim.
+by call (eqv_code_op SD RO).
 qed.
+
 
 (*** Step 2 : Reduce to the case for general (i.e., not commitment recoverable schemes) ***)
 
@@ -1335,21 +1365,89 @@ qed.
 
 (*** Step 3 : Instantiate the CMA to KOA reduction *)
 
+local module Wrap(A : Adv_EFCMA_RO,H : Hash,O : SOracle_CMA) = { 
+  proc forge(pk) = { 
+    var r; 
+    CountH.qh <- 0;
+    CountS.qs <- 0;
+    r <@ A(CountH(H),CountS(O)).forge(pk);
+    return r;
+  }
+}.
+
+
+(* NOT USEFUL, AdvDist is a higher-order module type, so distinguish may not call forge *)
+(*
+local module type AdvDist (A : Adv_EFCMA_RO) = {
+  proc distinguish () : bool 
+}.
+
+local equiv eq_Wrap (D <: AdvDist{-A,-CountH,-CountS}) : 
+  D(A).distinguish ~ D(Wrap(A)).distinguish : ={glob A,glob D} ==> ={glob A,glob D,res}.
+proof. by proc (={glob A}); auto. qed.  
+
+local module D1 (A' : Adv_EFCMA_RO) = { 
+  proc distinguish = EF_CMA_RO_G(OpBasedSigG, CG.RedFSaG(A'), RO_G, O_CMA_Default_G).main     
+}.
+*)
+
+local equiv count_A (H' <: Hash{-A,-CountH,-CountS}) (O' <: SOracle_CMA{-A,-CountH, -CountS}) : 
+  A(H',O').forge ~ Wrap(A,H',O').forge : ={glob A,glob H',glob O'} ==> ={glob A,glob H',glob O',res}.
+proof.
+proc*; inline*; wp. sp.
+(* call(: ={glob H', glob O'}). *)
+admitted.
+
 local module B = RedKOA(CG.RedFSaG(A),HVZK_Sim_Inst).
 
-local lemma pr_cma_koa &m : 
+section.
+import Top.FSaG.
+import Top.FSaG.DSS.
+import Top.FSaG.DSS.PRO.
+import Top.FSaG.DSS.DS.Stateless.
+
+
+lemma pr_cma_koa &m : 
   Pr [ EF_CMA_RO_G(OpBasedSigG, CG.RedFSaG(A), RO_G, O_CMA_Default_G).main() @ &m : res ] <= 
-  Pr [ EF_KOA_RO_G(OpBasedSigG, B,RO_G).main() @ &m : res ] + 
+  Pr [ EF_KOA_RO_G(OpBasedSigG, RedKOA(CG.RedFSaG(A),HVZK_Sim_Inst),RO_G).main() @ &m : res ] + 
   reprog_bound + 2%r * gamma.
 proof.
-have H := CMAtoKOA.FSabort_bound (CG.RedFSaG(A)) _ _ HVZK_Sim_Inst _ &m.
-- admit. (* Query bound for RedFSaG *)
-- admit. (* RedFSaG.forge is lossless *)
-- apply HVZK_Sim_correct.
-exact (StdOrder.RealOrder.ler_trans _ _ _ H).
+have H := CMAtoKOA.FSabort_bound (CG.RedFSaG(Wrap(A))) _ _ HVZK_Sim_Inst _ &m; first last.
+- move => Hx Ox ? ?. islossless. 
+  apply (A_ll (<:CountS(CG.OCR(Hx, Ox))) (CountH(Hx))); islossless.
+- exact HVZK_Sim_correct.
+- (* This is the same up to [Wrap] which introduces a counter that's never checked *)
+  have -> : Pr[EF_CMA_RO_G(OpBasedSigG, CG.RedFSaG(A), RO_G, O_CMA_Default_G).main() @ &m : res ]= 
+            Pr[EF_CMA_RO_G(OpBasedSigG, CG.RedFSaG(Wrap(A)), RO_G, O_CMA_Default_G).main() @ &m : res ].
+  + byequiv (_: ={glob A,glob RO_G, glob O_CMA_Default_G, glob P} ==> ={res}) => //.
+    proc. inline{1}2; inline{2} 2. 
+    seq 4 4 : (={pk,m,sig,RO.m,O_CMA_Default.qs}); last by sim.
+    inline{1}4; inline{2}4. wp. 
+    call (count_A RO (<: CG.OCR(RO, O_CMA_Default(IDS_Sig(P, V, RO))))). 
+    inline*; auto => />.
+  apply (StdOrder.RealOrder.ler_trans _ _ _ H); rewrite !StdOrder.RealOrder.ler_add2r.
+  byequiv (_: ={glob A,glob RO_G, glob P} ==> ={res}) => //. symmetry.
+  proc. inline{1}2; inline{2} 2. 
+  seq 3 3 : (={pk,m,sig,RO.m}); last by sim.
+  inline{1}3; inline{2}3.  inline{1}5; inline{2}5. wp.
+  call (count_A (<: RedKOA_H'(RO)) (<: CG.OCR(RedKOA_H'(RO), ORedKOA(HVZK_Sim_Inst)))).
+  inline*; auto => />.
+(* Query bound for RedFSaG *)
+move => Ox Hx; proc; wp. 
+(* go back to procedure judgment *)
+inline *; sp; wp.
+conseq (_: CountH.qh + CountS.qs = CMAtoKOA.CountH.qh /\ CountS.qs = CMAtoKOA.CountS.qs)
+       (_: CountH.qh = 0 /\ CountS.qs = 0 ==> CountH.qh <= qH /\ CountS.qs <= qS); 1,2: smt().
+  by call (A_bound (<: CMAtoKOA.CountH(Hx)) (<: CG.OCR(CMAtoKOA.CountH(Hx), CMAtoKOA.CountS(Ox)))).
+call (: CountH.qh + CountS.qs = CMAtoKOA.CountH.qh /\ CountS.qs = CMAtoKOA.CountS.qs).
+- proc. inline*. wp. call(: true). wp. call(: true). auto => /> /#.
+- proc. inline*; wp; call(: true); auto => /> /#.
+- by auto.
 qed.
 
-(*** Step 4 : Go back to the KOA propblem for the actual scheme *)
+end section.
+
+(*** Step 4 : Go back to the KOA propblem for the CR transform *)
 
 local lemma verify_recover pk w c z : 
   verify pk w c z => recover pk c z = w.
@@ -1376,23 +1474,45 @@ rcondt{2} ^if; 1: by move => &h; auto => &h' />; smt(verify_recover).
 auto => />; smt(verify_recover).
 qed.
 
-(* lemma eq_KOA &m :  *)
-(*   Pr [EF_KOA_RO_G(OpBasedSigG, B,RO_G).main() @ &m : res ] =  *)
-(*   Pr [EF_KOA_RO(SimplifiedDilithium,B,H).main() @ &m : res ]. *)
-  
-(* TODO: spell out bound *)
+(* Step 5 : Go back to the Code-Based Scheme used for the NMA proof *)
+
+local module (SD' : SigDist) (S : Scheme) (H : Hash_i) = { 
+  proc distinguish() = {
+    var r;
+    H.init();
+    r <@ EF_KOA(S,RedCR(B,H)).main();
+    return r;
+  }
+}.
+
+local lemma pr_code_op' &m : 
+  Pr [ EF_KOA_RO(SimplifiedDilithium,RedCR(B),RO).main() @ &m : res ] = 
+  Pr [ EF_KOA_RO(OpBasedSig, RedCR(B),RO).main() @ &m : res ].
+proof.
+byequiv (_: ={glob A,glob RO,glob ORedKOA} ==> ={res}) => //; proc*.
+transitivity*{1} { r <@ SD'(SimplifiedDilithium(RO),RO).distinguish();}; 1,2:smt();
+  first by sim.
+transitivity*{2} { r <@ SD'(OpBasedSig(RO),RO).distinguish();}; 1,2: smt(); 
+  last by sim.
+by call (eqv_code_op SD' RO). 
+qed.
+
 lemma SimplifiedDilithium_secure &m : 
-  Pr [ EF_CMA_RO(SimplifiedDilithium, A, RO,O_CMA_Default).main() @ &m : res ] <= 
-  bound + reprog_bound + 2%r * gamma.
+  Pr [EF_CMA_RO(SimplifiedDilithium, A, RO,O_CMA_Default).main() @ &m : res ] <= 
+    `|Pr[GameL(RedMLWE(RedNMA(A), RO)).main() @ &m : res] -
+      Pr[GameR(RedMLWE(RedNMA(A), RO)).main() @ &m : res]|
+  + Pr[Game(RedMSIS(RedNMA(A)), G).main() @ &m : res] 
+  + (2%r * qS%r * (qH + qS + 1)%r * alpha / (1%r - p_rej) +
+     qS%r * alpha * (qS%r + 1%r) / (2%r * (1%r - p_rej) ^ 2))
+  + 2%r * gamma.
 proof.
 rewrite pr_code_op.
 apply (StdOrder.RealOrder.ler_trans _ _ _ (pr_cr_gen &m)).
 apply (StdOrder.RealOrder.ler_trans _ _ _ (pr_cma_koa &m)).
 rewrite !StdOrder.RealOrder.ler_add2r.
 apply (StdOrder.RealOrder.ler_trans _ _ _ (pr_koa_cr &m B)).
- (* have := KOA_bound (RedCR(B)). *) (* WHY IS THE ARGUMENT NOT ALLOWED TO USE A??? *)
-(* apply (StdOrder.RealOrder.ler_trans _ _ _ (KOA_bound (RedCR(B)) &m)). *)
-admitted.
+rewrite -pr_code_op'.
+exact (StdOrder.RealOrder.ler_trans _ _ _ (KOA_bound (RedCR(B)) &m)). 
+qed.
 
 end section PROOF.
-

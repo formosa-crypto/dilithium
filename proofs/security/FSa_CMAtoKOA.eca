@@ -160,28 +160,30 @@ module ORedKOA (Sim : HVZK_Sim) : SOracle_CMA = {
   }
 }.
 
+module RedKOA_H' (H : Hash) = { 
+  import var ORedKOA
+  
+  proc get(x : W*M) : C = { 
+    var oc : C option;
+    var c : C;
+
+    oc <- overlay.[x];
+    if (oc = None) { 
+      c <@ H.get(x);
+      oc <- Some c;
+    }
+    return oget oc;
+  }
+}.
+
 module (RedKOA (A : Adv_EFCMA_RO) (Sim : HVZK_Sim) : Adv_EFKOA_RO) (H : Hash) = { 
   import var ORedKOA
-
-  module H' = { 
-    proc get(x : W*M) : C = { 
-      var oc : C option;
-      var c : C;
-
-      oc <- overlay.[x];
-      if (oc = None) { 
-        c <@ H.get(x);
-        oc <- Some c;
-      }
-      return oget oc;
-    }
-  }
 
   proc forge (pk : PK) : M * Sig = { 
     var m,sig;
     
     ORedKOA(Sim).init(pk);
-    (m,sig) <@ A(H',ORedKOA(Sim)).forge(pk);
+    (m,sig) <@ A(RedKOA_H'(H),ORedKOA(Sim)).forge(pk);
     return (m,sig);
   } 
 }.

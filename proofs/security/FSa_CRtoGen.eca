@@ -16,22 +16,24 @@ clone FSa.Generic as FSaG.
 clone FSa.CommRecov as FSaCR with
   op qS <= FSaG.qS.
 
+
+
+module OCR (H : FSaG.DSS.Hash) (O : FSaG.DSS.DS.Stateless.SOracle_CMA) = { 
+  proc sign(m : M) = { 
+    var w,c,z;
+    (w,z) <@ O.sign(m);
+    c <@ H.get(w,m); 
+    return (c,z);
+  }
+}.
+
 module (RedFSaG (A : FSaCR.DSS.Adv_EFCMA_RO) : FSaG.DSS.Adv_EFCMA_RO) 
   (H : FSaG.DSS.Hash)
-  (O : FSaG.DSS.DS.Stateless.SOracle_CMA) = 
-{ 
-  module OCR = { 
-    proc sign(m : M) = { 
-      var w,c,z;
-      (w,z) <@ O.sign(m);
-      c <@ H.get(w,m); 
-      return (c,z);
-    }
-  }
+  (O : FSaG.DSS.DS.Stateless.SOracle_CMA) = { 
 
   proc forge(pk : PK) : M*FSaG.Sig = { 
     var w,c,z,m,sig,sig';
-    (m,sig) <@ A(H,OCR).forge(pk);
+    (m,sig) <@ A(H,OCR(H,O)).forge(pk);
     (c,z) <- sig;
     w <- FSaCR.recover pk c z;
     sig' <- (w,z);
