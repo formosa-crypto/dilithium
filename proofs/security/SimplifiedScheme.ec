@@ -1365,6 +1365,8 @@ qed.
 
 (*** Step 3 : Instantiate the CMA to KOA reduction *)
 
+(* Counting wrapper for adversaries*)
+
 local module Wrap(A : Adv_EFCMA_RO,H : Hash,O : SOracle_CMA) = { 
   proc forge(pk) = { 
     var r; 
@@ -1375,28 +1377,65 @@ local module Wrap(A : Adv_EFCMA_RO,H : Hash,O : SOracle_CMA) = {
   }
 }.
 
+(* NOTE: We would like to prove A(H,O).forge ~ Wrap(A,H,O).forge for
+any A, H, and O that does not access the counters. However, expressing
+the distinguishing contexts naively leads to a higher-order module
+type.
 
-(* NOT USEFUL, AdvDist is a higher-order module type, so distinguish may not call forge *)
-(*
-local module type AdvDist (A : Adv_EFCMA_RO) = {
-  proc distinguish () : bool 
+  local module type AdvDist (A : Adv_EFCMA_RO) = {
+    proc distinguish () : bool 
+  }.
+
+However, the rules for (abstract) higher-oder functors do not allow
+the provided functor (i.e., A) to call its argument modules. So this
+is useless. Unfortunately, even the first-order version does not work: 
+
+  local equiv count_A (H' <: Hash{-A,-CountH,-CountS}) 
+                      (O' <: SOracle_CMA{-A,-CountH, -CountS}) : 
+    A(H',O').forge ~ Wrap(A,H',O').forge : 
+    ={arg, glob A,glob H',glob O'} ==> ={glob A,glob H',glob O',res}.
+
+The problem is that the call rule for abstract A requires the abstract
+arguments H' and O' to have disjoint memories. This is not the case
+for the instances we are interested in. However, we can prove a
+variant where H' and O' are projections of a single module and use
+this to prove the instances we need. *)
+
+local module type HO = { 
+  include Hash
+  include SOracle_CMA
 }.
 
-local equiv eq_Wrap (D <: AdvDist{-A,-CountH,-CountS}) : 
-  D(A).distinguish ~ D(Wrap(A)).distinguish : ={glob A,glob D} ==> ={glob A,glob D,res}.
-proof. by proc (={glob A}); auto. qed.  
+local module H_ (HO:HO) : Hash = { proc get = HO.get }.
+local module SOracle_ (HO:HO) : SOracle_CMA = { proc sign = HO.sign }.
 
-local module D1 (A' : Adv_EFCMA_RO) = { 
-  proc distinguish = EF_CMA_RO_G(OpBasedSigG, CG.RedFSaG(A'), RO_G, O_CMA_Default_G).main     
+local module HO(H:Hash,O:SOracle_CMA) : HO = { 
+  proc get = H.get 
+  proc sign = O.sign
 }.
-*)
-
-local equiv count_A (H' <: Hash{-A,-CountH,-CountS}) (O' <: SOracle_CMA{-A,-CountH, -CountS}) : 
-  A(H',O').forge ~ Wrap(A,H',O').forge : ={glob A,glob H',glob O'} ==> ={glob A,glob H',glob O',res}.
+  
+local equiv Wrap_A_HO (HO <: HO{-A,-CountH,-CountS}) : 
+  A(H_(HO),SOracle_(HO)).forge ~ Wrap(A,H_(HO),SOracle_(HO)).forge : 
+  ={arg,glob A,glob HO} ==> ={glob A,glob HO,res}.
 proof.
-proc*; inline*; wp. sp.
-(* call(: ={glob H', glob O'}). *)
-admitted.
+proc*; inline*; wp; sp. call (: ={glob HO}). 
+- by proc*; inline*; wp; call (: true); auto.
+- by proc*; inline*; wp; call (: true); auto.
+by auto => />.
+qed.
+
+(* This is still not provable, but maybe it should be
+local equiv Wrap_A (H' <: Hash{-A,-CountH,-CountS}) 
+                   (O' <: SOracle_CMA{-A,-CountH, -CountS}) : 
+  A(H',O').forge ~ Wrap(A,H',O').forge : 
+  ={arg, glob A,glob H',glob O'} ==> ={glob A,glob H',glob O',res}.
+proof.
+have X /= := Wrap_A_HO (<: HO(H',O')). 
+(* transitivity A(H_(HO(H', O')), SOracle_(HO(H', O'))).forge *)
+(*   (={glob A, glob H', glob O'} ==> ={glob A, glob H', glob O', res}) *)
+(*   (={glob A, glob H', glob O'} ==> ={glob A, glob H', glob O', res}). *)
+abort. 
+*)
 
 local module B = RedKOA(CG.RedFSaG(A),HVZK_Sim_Inst).
 
@@ -1406,7 +1445,46 @@ import Top.FSaG.DSS.
 import Top.FSaG.DSS.PRO.
 import Top.FSaG.DSS.DS.Stateless.
 
+(* Instances of the wrap lemma *)
+local equiv wrap1 : 
+  A      (RO, CG.OCR(RO, O_CMA_Default(IDS_Sig(P, V, RO)))).forge ~
+  Wrap(A, RO, CG.OCR(RO, O_CMA_Default(IDS_Sig(P, V, RO)))).forge :
+  ={arg, glob A, glob RO, glob CG.OCR(RO, O_CMA_Default(IDS_Sig(P, V, RO)))} ==>
+  ={glob A, glob RO, glob CG.OCR(RO, O_CMA_Default(IDS_Sig(P, V, RO))), res}.
+proof.
+have X := Wrap_A_HO (<: HO(RO,CG.OCR(RO, O_CMA_Default(IDS_Sig(P, V, RO))))).
+proc*.
+transitivity*{1} { 
+  r <@ A(H_(HO(RO, CG.OCR(RO, O_CMA_Default(IDS_Sig(P, V, RO))))), 
+   SOracle_(HO(RO, CG.OCR(RO, O_CMA_Default(IDS_Sig(P, V, RO)))))).forge(pk); }; 
+  1,2: smt();1: sim. 
+transitivity*{2} { 
+  r <@ Wrap(A, H_(HO(RO, CG.OCR(RO, O_CMA_Default(IDS_Sig(P, V, RO))))), 
+         SOracle_(HO(RO, CG.OCR(RO, O_CMA_Default(IDS_Sig(P, V, RO)))))).forge(pk); }; 
+  1,2:smt(); 2: sim.
+call X; auto => />.
+qed.
 
+local equiv wrap2 : 
+        A(RedKOA_H'(RO), CG.OCR(RedKOA_H'(RO), ORedKOA(HVZK_Sim_Inst))).forge ~
+  Wrap(A, RedKOA_H'(RO), CG.OCR(RedKOA_H'(RO), ORedKOA(HVZK_Sim_Inst))).forge :
+  ={arg, glob A, glob RedKOA_H'(RO), glob CG.OCR(RedKOA_H'(RO), ORedKOA(HVZK_Sim_Inst))} ==>
+  ={glob A, glob RedKOA_H'(RO), glob CG.OCR(RedKOA_H'(RO), ORedKOA(HVZK_Sim_Inst)), res}.
+proof.
+have X := Wrap_A_HO (<: HO(RedKOA_H'(RO), CG.OCR(RedKOA_H'(RO), ORedKOA(HVZK_Sim_Inst)))).
+proc*.
+transitivity*{1} { 
+  r <@ A(H_(HO(RedKOA_H'(RO), CG.OCR(RedKOA_H'(RO), ORedKOA(HVZK_Sim_Inst)))), 
+   SOracle_(HO(RedKOA_H'(RO), CG.OCR(RedKOA_H'(RO), ORedKOA(HVZK_Sim_Inst))))).forge(pk); }; 
+  1,2: smt();1: sim. 
+transitivity*{2} { 
+  r <@ Wrap(A, H_(HO(RedKOA_H'(RO), CG.OCR(RedKOA_H'(RO), ORedKOA(HVZK_Sim_Inst)))), 
+         SOracle_(HO(RedKOA_H'(RO), CG.OCR(RedKOA_H'(RO), ORedKOA(HVZK_Sim_Inst))))).forge(pk); }; 
+1,2:smt(); 2: sim.
+call X; auto => />.
+qed.
+
+  
 lemma pr_cma_koa &m : 
   Pr [ EF_CMA_RO_G(OpBasedSigG, CG.RedFSaG(A), RO_G, O_CMA_Default_G).main() @ &m : res ] <= 
   Pr [ EF_KOA_RO_G(OpBasedSigG, RedKOA(CG.RedFSaG(A),HVZK_Sim_Inst),RO_G).main() @ &m : res ] + 
@@ -1423,15 +1501,13 @@ have H := CMAtoKOA.FSabort_bound (CG.RedFSaG(Wrap(A))) _ _ HVZK_Sim_Inst _ &m; f
     proc. inline{1}2; inline{2} 2. 
     seq 4 4 : (={pk,m,sig,RO.m,O_CMA_Default.qs}); last by sim.
     inline{1}4; inline{2}4. wp. 
-    call (count_A RO (<: CG.OCR(RO, O_CMA_Default(IDS_Sig(P, V, RO))))). 
-    inline*; auto => />.
+    by call wrap1; inline*; auto => />.
   apply (StdOrder.RealOrder.ler_trans _ _ _ H); rewrite !StdOrder.RealOrder.ler_add2r.
   byequiv (_: ={glob A,glob RO_G, glob P} ==> ={res}) => //. symmetry.
   proc. inline{1}2; inline{2} 2. 
   seq 3 3 : (={pk,m,sig,RO.m}); last by sim.
   inline{1}3; inline{2}3.  inline{1}5; inline{2}5. wp.
-  call (count_A (<: RedKOA_H'(RO)) (<: CG.OCR(RedKOA_H'(RO), ORedKOA(HVZK_Sim_Inst)))).
-  inline*; auto => />.
+  by call wrap2; inline*; auto => />.
 (* Query bound for RedFSaG *)
 move => Ox Hx; proc; wp. 
 (* go back to procedure judgment *)
