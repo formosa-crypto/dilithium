@@ -1206,6 +1206,39 @@ end section OpBasedHVZK.
 
 (* Main Theorem *)
 
+op valid_sk sk = exists pk, (pk,sk) \in keygen.
+
+(* a check for "good" keys *)
+op check (sk : SK) : bool.
+
+(* upper bound on the mass of the most likely commitment for a good key *)
+const eps_comm  : { real | 0%r < eps_comm }   as eps_comm_gt0.
+(* upper bound on the mass of the keys not passing check *)
+const eps_check : { real | 0%r < eps_check }  as eps_good_gt0.
+(* upper bound in on the rejection probability for good keys *)
+const p_rej  : { real | 0%r <= p_rej < 1%r} as p_rej_bounded.
+
+(* all secret keys passing the check have high commitment entropy *)
+axiom check_entropy (sk : SK) : valid_sk sk => check sk =>
+  p_max (dfst (commit sk)) <= eps_comm.
+
+(* most honestly sampled secret keys pass the check *)
+axiom check_most : mu (dsnd keygen) (predC check) <= eps_check.
+
+(* probability that response fails on "good" keys is bounded by p_rej *)
+axiom rej_bound (sk : SK) :
+  sk \in dsnd (dcond keygen (check \o snd)) =>
+  mu (commit sk `*` dC tau) 
+     (fun (x : (ID.W * ID.Pstate) * ID.C) => respond sk x.`2 x.`1.`2 = None) <= p_rej.
+
+(* Some good key. Since keygen is lossless and check only rules out
+small fraction, we could just use epsilon here. *)
+const sk0 : { SK | (exists pk, (pk,sk0) \in keygen) /\ check sk0 } as sk0P.
+
+(* axiom most_keys_check :  *)
+
+
+
 import FSaCR.DSS.
 import FSaCR.DSS.PRO.
 import FSaCR.DSS.DS.Stateless.
@@ -1251,15 +1284,23 @@ clone FSa_CRtoGen as CG with
 clone import FSa_CMAtoKOA as CMAtoKOA with
   theory FSa <- FSa,
   theory FSaG <- FSaG,
-  theory OP <- OpBased
+  theory OP <- OpBased,
+  op p_rej <- p_rej,
+  op check_entropy <- check,
+  op alpha <- eps_comm,
+  op gamma <- eps_check,
+  op sk0 <- sk0,
+  
+  axiom sk0P <- sk0P
 proof *. 
-realize alpha_gt0 by admit.
-realize gamma_gt0 by admit. 
-realize check_entropy_correct by admit. 
-realize most_keys_high_entropy by admit. 
-realize p_rej_bounded by admit. 
-realize rej_bound by admit. 
-realize sk0P by admit. 
+realize alpha_gt0 by apply eps_comm_gt0.
+realize gamma_gt0 by apply eps_good_gt0.
+realize check_entropy_correct by apply check_entropy.
+realize most_keys_high_entropy. 
+  have := check_most; rewrite dmapE. apply StdOrder.RealOrder.ler_trans.
+  by apply mu_le => /#. qed.
+realize p_rej_bounded by smt(p_rej_bounded).
+realize rej_bound by apply rej_bound.
 
 module (RedCR (A : Top.FSaG.DSS.Adv_EFKOA_RO) : Adv_EFKOA_RO) (H : Hash) = { 
   proc forge (pk : PK) : M*Sig = { 
@@ -1485,7 +1526,7 @@ qed.
 lemma pr_cma_koa &m : 
   Pr [ EF_CMA_RO_G(OpBasedSigG, CG.RedFSaG(A), RO_G, O_CMA_Default_G).main() @ &m : res ] <= 
   Pr [ EF_KOA_RO_G(OpBasedSigG, RedKOA(CG.RedFSaG(A),HVZK_Sim_Inst),RO_G).main() @ &m : res ] + 
-  reprog_bound + 2%r * gamma.
+  reprog_bound + 2%r * eps_check.
 proof.
 have H := CMAtoKOA.FSabort_bound (CG.RedFSaG(Wrap(A))) _ _ HVZK_Sim_Inst _ &m; first last.
 - move => Hx Ox ? ?. islossless. 
@@ -1575,9 +1616,9 @@ lemma SimplifiedDilithium_secure &m :
     `|Pr[GameL(RedMLWE(RedNMA(A), RO)).main() @ &m : res] -
       Pr[GameR(RedMLWE(RedNMA(A), RO)).main() @ &m : res]|
   + Pr[Game(RedMSIS(RedNMA(A)), G).main() @ &m : res] 
-  + (2%r * qS%r * (qH + qS + 1)%r * alpha / (1%r - p_rej) +
-     qS%r * alpha * (qS%r + 1%r) / (2%r * (1%r - p_rej) ^ 2))
-  + 2%r * gamma.
+  + (2%r * qS%r * (qH + qS + 1)%r * eps_comm / (1%r - p_rej) +
+     qS%r * eps_comm * (qS%r + 1%r) / (2%r * (1%r - p_rej) ^ 2))
+  + 2%r * eps_check.
 proof.
 rewrite pr_code_op.
 apply (StdOrder.RealOrder.ler_trans _ _ _ (pr_cr_gen &m)).
