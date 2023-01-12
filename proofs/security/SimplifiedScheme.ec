@@ -133,7 +133,6 @@ clone FSa.CommRecov as FSaCR with
   op qH <= qH
 proof* by smt(qS_ge0 qH_ge0).
 
-section.
 import FSaCR.
 import FSaCR.DSS.
 
@@ -233,7 +232,6 @@ clone import SelfTargetMSIS as RqStMSIS with
   op inf_norm <- inf_normv,
   op gamma <- max (gamma1 - b) (tau * 2^(d-1) + (2*gamma2+1))
 proof* by smt(Top.gt0_k Top.gt0_l). 
-(* Where do dout_ll and enum_spec come from? Why are they not picked up by proof* *)
 
 module H = DSS.PRO.RO.
 module G = RqStMSIS.PRO.RO.
@@ -583,7 +581,7 @@ end section OpBasedCorrectness.
 (* -- OpBased is commitment recoverable -- *)
 (* Necessary for the simulator definition below to make sense *)
 
-local lemma pk_decomp mA' t' mA s1 s2 :
+lemma pk_decomp mA' t' mA s1 s2 :
   ((mA', t'), (mA, s1, s2)) \in keygen =>
   mA' = mA /\ t' = mA *^ s1 + s2.
 proof.
@@ -592,7 +590,7 @@ case H => x [? /supp_dlet H].
 by case H => y [? /supp_dmap H] /#.
 qed.
 
-local lemma sk_size mA s1 s2 :
+lemma sk_size mA s1 s2 :
   (exists pk, (pk, (mA, s1, s2)) \in keygen) => size mA = (k, l) /\ size s1 = l /\ size s2 = k.
 proof.
 move => [pk /supp_dlet valid_keys].
@@ -602,7 +600,7 @@ case valid_keys => [s2' [s2_supp [#]]] *; subst.
 smt(size_dmatrix size_dvector Top.gt0_l Top.gt0_k).
 qed.
 
-local lemma keygen_supp_decomp pk mA s1 s2 :
+lemma keygen_supp_decomp pk mA s1 s2 :
   (pk, (mA, s1, s2)) \in keygen =>
   s1 \in ds1 /\
   s2 \in ds2.
@@ -1234,7 +1232,7 @@ qed.
 clone Generic as FSaG with
   op qS <= qS,
   op qH <= qH + Top.qS
-proof* by smt(qS_ge0 qH_ge0). (* FIXME: track down global axioms in section ... *)
+proof* by smt(qS_ge0 qH_ge0). 
 
 (* Generic FS+abort transform of the OpBased ID scheme *)
 module OpBasedSigG     = FSaG.IDS_Sig(OpBased.P,OpBased.V).
@@ -1247,14 +1245,14 @@ module EF_KOA_RO_G = FSaG.DSS.EF_KOA_RO.
 clone FSa_CRtoGen as CG with
   theory FSa <- FSa,
   theory FSaCR <- FSaCR,
-  theory FSaG <- FSaG. (* FIXME: track down global axioms in section ... *)
+  theory FSaG <- FSaG. 
 
 (* TODO: give reasonable instantiations for alpha and gamma (and rename these ...) *)
 clone import FSa_CMAtoKOA as CMAtoKOA with
   theory FSa <- FSa,
   theory FSaG <- FSaG,
   theory OP <- OpBased
-proof *. (* FIXME: track down global axioms in section *)
+proof *. 
 realize alpha_gt0 by admit.
 realize gamma_gt0 by admit. 
 realize check_entropy_correct by admit. 
@@ -1262,7 +1260,6 @@ realize most_keys_high_entropy by admit.
 realize p_rej_bounded by admit. 
 realize rej_bound by admit. 
 realize sk0P by admit. 
-
 
 module (RedCR (A : Top.FSaG.DSS.Adv_EFKOA_RO) : Adv_EFKOA_RO) (H : Hash) = { 
   proc forge (pk : PK) : M*Sig = { 
