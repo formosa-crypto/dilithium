@@ -231,7 +231,7 @@ clone import SelfTargetMSIS as RqStMSIS with
   op dC <- dC tau,
   op inf_norm <- inf_normv,
   op gamma <- max (gamma1 - b) (tau * 2^(d-1) + (2*gamma2+1))
-proof* by smt(Top.gt0_k Top.gt0_l). 
+proof* by smt(Self.gt0_k Self.gt0_l). 
 
 module H = DSS.PRO.RO.
 module G = RqStMSIS.PRO.RO.
@@ -361,21 +361,21 @@ seq 6 7 : (={sig,PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in
     rnd (fun mAt : matrix * vector => (mAt.`1 || -colmx mAt.`2))  
         (fun mAt : matrix => (subm mAt 0 k 0 l,- col mAt l)) : *0 *0.
     skip => /= &1 &2 _. split => [A|?]; last split => [A|?].
-    * rewrite dmap_id => /size_dmatrix /(_ _ _) /=; 1,2: smt(Top.gt0_k Top.gt0_l).
-      rewrite colmxN oppvK => -[<-] ?. rewrite subm_colmx; smt(Top.gt0_k Top.gt0_l).
+    * rewrite dmap_id => /size_dmatrix /(_ _ _) /=; 1,2: smt(Self.gt0_k Self.gt0_l).
+      rewrite colmxN oppvK => -[<-] ?. rewrite subm_colmx; smt(Self.gt0_k Self.gt0_l).
     * rewrite -(dmap_dprodE _ _ (fun x => x)) !dmap_id.
       rewrite dprod1E (@dvector_rnd_funi _ _ (col A l)) ?dRq_funi // -dprod1E.
-      move/size_dmatrix => /(_ _ _); 1,2: smt(Top.gt0_k Top.gt0_l).
-      apply dmatrixRSr1E; 1,2: smt(Top.gt0_k Top.gt0_l).
+      move/size_dmatrix => /(_ _ _); 1,2: smt(Self.gt0_k Self.gt0_l).
+      apply dmatrixRSr1E; 1,2: smt(Self.gt0_k Self.gt0_l).
     case => A t /=; rewrite -(dmap_dprodE _ _ (fun x => x)) !dmap_id supp_dprod /=.
     case => supp_A supp_t. 
-    move: (supp_A) => /size_dmatrix /(_ _ _) /=; 1,2: smt(Top.gt0_k Top.gt0_l).
-    move: (supp_t) => /size_dvector. rewrite lez_maxr; 1:smt(Top.gt0_k). move => s_t [r_A c_A].
+    move: (supp_A) => /size_dmatrix /(_ _ _) /=; 1,2: smt(Self.gt0_k Self.gt0_l).
+    move: (supp_t) => /size_dvector. rewrite lez_maxr; 1:smt(Self.gt0_k). move => s_t [r_A c_A].
     (* case => /supp_dmatrix_Rqkl /= [[r_A c_A] Rq_A] /supp_dvector_Rqk [s_t Rq_t]. *)
     rewrite r_A c_A s_t /= -{2}r_A -{2}c_A subm_catmrCl /=.
     rewrite col_catmrR /= ?r_A ?c_A ?s_t // subrr. 
-    rewrite colN oppmK colK /=; apply supp_dmatrix_catmr => //;1,2: smt(Top.gt0_k Top.gt0_l).
-    rewrite supp_dmatrix_full ?dRq_fu //; smt(Top.gt0_k Top.gt0_l). 
+    rewrite colN oppmK colK /=; apply supp_dmatrix_catmr => //;1,2: smt(Self.gt0_k Self.gt0_l).
+    rewrite supp_dmatrix_full ?dRq_fu //; smt(Self.gt0_k Self.gt0_l). 
   call (: ={PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in dC tau){1}).
     proc; inline*; auto => />; smt(get_setE get_set_sameE).
   auto => /> &1 &2 RO_dC r_mA c_mA s_t. split => [|E1 E2]. 
@@ -383,7 +383,7 @@ seq 6 7 : (={sig,PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in
     rewrite col_catmrR //= 1:/#. 
     by rewrite colN oppmK colK. 
   move => _ _.     
-  by rewrite -E1 -E2 /= rows_catmr //=; smt(Top.gt0_k Top.gt0_l).
+  by rewrite -E1 -E2 /= rows_catmr //=; smt(Self.gt0_k Self.gt0_l).
 (* If A forges successfully the reduction succeeds in the SelfTargetMSIS game *)
 inline S1(H').verify  H'.get. wp. sp.
 (* need [size z{1} = l /\ size h{1} = l] to prove equality of the RO argument *)
@@ -522,7 +522,7 @@ case/supp_dlet => s2 /= [s_s2].
 rewrite /(\o) supp_dunit => -[-> _]. 
 rewrite [Vectors.size]lock /= -lock.
 rewrite size_addv size_mulmxv;
-smt(size_dmatrix size_dvector Top.gt0_k Top.gt0_l).
+smt(size_dmatrix size_dvector Self.gt0_k Self.gt0_l).
 qed.
 
 module OpBasedSig = FSaCR.IDS_Sig(OpBased.P, OpBased.V).
@@ -597,7 +597,7 @@ move => [pk /supp_dlet valid_keys].
 case valid_keys => [mA' [mA_supp /supp_dlet valid_keys]].
 case valid_keys => [s1' [s1_supp /supp_dmap valid_keys]].
 case valid_keys => [s2' [s2_supp [#]]] *; subst.
-smt(size_dmatrix size_dvector Top.gt0_l Top.gt0_k).
+smt(size_dmatrix size_dvector Self.gt0_l Self.gt0_k).
 qed.
 
 lemma keygen_supp_decomp pk mA s1 s2 :
@@ -677,7 +677,7 @@ apply: StdOrder.IntOrder.ler_trans eta_tau_leq_b; rewrite mulrC.
 apply l1_inf_norm_product_ub; 1..3: smt(tau_bound gt0_eta supp_dC).
 (* Lemma *)
 apply inf_normv_ler =>[|i rg_i]; first by smt(gt0_eta).
-rewrite supp_dvector in rg_s2; first by smt(Top.gt0_k).
+rewrite supp_dvector in rg_s2; first by smt(Self.gt0_k).
 by rewrite -supp_dRq; smt(gt0_eta). 
 qed.
 
@@ -730,7 +730,7 @@ proof. smt(dRq_open_ll dvector_ll). qed.
 local lemma dsimz_supp : support dsimz = goodz.
 proof.
 apply fun_ext => z.
-rewrite supp_dvector; first smt(Top.gt0_l).
+rewrite supp_dvector; first smt(Self.gt0_l).
 rewrite /goodz inf_normv_ltr; first smt(b_gamma1_lt).
 smt(supp_dRq_open b_gamma1_lt).
 qed.
@@ -747,7 +747,7 @@ local lemma masking_range c s1 z:
   (z - c ** s1) \in dy.
 proof.
 move => c_supp s1_supp z_supp.
-apply supp_dvector; first smt(Top.gt0_l).
+apply supp_dvector; first smt(Self.gt0_l).
 split => [|i rg_i].
 - by rewrite size_addv size_oppv size_scalarv; smt(size_dvector).
 rewrite supp_dRq; first smt(b_gamma1_lt gt0_b).
@@ -762,7 +762,7 @@ split.
 - (* bound cnorm cs1 *)
   rewrite getvN cnormN get_scalarv.
   apply l1_cnorm_product_ub; 1,2,3:smt(tau_bound gt0_eta supp_dC).
-  smt(supp_dvector supp_dRq gt0_eta Top.gt0_l).
+  smt(supp_dvector supp_dRq gt0_eta Self.gt0_l).
 qed.
 
 local lemma is_finite_goodz :
@@ -788,7 +788,7 @@ suff: support dy =
 - move => ->.
   by rewrite is_finite_vector (finite_leq predT) // is_finite_Rq.
 rewrite fun_ext => y /=.
-rewrite supp_dvector //; smt(Top.gt0_l).
+rewrite supp_dvector //; smt(Self.gt0_l).
 qed.
 
 local lemma mask_size :
@@ -798,7 +798,7 @@ apply uniq_leq_size => [|v].
 - apply uniq_to_seq; exact is_finite_goodz.
 rewrite mem_to_seq; first exact is_finite_goodz.
 rewrite mem_to_seq; first exact is_finite_dy.
-rewrite supp_dvector; first smt(Top.gt0_l).
+rewrite supp_dvector; first smt(Self.gt0_l).
 rewrite /goodz inf_normv_ltr; first smt(b_gamma1_lt).
 suff: (forall x, (cnorm x < gamma1 - b => x \in dRq_ (gamma1 - 1))) by smt().
 move => x H.
@@ -810,7 +810,7 @@ local lemma mask_nonzero :
 proof.
 suff: zerov l \in (to_seq goodz) by smt(size_eq0 List.size_ge0).
 rewrite mem_to_seq; first exact is_finite_goodz.
-split; first smt(size_zerov Top.gt0_l).
+split; first smt(size_zerov Self.gt0_l).
 by rewrite inf_normv_zero; smt(b_gamma1_lt).
 qed.
 
@@ -1063,7 +1063,7 @@ seq 1 1: (#pre /\ st{1} = y{2} /\ size y{2} = l).
     rewrite /commit /= (dmap1E dy) /(\o).
     by apply mu_eq => ? /#.
   move => _ [w st] @/commit /= /supp_dmap [y [supp_y [??]]]; subst.
-  smt(size_dvector Top.gt0_l).
+  smt(size_dvector Self.gt0_l).
 (* suff: equality of oz *)
 seq 1 2: (#pre /\ oz{1} = resp{2}); last by auto => /#.
 auto => />; smt(sk_size size_addv size_scalarv).
@@ -1146,24 +1146,24 @@ local equiv KLS_HVZK pk sk :
   ={res}.
 proof.
 transitivity HVZK_Hops.game2
-  ((pk, sk) \in Top.keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res})
-  ((pk, sk) \in Top.keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res}); 1, 2: smt().
+  ((pk, sk) \in Self.keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res})
+  ((pk, sk) \in Self.keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res}); 1, 2: smt().
 - by conseq (hop2_correct pk sk) => /#.
 transitivity HVZK_Hops.game3
-  ((pk, sk) \in Top.keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res})
-  ((pk, sk) \in Top.keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res}); 1, 2: smt().
+  ((pk, sk) \in Self.keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res})
+  ((pk, sk) \in Self.keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res}); 1, 2: smt().
 - by conseq hop3_correct => /#.
 transitivity HVZK_Hops.game4
-  ((pk, sk) \in Top.keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res})
-  ((pk, sk) \in Top.keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res}); 1, 2: smt().
+  ((pk, sk) \in Self.keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res})
+  ((pk, sk) \in Self.keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res}); 1, 2: smt().
 - by conseq hop4_correct => /#.
 transitivity HVZK_Hops.game5
-  ((pk, sk) \in Top.keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res})
-  ((pk, sk) \in Top.keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res}); 1, 2: smt().
+  ((pk, sk) \in Self.keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res})
+  ((pk, sk) \in Self.keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res}); 1, 2: smt().
 - by conseq (hop5_correct pk sk) => /#.
 transitivity HVZK_Hops.game6
-  ((pk, sk) \in Top.keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res})
-  ((pk, sk) \in Top.keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res}); 1, 2: smt().
+  ((pk, sk) \in Self.keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res})
+  ((pk, sk) \in Self.keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res}); 1, 2: smt().
 - by conseq (hop6_correct pk sk) => /#.
 by conseq (hop7_correct pk sk) => /#.
 qed.
@@ -1264,7 +1264,7 @@ qed.
 
 clone Generic as FSaG with
   op qS <= qS,
-  op qH <= qH + Top.qS
+  op qH <= qH + Self.qS
 proof* by smt(qS_ge0 qH_ge0). 
 
 (* Generic FS+abort transform of the OpBased ID scheme *)
@@ -1302,7 +1302,7 @@ realize most_keys_high_entropy.
 realize p_rej_bounded by smt(p_rej_bounded).
 realize rej_bound by apply rej_bound.
 
-module (RedCR (A : Top.FSaG.DSS.Adv_EFKOA_RO) : Adv_EFKOA_RO) (H : Hash) = { 
+module (RedCR (A : Self.FSaG.DSS.Adv_EFKOA_RO) : Adv_EFKOA_RO) (H : Hash) = { 
   proc forge (pk : PK) : M*Sig = { 
     var m,sig,w,z,c;
     (m,sig) <@ A(H).forge(pk);
@@ -1478,10 +1478,10 @@ abort.
 local module B = RedKOA(CG.RedFSaG(A),HVZK_Sim_Inst).
 
 section.
-import Top.FSaG.
-import Top.FSaG.DSS.
-import Top.FSaG.DSS.PRO.
-import Top.FSaG.DSS.DS.Stateless.
+import Self.FSaG.
+import Self.FSaG.DSS.
+import Self.FSaG.DSS.PRO.
+import Self.FSaG.DSS.DS.Stateless.
 
 (* Instances of the wrap lemma *)
 local equiv wrap1 : 
@@ -1567,15 +1567,15 @@ local lemma verify_recover pk w c z :
   verify pk w c z => recover pk c z = w.
 proof. rewrite /verify /recover. smt(). qed.
 
-local lemma pr_koa_cr &m (B <: Top.FSaG.DSS.Adv_EFKOA_RO{-RO.m, -Top.FSaG.DSS.PRO.RO}) : 
+local lemma pr_koa_cr &m (B <: Self.FSaG.DSS.Adv_EFKOA_RO{-RO.m, -Self.FSaG.DSS.PRO.RO}) : 
   Pr [ EF_KOA_RO_G(OpBasedSigG, B,RO_G).main() @ &m : res ] <= 
   Pr [ EF_KOA_RO(OpBasedSig,RedCR(B),RO).main() @ &m : res].
 proof.
 byequiv => //; proc. 
 inline{1}2; inline{2}2. inline{2}3.
-seq 3 4 : (={pk} /\ m{1} = m0{2} /\ sig{1} = sig0{2} /\ Top.FSaG.DSS.PRO.RO.m{1} = RO.m{2}). 
+seq 3 4 : (={pk} /\ m{1} = m0{2} /\ sig{1} = sig0{2} /\ Self.FSaG.DSS.PRO.RO.m{1} = RO.m{2}). 
 - inline*. 
-  call(: Top.FSaG.DSS.PRO.RO.m{1} = RO.m{2}); [by proc;inline*; auto| by auto].
+  call(: Self.FSaG.DSS.PRO.RO.m{1} = RO.m{2}); [by proc;inline*; auto| by auto].
 wp.
 inline{1} 1. inline{2} 4. wp. sp. 
 seq 1 1 : (#pre /\ ={c} /\ (RO.m.[w,m0] = Some c){2}).
