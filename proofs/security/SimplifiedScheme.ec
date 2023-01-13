@@ -1214,7 +1214,7 @@ op check (sk : SK) : bool.
 (* upper bound on the mass of the most likely commitment for a good key *)
 const eps_comm  : { real | 0%r < eps_comm }   as eps_comm_gt0.
 (* upper bound on the mass of the keys not passing check *)
-const eps_check : { real | 0%r < eps_check }  as eps_good_gt0.
+const eps_check : { real | 0%r <= eps_check }  as eps_good_gt0.
 (* upper bound in on the rejection probability for good keys *)
 const p_rej  : { real | 0%r <= p_rej < 1%r} as p_rej_bounded.
 

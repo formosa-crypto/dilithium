@@ -32,7 +32,7 @@ op check_entropy : SK -> bool.
 op gamma, alpha : real.
 
 axiom alpha_gt0 : 0%r < alpha.
-axiom gamma_gt0 : 0%r < gamma.
+axiom gamma_gt0 : 0%r <= gamma.
 
 op valid_sk sk = exists pk, (pk, sk) \in keygen.
 
