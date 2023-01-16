@@ -54,8 +54,8 @@ realize HL.alpha_almost_divides_q by apply gamma2_div.
 import DV.MatRq. (* Matrices and Vectors over Rq *)
 import DV.HL.    (* highBitsV and lowBitsV with HL.alpha = 2 * gamma2 and HL.d = d *)
 type M.
-type SK = matrix * vector * vector.
-type PK = matrix * vector.
+type SK = matrix * vector * vector * vector.
+type PK = matrix * high2 list.
 type commit_t = high list.
 type challenge_t = Rq.
 type response_t = vector * hint_t list.
@@ -68,13 +68,15 @@ module type Hash  = {
 module Dilithium (H: Hash) = {
   proc keygen() : PK * SK = {
     var pk, sk;
-    var mA, s1, s2,t;
+    var mA, s1, s2,t, t1,t0;
     mA <$ dmatrix dRq k l;
     s1 <$ dvector (dRq_ eta_) l;
     s2 <$ dvector (dRq_ eta_) k;
     t  <- mA *^ s1 + s2;
-    pk <- (mA, t);
-    sk <- (mA, s1, s2);
+    t1 <- base2highbitsV t;
+    t0 <- base2lowbitsV t;
+    pk <- (mA, t1);
+    sk <- (mA, s1, s2, t0);
     return (pk, sk);
   }
 
@@ -90,8 +92,7 @@ module Dilithium (H: Hash) = {
     (* silences unused variable warning *)
     c <- witness;
 
-    (mA, s1, s2) <- sk;
-    t0 <- base2lowbitsV (mA *^ s1 + s2); (* compute t0 *)
+    (mA, s1, s2, t0) <- sk;
 
     response <- None;
     while(response = None) {
@@ -114,10 +115,9 @@ module Dilithium (H: Hash) = {
     var response;
     var z, h;
     var c';
-    var mA, t, t1;
+    var mA, t1;
     var result;
-    (mA, t) <- pk;
-    t1 <- base2highbitsV t; (* t only used to compure t1 *)
+    (mA, t1) <- pk;
 
     (c, response) <- sig;
     (z, h) <- response;
@@ -131,10 +131,13 @@ module Dilithium (H: Hash) = {
 
 
 (* keygen as a mathematical distribution - for use in axioms *)
+type SK' = matrix * vector * vector.
+type PK' = matrix * vector.
+
 op dA = dmatrix dRq k l.
 op ds1 = dvector (dRq_ eta_) l.
 op ds2 = dvector (dRq_ eta_) k.
-op keygen : (PK * SK) distr =
+op keygen : (PK' * SK') distr =
   dlet (dmatrix dRq k l) (fun mA =>
   dlet ds1 (fun s1 =>
   dmap ds2 (fun s2 =>
@@ -145,14 +148,14 @@ op keygen : (PK * SK) distr =
 (* commit as a mathematical distribution - for use in axioms *)
 op dy = dvector (dRq_ (gamma1 - 1)) l.
 type pstate_t = vector. 
-op commit (sk : SK) : (commit_t * pstate_t) distr =
+op commit (sk : SK') : (commit_t * pstate_t) distr =
   let (mA, s1, s2) = sk in
   dmap dy (fun y =>
   let w1 = highBitsV (mA *^ y) in
   (w1, y)).
 
 (* respond as a mathematical function - for use in axioms *)
-op respond (sk : SK) (c : challenge_t) (y: pstate_t) : response_t option =
+op respond (sk : SK') (c : challenge_t) (y: pstate_t) : response_t option =
   let (mA, s1, s2) = sk in
   let t0 = base2lowbitsV (mA *^ s1 + s2) in
   let w = mA *^ y in
@@ -163,7 +166,6 @@ op respond (sk : SK) (c : challenge_t) (y: pstate_t) : response_t option =
     Some (z, h)
     else None.
 
-
 (* Parameters of the proof *)
 (* TOTHINK: can we make these section variables? *)
 const qS : { int | 0 <= qS } as qS_ge0.
@@ -172,7 +174,7 @@ const qH : { int | 0 <= qH } as qH_ge0.
 
 op valid_sk sk = exists pk, (pk,sk) \in keygen.
 (* a check for "good" keys *)
-op check (sk : SK) : bool.
+op check (sk : SK') : bool.
 
 (* upper bound on the mass of the most likely commitment for a good key *)
 const eps_comm  : { real | 0%r < eps_comm }   as eps_comm_gt0.
@@ -182,21 +184,21 @@ const eps_check : { real | 0%r <= eps_check }  as eps_good_gt0.
 const p_rej  : { real | 0%r <= p_rej < 1%r} as p_rej_bounded.
 
 (* all secret keys passing the check have high commitment entropy *)
-axiom check_entropy (sk : SK) : valid_sk sk => check sk =>
+axiom check_entropy (sk : SK') : valid_sk sk => check sk =>
   p_max (dfst (commit sk)) <= eps_comm.
 
 (* most honestly sampled secret keys pass the check *)
 axiom check_most : mu (dsnd keygen) (predC check) <= eps_check.
 
 (* probability that response fails on "good" keys is bounded by p_rej *)
-axiom rej_bound (sk : SK) :
+axiom rej_bound (sk : SK') :
   sk \in dsnd (dcond keygen (check \o snd)) =>
   mu (commit sk `*` dC tau) 
      (fun (x : (commit_t * pstate_t) * challenge_t) => respond sk x.`2 x.`1.`2 = None) <= p_rej.
 
 (* Some good key. Since keygen is lossless and check only rules out
 small fraction, we could just use epsilon here. *)
-const sk0 : { SK | (exists pk, (pk,sk0) \in keygen) /\ check sk0 } as sk0P.
+const sk0 : { SK' | (exists pk, (pk,sk0) \in keygen) /\ check sk0 } as sk0P.
 
 (* Instantiate the definitions for digital signature security in the ROM *)
 clone import DigitalSignaturesRO as DSS with 
@@ -224,7 +226,7 @@ clone SimplifiedScheme as SD with
   theory DR <- DR,
   theory DV <- DV,
   type M <- M,
-  theory FSaCR.DSS <- DSS,
+  (* theory FSaCR.DSS <- DSS, *)
 
   op e <- eta_,
   op b <- beta_,
@@ -250,8 +252,19 @@ clone SimplifiedScheme as SD with
   axiom qH_ge0 <- qH_ge0
 proof* by admit. (* TODO *)
 
+print SD.FSaCR.DSS.Adv_EFCMA_RO.
 
-
+(* reduction to simplified scheme: drop t0 *)
+module (RedS (A : Adv_EFCMA_RO) : SD.FSaCR.DSS.Adv_EFCMA_RO)
+       (H : Hash) (O : SOracle_CMA) = { 
+ proc forge (pk: PK') = { 
+    var r,mA,t,t1;
+    (mA,t) <- pk;
+    t1 <- base2highbitsV t;
+    r <@ A(H,O).forge(mA,t1);
+    return r;
+  }
+}.
 
 section PROOF.
 
@@ -259,9 +272,10 @@ section PROOF.
 oracle H, the signing oracle of che EUF_CMA game, and all the
 auxiliary constructions used in the proof. *)
 
-declare module A <: DSS.Adv_EFCMA_RO{
+declare module A <: Adv_EFCMA_RO{
   -H, -O_CMA_Default,
-  -SD.H, -SD.G, 
+  -SD.H, 
+  -SD.G, 
   -SD.OpBasedSig, 
   -SD.CMAtoKOA.ORedKOA, 
   -SD.CMAtoKOA.CountS, 
@@ -270,7 +284,10 @@ declare module A <: DSS.Adv_EFCMA_RO{
   -SD.CountH, 
   -SD.O_CMA_Default_G, 
   -SD.RO_G, 
-  -SD.OpBasedSigG}.
+  -SD.OpBasedSigG,
+  -RedS,
+  -SD.FSaCR.DSS.DS.Stateless.O_CMA_Default
+}.
 
 (* A's attemts at forging a signature terminate, 
   provided the oracles it is provided with are terminating *)
@@ -279,6 +296,8 @@ declare axiom A_ll (SO' <: SOracle_CMA{-A}) (H' <: Hash{-A} ) :
 
 (* A makes no more than qH random oracle (i.e., hash) queries 
   and no more than qS many signing queries *)
+(* NOTE: we can use the counting wrappers from SD, because the oracles
+have the same signature. Only the key format is changed *)
 declare axiom A_bound 
   (H' <: Hash{-SD.CountS, -SD.CountH, -A} )
   (SO' <: SOracle_CMA{-SD.CountS, -SD.CountH, -A} ) :
@@ -286,11 +305,13 @@ declare axiom A_bound
       SD.CountH.qh = 0 /\ SD.CountS.qs = 0 ==>
       SD.CountH.qh <= qH /\ SD.CountS.qs <= qS].
 
+(* Reduction to MLWE *)
 module RedMLWE (A : Adv_EFCMA_RO) = 
-  SD.RedMLWE(SD.RedCR(SD.CMAtoKOA.RedKOA(SD.CG.RedFSaG(A), SD.HVZK_Sim_Inst)), PRO.RO).
+  SD.RedMLWE(SD.RedCR(SD.CMAtoKOA.RedKOA(SD.CG.RedFSaG(RedS(A)), SD.HVZK_Sim_Inst)), SD.FSaCR.DSS.PRO.RO).
 
+(* Reduction to SelfTargetMSIS *)
 module RedStMSIS (A : Adv_EFCMA_RO) = 
-  SD.RedMSIS(SD.RedCR(SD.CMAtoKOA.RedKOA(SD.CG.RedFSaG(A), SD.HVZK_Sim_Inst))).
+  SD.RedMSIS(SD.RedCR(SD.CMAtoKOA.RedKOA(SD.CG.RedFSaG(RedS(A)), SD.HVZK_Sim_Inst))).
 
 lemma SimplifiedDilithium_secure &m :
  Pr[EF_CMA_RO(Dilithium, A, H, O_CMA_Default).main() @ &m : res] <=
@@ -300,10 +321,69 @@ lemma SimplifiedDilithium_secure &m :
      (2%r * qS%r * (qH + qS + 1)%r * eps_comm / (1%r - p_rej) +
       qS%r * eps_comm * (qS%r + 1%r) / (2%r * (1%r - p_rej) ^ 2)) + 2%r * eps_check.
 proof.
-apply: ler_trans (SD.SimplifiedDilithium_secure A A_bound A_ll &m).
-byequiv (_ : ={glob A} ==> ={res}) => //. sim.
+have SD_security := SD.SimplifiedDilithium_secure (RedS (A)) _ _ &m.
+- by move => H' O'; proc; call (A_bound H' O'); auto.
+- by move => O' H' ? ?; islossless; exact (A_ll O' H').
+apply: ler_trans SD_security; byequiv => //; proc. 
+inline{1} 2; inline{2} 2.
+inline{1} 2; inline{2} 2.
+inline{2} 10.
+(* suff to show that signature, RO state, and pk agree *)
+seq 12 14 : (={m,sig} /\ PRO.RO.m{1} = SD.FSaCR.DSS.PRO.RO.m{2} /\ 
+             O_CMA_Default.qs{1} = SD.FSaCR.DSS.DS.Stateless.O_CMA_Default.qs{2} /\
+             pk{1} = (mA,base2highbitsV t){2} /\ pk{2} = (mA,t){2}); last first. 
+- inline {1} 3; inline{2} 3. inline{1} 2; inline{2} 2. wp.
+  inline {1} 1; inline{2} 1. wp. 
+  call(: PRO.RO.m{1} = SD.FSaCR.DSS.PRO.RO.m{2}); 1: by auto.
+  by auto => />.
+(* Turn mA, s1, s2, and t into global variables *)
+wp; swap{1} 1 4. swap{2} 1 4. 
+seq 4 4 : (={glob A,mA,s1,s2,t} /\ (t = mA *^ s1 + s2){1}).
+  by wp; sim : (={glob A,mA,s1,s2}).
+exlim t{1} => t; exlim s1{1} => s1; exlim s2{1} => s2; exlim mA{1} => mA.
+(* Soundness of the reduction *)
+call (: t = mA *^ s1 + s2 /\
+        PRO.RO.m{1} = SD.FSaCR.DSS.PRO.RO.m{2} /\ 
+        O_CMA_Default.qs{1} = SD.FSaCR.DSS.DS.Stateless.O_CMA_Default.qs{2} /\
+        O_CMA_Default.sk{1} = (mA,s1,s2, base2lowbitsV t) /\
+        SD.FSaCR.DSS.DS.Stateless.O_CMA_Default.sk{2} = (mA,s1,s2)).
+- proc; inline{1} 1; inline{2} 1; wp; conseq />. 
+- while (={response,c,mA,s1,s2,t0,m0} /\ PRO.RO.m{1} = SD.FSaCR.DSS.PRO.RO.m{2}).
+    by sim.
+  by auto => />.
+- by proc; auto.
+by inline*; auto => />.
 qed.
 
 end section PROOF.
 
 end AbstractDilithium.
+
+
+abstract theory ConcreteDilithium.
+
+require ConcreteDRing.
+
+const q : { int | prime q } as prime_q.
+const n : { int | 0 < n } as gt0_n.
+
+(* clone import ConcreteDRing as CR proof*. *)
+
+clone import ConcreteDRing as CDR with 
+  op Round.q <= q,
+  op Round.n <= n,
+  axiom Round.prime_q <= prime_q,
+  axiom Round.gt0_n <= gt0_n
+(* proof* *)
+(* TODO: proof* gives more than just the (unavoidable) subtype axioms *)
+.
+
+clone import AbstractDilithium as ConcreteDilithium with 
+  theory DR <- CDR.DR.
+
+end ConcreteDilithium.
+
+(* TODO: this has more axioms than there should be *)
+(* clone ConcreteDilithium as CD proof*. *)
+
+
