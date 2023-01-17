@@ -1204,12 +1204,7 @@ qed.
 
 end section OpBasedHVZK.
 
-(* Main Theorem *)
 
-op valid_sk sk = exists pk, (pk,sk) \in keygen.
-
-(* a check for "good" keys *)
-op check (sk : SK) : bool.
 
 (* upper bound on the mass of the most likely commitment for a good key *)
 const eps_comm  : { real | 0%r < eps_comm }   as eps_comm_gt0.
@@ -1218,18 +1213,89 @@ const eps_check : { real | 0%r <= eps_check }  as eps_good_gt0.
 (* upper bound in on the rejection probability for good keys *)
 const p_rej  : { real | 0%r <= p_rej < 1%r} as p_rej_bounded.
 
+theory C.
+
+require import SDist.
+
+op dz = dvector (dRq_ (gamma1 - b - 1)) l.
+
+op check : matrix -> bool.
+op delta_low : real. (* bound on the difference between lowBits(Az - ct) and uniform *)
+
+axiom check_entropy (mA : matrix) : 
+  check mA => p_max (dmap dy (fun y => highBitsV (mA *^ y))) <= eps_comm.
+
+axiom check_most : mu dA (predC check) <= eps_check.
+
+axiom check_low c (t : vector) (mA : matrix) :
+  c \in dC tau => t \in dvector dRq k => check mA => 
+  sdist (dmap dz (fun z => lowBitsV (mA *^ z - c ** t)))
+        (dvector (dRq_ (gamma2 - b - 1)) k) <= delta_low.
+
+end C.
+
+
+(* Main Theorem *)
+
+op valid_sk sk = exists pk, (pk,sk) \in keygen.
+
+(* a check for "good" keys *)
+op check (sk : SK) : bool = C.check (sk.`1).
+
+
 (* all secret keys passing the check have high commitment entropy *)
-axiom check_entropy (sk : SK) : valid_sk sk => check sk =>
+lemma check_entropy (sk : SK) : valid_sk sk => check sk =>
   p_max (dfst (commit sk)) <= eps_comm.
+proof.
+case: sk => mA s1 s2 -[[mA' t]] /pk_decomp @/check /= _.
+by rewrite /commit /= dmap_comp /(\o) /=; exact: C.check_entropy.
+qed.
+
+lemma mu_eq_l (d2 d1 : 'a distr) p : d1 = d2 => mu d1 p = mu d2 p by smt().
+
+lemma dletEunit (d : 'a distr) F : F == dunit => dlet d F = d by smt(dlet_d_unit).
+
+lemma dletEconst (d2 : 'b distr) (d1 : 'a distr) (F : 'a -> 'b distr) :
+  is_lossless d1 => 
+  (forall x, F x = d2) => dlet d1 F = d2.
+proof.
+move => d1_ll F_const; apply/eq_distr => b; rewrite dletE.
+rewrite (eq_sum _ (fun x : 'a => mu1 d1 x * mu1 d2 b)) 1:/#.
+by rewrite sumZr -weightE d1_ll. 
+qed.
 
 (* most honestly sampled secret keys pass the check *)
-axiom check_most : mu (dsnd keygen) (predC check) <= eps_check.
+lemma check_most : mu (dsnd keygen) (predC check) <= eps_check.
+proof.
+have ds1_ll : is_lossless ds1 by apply/dvector_ll/dRq__ll.
+have ds2_ll : is_lossless ds2 by apply/dvector_ll/dRq__ll.
+apply: StdOrder.RealOrder.ler_trans C.check_most.
+have -> : (predC check) = (predC C.check) \o (fun sk : SK => sk.`1) by smt().
+rewrite -dmapE dmap_comp /(\o) (mu_eq_l dA) //.
+apply eq_distr => mA. rewrite dmap1E. 
+rewrite /keygen -/dA -dmapE dmap_dlet /= dletEunit // => {mA} mA.
+rewrite dmap_dlet; apply dletEconst => //= s1.
+by rewrite dmap_comp /dmap; apply dletEconst.
+qed.
+
+require import SDist.
 
 (* probability that response fails on "good" keys is bounded by p_rej *)
-axiom rej_bound (sk : SK) :
+lemma rej_bound (sk : SK) :
   sk \in dsnd (dcond keygen (check \o snd)) =>
   mu (commit sk `*` dC tau) 
      (fun (x : (ID.W * ID.Pstate) * ID.C) => respond sk x.`2 x.`1.`2 = None) <= p_rej.
+proof.
+move => Hsk.
+have {Hsk} |> mA s1 s2 chk_mA Hs1 Hs2 /= : 
+  exists mA s1 s2, C.check mA /\ s1 \in ds1 /\ s2 \in ds2 /\ sk = (mA,s1,s2). admit.
+rewrite /commit /=; pose dw1 := dmap _ _.
+rewrite (mu_eq _ _ (pred1 None \o (fun (x : (ID.W * ID.Pstate) * ID.C) =>
+     respond (mA, s1, s2) x.`2 x.`1.`2))); 1: by move => />.
+rewrite -dmapE dmap_dprodE.
+admitted.
+
+
 
 (* Some good key. Since keygen is lossless and check only rules out
 small fraction, we could just use epsilon here. *)
