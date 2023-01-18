@@ -1242,7 +1242,6 @@ op valid_sk sk = exists pk, (pk,sk) \in keygen.
 (* a check for "good" keys *)
 op check (sk : SK) : bool = C.check (sk.`1).
 
-
 (* all secret keys passing the check have high commitment entropy *)
 lemma check_entropy (sk : SK) : valid_sk sk => check sk =>
   p_max (dfst (commit sk)) <= eps_comm.
@@ -1278,7 +1277,91 @@ rewrite dmap_dlet; apply dletEconst => //= s1.
 by rewrite dmap_comp /dmap; apply dletEconst.
 qed.
 
+(* -- Reject bound shenanigans -- *)
+
+lemma HonestExecutionPRejAsOp keys &m :
+  keys \in dcond keygen (check \o snd) =>
+  let (pk, sk) = keys in
+  Pr[DID.Honest_Execution(P, V).get_trans(keys) @ &m : res = None] = mu (commit sk `*` dC tau) 
+     (fun (x : (ID.W * ID.Pstate) * ID.C) => respond sk x.`2 x.`1.`2 = None).
+proof.
+(* TODO some kinda `rnd*` I think? *)
+(* Doesn't seem necessary to remove return value yet...? *)
+admitted.
+
+lemma prej_in_sim keys &m :
+  keys \in dcond keygen (check \o snd) =>
+  let (pk, sk) = keys in
+  Pr[HVZK_Sim_Inst.get_trans(pk) @ &m : res = None] = mu (commit sk `*` dC tau) 
+     (fun (x : (ID.W * ID.Pstate) * ID.C) => respond sk x.`2 x.`1.`2 = None).
+proof.
+print HVZK_Sim_correct.
+admitted.
+
+(* Want to show this outputs None less than prej...? *)
+
+module NoneChecker = {
+  proc check_none(pk : PK) : bool = {
+    var mA, w', c, z, t, resp;
+    var oz, t0;
+
+    (mA, t) <- pk;
+    t0 <- base2lowbitsV t;
+    c <$ FSa.dC;
+    oz <$ dsimoz;
+    if(oz <> None) {
+      z <- oget oz;
+      w' <- mA *^ z - c ** t;
+      resp <- if inf_normv (lowBitsV w') < gamma2 - b then
+        let h = makeHintV (- c ** t0) (w' + c ** t0) in Some (z, h)
+      else None;
+    } else {
+      resp <- None;
+    }
+    return resp = None;
+  }
+
+  (* Somehow massage to this... *)
+  proc check_none_unif_low(pk : PK) : bool = {
+    var mA, c, t, result;
+    var low;
+    var oz, t0;
+
+    (mA, t) <- pk;
+    t0 <- base2lowbitsV t;
+    c <$ FSa.dC;
+    oz <$ dsimoz;
+    if(oz <> None) {
+      low <$ dvector (dRq_ (gamma2 - b - 1)) k;
+      result <- inf_normv low < gamma2 - b;
+    } else {
+      result <- false;
+    }
+    return result;
+  }
+}.
+
 require import SDist.
+clone import Dist with type a <- vector proof *.
+
+(* In fact need a few hops... *)
+lemma lowbits_uniform_hop keys &m :
+  keys \in dcond keygen (check \o snd) =>
+  let (pk, sk) = keys in
+  `|Pr[NoneChecker.check_none(pk) @ &m : res] - Pr[NoneChecker.check_none_unif_low(pk) @ &m : res]|
+    <= C.delta_low.
+proof.
+print adv_sdist.
+admitted.
+
+(* TODO compute output probs for check_none_unif_low... *)
+(* Wait, the gamma stuff's been done once. *)
+op some_value_TODO : real.
+
+lemma lowbits_rej_bound &m pk :
+  Pr[NoneChecker.check_none_unif_low(pk) @ &m : res] = some_value_TODO.
+proof.
+admitted.
 
 (* probability that response fails on "good" keys is bounded by p_rej *)
 lemma rej_bound (sk : SK) :
@@ -1294,8 +1377,6 @@ rewrite (mu_eq _ _ (pred1 None \o (fun (x : (ID.W * ID.Pstate) * ID.C) =>
      respond (mA, s1, s2) x.`2 x.`1.`2))); 1: by move => />.
 rewrite -dmapE dmap_dprodE.
 admitted.
-
-
 
 (* Some good key. Since keygen is lossless and check only rules out
 small fraction, we could just use epsilon here. *)
