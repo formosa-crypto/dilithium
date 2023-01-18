@@ -697,15 +697,14 @@ op dsimoz : vector option distr =
 
 module HVZK_Sim_Inst : DID.HVZK_Sim = {
   proc get_trans(pk : PK) = {
-    var mA, w', c, z, t, resp;
-    var oz, t0;
-
+    var mA, w', z, t,t0, resp,sample_z;
+    var c <- witness;
     (mA, t) <- pk;
-    t0 <- base2lowbitsV t;
-    c <$ FSa.dC;
-    oz <$ dsimoz;
-    if(oz <> None) {
-      z <- oget oz;
+    t0 <- base2lowbitsV t;    
+    sample_z <$ dbiased line12_magic_number;  
+    if(sample_z) {
+      c <$ FSa.dC;
+      z <$ dsimz;
       w' <- mA *^ z - c ** t;
       resp <- if inf_normv (lowBitsV w') < gamma2 - b then
         let h = makeHintV (- c ** t0) (w' + c ** t0) in Some (z, h)
@@ -1041,6 +1040,49 @@ local module HVZK_Hops = {
     }
     return omap (fun z => (c, z)) resp;
   }
+
+  proc game8(pk: PK) : (challenge_t * response_t) option = {
+    var mA, w', z, t, t0, resp, sample_z;
+    var oz; (* only used for the proof *)
+    var c <- witness;
+
+    (mA, t) <- pk;
+    t0 <- base2lowbitsV t;
+    c <$ FSa.dC;
+    sample_z <$ dbiased line12_magic_number;  
+    z <$ dsimz;
+    oz <- if sample_z then Some z else None;
+    if(oz <> None) {
+      z <- oget oz;
+      w' <- mA *^ z - c ** t;
+      resp <- if inf_normv (lowBitsV w') < gamma2 - b then
+        let h = makeHintV (- c ** t0) (w' + c ** t0) in Some (z, h)
+      else None;
+    } else {
+      resp <- None;
+    }
+    return omap (fun z => (c, z)) resp;
+  }
+
+  proc game9(pk: PK) : (challenge_t * response_t) option = {
+    var mA, w', z, t, t0, resp, sample_z;
+    var c <- witness;
+
+    (mA, t) <- pk;
+    t0 <- base2lowbitsV t;
+    sample_z <$ dbiased line12_magic_number;  
+    if(sample_z) {
+      c <$ FSa.dC;
+      z <$ dsimz;
+      w' <- mA *^ z - c ** t;
+      resp <- if inf_normv (lowBitsV w') < gamma2 - b then
+        let h = makeHintV (- c ** t0) (w' + c ** t0) in Some (z, h)
+      else None;
+    } else {
+      resp <- None;
+    }
+    return omap (fun z => (c, z)) resp;
+  }
 }.
 
 local equiv hop2_correct pk_i sk_i :
@@ -1140,8 +1182,35 @@ rewrite line12_magic //.
 by case /keygen_supp_decomp valid_keys.
 qed.
 
+local equiv hop8_correct pk_i sk_i :
+  HVZK_Hops.game7 ~ HVZK_Hops.game8 :
+  arg{1} = pk_i /\ arg{2} = pk_i /\ (pk_i, sk_i) \in keygen ==> ={res}.
+proof.
+proc.
+seq 4 7 : (={mA,c,t,t0,oz}); last by sim.
+sp; conseq />.
+swap{1} 1 1; swap{2} 1 3; rnd.
+conseq (: true ==> ={oz}); 1: smt().
+rnd : *0 *0;skip. 
+suff -> : dlet (dbiased line12_magic_number) 
+               (fun b => dmap dsimz (fun z => if b then Some z else None)) = dsimoz.
+- move => _ _ _; rewrite !andaE; do ! split => ?; by rewrite dmap_id. 
+by apply in_eq_dlet => -[] //= _; apply/dmap_cst/dsimz_ll.
+qed.
+
+local equiv hop9_correct pk_i sk_i :
+  HVZK_Hops.game8 ~ HVZK_Hops.game9 :
+  arg{1} = pk_i /\ arg{2} = pk_i /\ (pk_i, sk_i) \in keygen ==> ={res}.
+proof.
+proc. 
+swap{1} 4 1.
+seq 4 4 : (={mA,t,t0,sample_z}); 1: by auto.
+if{2}; first by rcondt{1} ^if; by auto => />.
+rcondf{1} ^if; auto => />; smt(dsimz_ll).
+qed.
+
 local equiv KLS_HVZK pk sk :
-  HVZK_Hops.game1 ~ HVZK_Hops.game7 :
+  HVZK_Hops.game1 ~ HVZK_Hops.game9 :
   (pk, sk) \in keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==>
   ={res}.
 proof.
@@ -1165,7 +1234,15 @@ transitivity HVZK_Hops.game6
   ((pk, sk) \in Self.keygen /\ arg{1} = (pk, sk) /\ arg{2} = (pk, sk) ==> ={res})
   ((pk, sk) \in Self.keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res}); 1, 2: smt().
 - by conseq (hop6_correct pk sk) => /#.
-by conseq (hop7_correct pk sk) => /#.
+transitivity HVZK_Hops.game7
+  ((pk, sk) \in Self.keygen /\ arg{1} = (pk, sk) /\ arg{2} = pk ==> ={res})
+  ((pk, sk) \in Self.keygen /\ arg{1} = pk /\ arg{2} = pk ==> ={res}); 1, 2: smt().
+- by conseq (hop7_correct pk sk) => /#.
+transitivity HVZK_Hops.game8
+  ((pk, sk) \in Self.keygen /\ arg{1} = pk /\ arg{2} = pk ==> ={res})
+  ((pk, sk) \in Self.keygen /\ arg{1} = pk /\ arg{2} = pk ==> ={res}); 1, 2: smt().
+- by conseq (hop8_correct pk sk) => /#.
+by conseq (hop9_correct pk sk) => /#.
 qed.
 
 equiv HVZK_Sim_correct k :
@@ -1183,8 +1260,7 @@ conseq
   (_: arg = pk_i ==>
       res <> None => let (w, c, z) = oget res in w = (recover pk_i c z)); 1, 2: smt().
 - by conseq (recover_correct pk_i sk_i).
-- proc; seq 5: (pk = pk_i); first by auto.
-  by auto => /> /#.
+- proc; conseq (_ : _ ==> pk = pk_i); [ by auto => /> /# | by conseq /> ]. 
 (* left hand side equiv to KLS HVZK first game *)
 transitivity HVZK_Hops.game1
  ((pk_i, sk_i) \in keygen /\ arg{1} = (pk_i, sk_i) /\ arg{2} = (pk_i, sk_i) ==>
@@ -1193,17 +1269,16 @@ transitivity HVZK_Hops.game1
    res{1} = omap drop_commitment res{2}); 1, 2: smt().
  - by proc; inline *; auto => /#.
 (* right hand side equiv to KLS HVZK final game *)
-transitivity HVZK_Hops.game7
+transitivity HVZK_Hops.game9
   ((pk_i, sk_i) \in keygen /\ arg{1} = (pk_i, sk_i) /\ arg{2} = pk_i ==> ={res})
   ((pk_i, sk_i) \in keygen /\ arg{1} = pk_i /\ arg{2} = pk_i ==>
    res{1} = omap drop_commitment res{2}); 1, 2: smt().
 - by conseq (KLS_HVZK pk_i sk_i).
 proc.
-by sim : (={pk, c, resp}); smt().
+sim : (={pk, c, resp}); smt().
 qed.
 
 end section OpBasedHVZK.
-
 
 
 (* upper bound on the mass of the most likely commitment for a good key *)
@@ -1385,6 +1460,8 @@ module NoneChecker = {
 }.
 
 require import SDist.
+
+(* @Ethan, this clone breaks the proofs below (likely some name shadowing). 
 clone import Dist with type a <- vector proof *.
 
 (* In fact need a few hops... *)
@@ -1408,6 +1485,7 @@ lemma lowbits_prej_unfold :
   (((2 * (gamma2 - b) - 1)%r / (2 * gamma2 - 1)%r) ^ (n * k)).
 proof.
 admitted.
+*)
 
 (* Ethan: Maybe I can start on this one? *)
 lemma lowbits_rej_bound &m pk :
@@ -1424,13 +1502,14 @@ lemma rej_bound (sk : SK) :
      (fun (x : (ID.W * ID.Pstate) * ID.C) => respond sk x.`2 x.`1.`2 = None) <= p_rej.
 proof.
 move => Hsk.
-have {Hsk} |> mA s1 s2 chk_mA Hs1 Hs2 /= : 
-  exists mA s1 s2, C.check mA /\ s1 \in ds1 /\ s2 \in ds2 /\ sk = (mA,s1,s2). admit.
-rewrite /commit /=; pose dw1 := dmap _ _.
-rewrite (mu_eq _ _ (pred1 None \o (fun (x : (ID.W * ID.Pstate) * ID.C) =>
-     respond (mA, s1, s2) x.`2 x.`1.`2))); 1: by move => />.
-rewrite -dmapE dmap_dprodE.
+have {Hsk} [pk [pk_sk chk_sk]] : exists pk, (pk,sk) \in keygen /\ check sk. 
+  admit.
+have [&m _] : exists &m, true by smt().
+have /= <- := HonestExecutionPRejAsOp (pk,sk) &m _. 
+  admit. (* TODO: simplify the lemma statement to what's needed *)
+
 admitted.
+
 
 (* Some good key. Since keygen is lossless and check only rules out
 small fraction, we could just use epsilon here. *)
