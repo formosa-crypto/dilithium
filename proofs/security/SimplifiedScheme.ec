@@ -1286,7 +1286,6 @@ lemma HonestExecutionPRejAsOp keys &m :
      (fun (x : (ID.W * ID.Pstate) * ID.C) => respond sk x.`2 x.`1.`2 = None).
 proof.
 (* TODO some kinda `rnd*` I think? *)
-(* Doesn't seem necessary to remove return value yet...? *)
 admitted.
 
 lemma prej_in_sim keys &m :
@@ -1297,8 +1296,6 @@ lemma prej_in_sim keys &m :
 proof.
 print HVZK_Sim_correct.
 admitted.
-
-(* Want to show this outputs None less than prej...? *)
 
 module NoneChecker = {
   proc check_none(pk : PK) : bool = {
@@ -1321,7 +1318,7 @@ module NoneChecker = {
     return resp = None;
   }
 
-  (* Somehow massage to this... *)
+  (* Somehow massage into this... *)
   proc check_none_unif_low(pk : PK) : bool = {
     var mA, c, t, result;
     var low;
@@ -1354,13 +1351,15 @@ proof.
 print adv_sdist.
 admitted.
 
-(* TODO compute output probs for check_none_unif_low... *)
-(* Wait, the gamma stuff's been done once. *)
-op some_value_TODO : real.
-
+(* Ethan: Maybe I can start on this one? *)
 lemma lowbits_rej_bound &m pk :
-  Pr[NoneChecker.check_none_unif_low(pk) @ &m : res] = some_value_TODO.
+  Pr[NoneChecker.check_none_unif_low(pk) @ &m : res] =
+  1%r - (((2 * (gamma1 - b) - 1)%r / (2 * gamma1 - 1)%r) ^ (n * l)) *
+        (((2 * (gamma2 - b) - 1)%r / (2 * gamma2 - 1)%r) ^ (n * k)).
 proof.
+have: line12_magic_number = (2 * (gamma1 - b) - 1)%r / (2 * gamma1 - 1)%r.
+(* TODO break out as lemma and do the same with the other term *)
+- admit.
 admitted.
 
 (* probability that response fails on "good" keys is bounded by p_rej *)
