@@ -55,7 +55,7 @@ op b : {int | 0 < b} as gt0_b.
 
 (* more beta bounds and properties... *)
 axiom b_gamma1_lt : b < gamma1.
-axiom b_round_gamma2_lt : b < 2 * gamma2 %/ 2.
+axiom b_gamma2_lt : b < gamma2.
 
 op d : { int | 0 < d } as gt0_d.
 
@@ -672,7 +672,7 @@ have [C1 C2] {H} : inf_normv z < gamma1 - b /\
                    inf_normv (lowBitsV (mA *^ y - c ** s2)) < gamma2 - b by smt(). 
 apply (hide_lowV _ _ b); 
   1,2,3,5: smt(size_oppv size_scalarv size_mulmxv size_dvector size_addv
-               gt0_b b_round_gamma2_lt).
+               gt0_b b_gamma2_lt).
 apply: StdOrder.IntOrder.ler_trans eta_tau_leq_b; rewrite mulrC.
 apply l1_inf_norm_product_ub; 1..3: smt(tau_bound gt0_eta supp_dC).
 (* Lemma *)
