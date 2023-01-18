@@ -1368,8 +1368,6 @@ proof.
 print adv_sdist.
 admitted.
 
-(* Ethan: Maybe I can start on this one? *)
-
 lemma line12_magic_number_unfold :
   line12_magic_number = ((2 * (gamma1 - b) - 1)%r / (2 * gamma1 - 1)%r) ^ (n * l).
 proof.
@@ -1382,7 +1380,7 @@ lemma lowbits_prej_unfold :
 proof.
 admitted.
 
-
+(* Ethan: Maybe I can start on this one? *)
 lemma lowbits_rej_bound &m pk :
   Pr[NoneChecker.check_none_unif_low(pk) @ &m : res] =
   1%r - (((2 * (gamma1 - b) - 1)%r / (2 * gamma1 - 1)%r) ^ (n * l)) *
