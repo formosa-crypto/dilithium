@@ -1297,7 +1297,24 @@ proof.
 print HVZK_Sim_correct.
 admitted.
 
+(* TODO there's gotta be side-conditions... *)
+lemma size_supp_dvecball r d:
+  size (to_seq (support (dvector (dRq_ r) d))) = (2 * r + 1) ^ (n * d).
+proof.
+(* TODO this should be proven elsewhere.
+ * Maybe axiomatized and realized for dRq_
+ * then proven in dvector
+ *)
+admitted.
+
+op dlow_unif = dvector (dRq_ (gamma2 - b - 1)) k.
+
+lemma dlow_unif_supp_sz :
+  size (to_seq (support dlow_unif)) = (2 * (gamma2 - b) - 1) ^ (n * k).
+proof. by rewrite size_supp_dvecball /#. qed.
+
 module NoneChecker = {
+  (* Essentially copied from HVZK_Sim_Inst.get_trans *)
   proc check_none(pk : PK) : bool = {
     var mA, w', c, z, t, resp;
     var oz, t0;
@@ -1329,7 +1346,7 @@ module NoneChecker = {
     c <$ FSa.dC;
     oz <$ dsimoz;
     if(oz <> None) {
-      low <$ dvector (dRq_ (gamma2 - b - 1)) k;
+      low <$ dlow_unif;
       result <- inf_normv low < gamma2 - b;
     } else {
       result <- false;
@@ -1352,6 +1369,20 @@ print adv_sdist.
 admitted.
 
 (* Ethan: Maybe I can start on this one? *)
+
+lemma line12_magic_number_unfold :
+  line12_magic_number = ((2 * (gamma1 - b) - 1)%r / (2 * gamma1 - 1)%r) ^ (n * l).
+proof.
+admitted.
+
+op good_low (low : vector) = size low = k /\ inf_normv low < gamma2 - b.
+lemma lowbits_prej_unfold :
+  (size (to_seq good_low))%r / (size (to_seq (support dlow_unif)))%r =
+  (((2 * (gamma2 - b) - 1)%r / (2 * gamma2 - 1)%r) ^ (n * k)).
+proof.
+admitted.
+
+
 lemma lowbits_rej_bound &m pk :
   Pr[NoneChecker.check_none_unif_low(pk) @ &m : res] =
   1%r - (((2 * (gamma1 - b) - 1)%r / (2 * gamma1 - 1)%r) ^ (n * l)) *
