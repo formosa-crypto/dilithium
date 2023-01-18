@@ -1297,21 +1297,50 @@ proof.
 print HVZK_Sim_correct.
 admitted.
 
-(* TODO there's gotta be side-conditions... *)
-lemma size_supp_dvecball r d:
-  size (to_seq (support (dvector (dRq_ r) d))) = (2 * r + 1) ^ (n * d).
-proof.
-(* TODO this should be proven elsewhere.
- * Maybe axiomatized and realized for dRq_
- * then proven in dvector
+(* TODO this should be proven elsewhere
+ * Maybe axiomatized in DRing then instantiated in ConcreteDRing?
  *)
-admitted.
+axiom cnorm_count a :
+  0 <= a =>
+  size (to_seq (fun x => cnorm x <= a)) = ((2 * a + 1) ^ n).
+
+lemma size_supp_dRq a :
+  0 <= a =>
+  size (to_seq (support (dRq_ a))) = ((2 * a + 1) ^ n).
+proof.
+move => ge0_a.
+suff: support (dRq_ a) = (fun x => cnorm x <= a).
+- move => ->.
+  exact cnorm_count.
+apply fun_ext => x.
+by rewrite eq_iff supp_dRq.
+qed.
+
+(* TODO this should be proven elsewhere.
+ * Maybe DVect?
+ *)
+axiom dvec_size dR dim :
+  0 <= dim =>
+  size (to_seq (support (dvector dR dim))) = (size (to_seq (support dR))) ^ dim.
+
+lemma size_supp_dvecball r dim :
+  0 <= r =>
+  0 <= dim =>
+  size (to_seq (support (dvector (dRq_ r) dim))) = (2 * r + 1) ^ (n * dim).
+proof.
+move => ge0_r ge0_dim.
+rewrite dvec_size //.
+rewrite size_supp_dRq //.
+by rewrite Ring.IntID.exprM.
+qed.
 
 op dlow_unif = dvector (dRq_ (gamma2 - b - 1)) k.
 
 lemma dlow_unif_supp_sz :
   size (to_seq (support dlow_unif)) = (2 * (gamma2 - b) - 1) ^ (n * k).
-proof. by rewrite size_supp_dvecball /#. qed.
+proof.
+by rewrite size_supp_dvecball; smt(b_gamma2_lt gt0_k).
+qed.
 
 module NoneChecker = {
   (* Essentially copied from HVZK_Sim_Inst.get_trans *)
@@ -1386,9 +1415,6 @@ lemma lowbits_rej_bound &m pk :
   1%r - (((2 * (gamma1 - b) - 1)%r / (2 * gamma1 - 1)%r) ^ (n * l)) *
         (((2 * (gamma2 - b) - 1)%r / (2 * gamma2 - 1)%r) ^ (n * k)).
 proof.
-have: line12_magic_number = (2 * (gamma1 - b) - 1)%r / (2 * gamma1 - 1)%r.
-(* TODO break out as lemma and do the same with the other term *)
-- admit.
 admitted.
 
 (* probability that response fails on "good" keys is bounded by p_rej *)
