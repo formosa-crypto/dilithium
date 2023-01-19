@@ -513,7 +513,6 @@ clone import OpBased with
   op verify <= verify
 proof* by smt(keygen_ll commit_ll).
 
-(* Sanity check for matrix/vector dimensions *)
 lemma size_t pk sk : (pk,sk) \in keygen => size pk.`2 = k.
 proof. 
 case/supp_dlet => mA /= [s_mA]. 
@@ -813,6 +812,9 @@ split; first smt(size_zerov Self.gt0_l).
 by rewrite inf_normv_zero; smt(b_gamma1_lt).
 qed.
 
+lemma clamp_magic : clamp line12_magic_number = line12_magic_number.
+proof. by rewrite clamp_id; smt(clamp_id mask_size mask_nonzero). qed.
+
 local lemma dy_ll :
   is_lossless dy.
 proof. smt(dvector_ll dRq__ll). qed.
@@ -882,15 +884,14 @@ apply eq_distr => z; case z.
 - rewrite line12_magic_none //.
   rewrite eq_sym dlet1E sum_over_bool /=.
   rewrite dmap1E /pred1 /(\o) mu0 /=.
-  rewrite dunit1E dbiased1E /line12_magicnumber /=.
-  rewrite clamp_id; smt(mask_nonzero mask_size).
+  by rewrite dunit1E dbiased1E clamp_magic.
 - move => z.
   case (goodz z).
   + move => z_valid.
     rewrite line12_magic_some // dlet1E sum_over_bool /=.
     rewrite dunit1E /= dmap1E /pred1 /(\o) /=.
-    rewrite dsimz1E //= dbiased1E /=.
-    rewrite clamp_id; smt(mask_nonzero mask_size).
+    rewrite dsimz1E //= dbiased1E /=. 
+    rewrite clamp_magic; smt(mask_nonzero mask_size).
   + move => z_invalid.
     have -> : mu1 (transz c s1) (Some z) = 0%r by rewrite -supportPn line12_outofbound.
     rewrite eq_sym -supportPn supp_dlet.
@@ -915,7 +916,7 @@ local module HVZK_Hops = {
 
     (mA, s1, s2) <- sk;
     t <- mA *^ s1 + s2;
-    t0 <- base2lowbitsV t;
+      t0 <- base2lowbitsV t;
     c <$ FSa.dC;
     y <$ dy;
     z <- y + c ** s1;
@@ -1278,222 +1279,145 @@ proc.
 sim : (={pk, c, resp}); smt().
 qed.
 
+lemma pr_HonestExecution_Sim &m p pk sk : (pk,sk) \in keygen =>
+  Pr[DID.Honest_Execution(P, V).get_trans(pk, sk) @ &m : p res] = 
+  Pr[HVZK_Sim_Inst.get_trans(pk) @ &m : p res].
+proof.
+move => pk_sk; byequiv => //. 
+by conseq (HVZK_Sim_correct (pk,sk)) => />.
+qed.
+
+local module HE = { 
+  proc sample(sk) = { 
+    var x;
+    x <$ (commit sk `*` dC tau);
+    return respond sk x.`2 x.`1.`2;
+  } 
+}. 
+
+
+lemma pr_HonestExecution_op pk sk &m :
+  (pk,sk) \in keygen =>  
+  Pr[DID.Honest_Execution(P, V).get_trans(pk,sk) @ &m : res = None] = 
+  mu (commit sk `*` dC tau) 
+     (fun (x : (ID.W * ID.Pstate) * ID.C) => respond sk x.`2 x.`1.`2 = None).
+proof.
+move => Hpk. 
+have -> : Pr[DID.Honest_Execution(P, V).get_trans(pk, sk) @ &m : res = None] = 
+          Pr[HVZK_Hops.game1(pk,sk) @ &m : res = None]. 
+- byequiv (: ={arg} /\ arg{1} \in keygen ==> res{1} = None <=> res{2} = None) => //.
+  proc; inline*; auto => /> /#.
+have <- : Pr[HE.sample(sk) @ &m : res = None] = 
+          mu (commit sk `*` dC tau)
+             (fun (x : (ID.W * ID.Pstate) * ID.C) => respond sk x.`2 x.`1.`2 = None).
+- byphoare (: arg = sk ==> _) => //; proc; rnd; skip => &hr />. 
+byequiv (_: arg.`2{1} = arg{2} ==> res{1} = None <=> res{2} = None) => //.
+proc; wp. 
+conseq (: _ ==> ((w,st),c){1} = x{2}); 1: smt().
+rnd (fun wsc : high list * pstate_t * challenge_t => ((wsc.`1,wsc.`2),wsc.`3))
+    (fun wsc : (high list * pstate_t) * challenge_t => (wsc.`1.`1,wsc.`1.`2,wsc.`2)) : *0 *0.
+skip => &1 &2; rewrite !andaE => *; do ! split. 
+- smt().
+- case => -[] /= w1 y c ?. rewrite dprod_dlet dmap_dlet /=. 
+  rewrite !dlet1E; congr; apply/fun_ext => -[w1' y'] /=; congr; 1: smt().
+  rewrite !dmapE /(\o) /=. by apply mu_eq => /> /#.
+- case => w1 y c /=.
+  case/supp_dlet => -[w1' y'] [? /supp_dmap [c']] /> ?. 
+  apply/supp_dmap; exists ((w1',y'),c'); smt(supp_dprod).
+qed.
+
 end section OpBasedHVZK.
 
 
+op ll_dflt (d : 'a distr) : 'a = choiceb (support d) witness.
+lemma ll_dfltP (d : 'a distr) : is_lossless d => ll_dflt d \in d.
+proof. 
+move => d_ll; apply: (choicebP (fun x => x \in d) witness) => /=.
+move: d_ll. rewrite /is_lossless weightE_support.
+apply absurd => /= ?; rewrite mu0_false /#.
+qed.
+
+
+(******************************************************)
+(****  Instantiation of the CMA to NMA reduction ******)
+(******************************************************)
+
+(** We require a check on the matrix component of public and secrect
+key that ensures:
+
+- sufficiently high commitment entropy
+- sufficiently high probability that respond succeeds *)
+
+(* Check that ensures that the matrix is "entropy preserving" *)
+(* (and has the right dimensions)                             *)
+op check_mx : matrix -> bool.
+
+axiom check_valid A : check_mx A => A \in dA.
+
 (* upper bound on the mass of the most likely commitment for a good key *)
-const eps_comm  : { real | 0%r < eps_comm }   as eps_comm_gt0.
+const eps_comm  : { real | 0%r < eps_comm } as eps_comm_gt0.
+
+op A0 : { matrix | check_mx A0 } as A0P.
+
+axiom check_mx_entropy (mA : matrix) : 
+  check_mx mA => p_max (dmap dy (fun y => highBitsV (mA *^ y))) <= eps_comm.
+
+
 (* upper bound on the mass of the keys not passing check *)
-const eps_check : { real | 0%r <= eps_check }  as eps_good_gt0.
-(* upper bound in on the rejection probability for good keys *)
-const p_rej  : { real | 0%r <= p_rej < 1%r} as p_rej_bounded.
+const eps_check : { real | 0%r <= eps_check }  as eps_check_gt0.
 
-theory C.
+axiom check_mx_most : mu dA (predC check_mx) <= eps_check.
 
-require import SDist.
+
+(* bound on the probability that he low-bis check in the Sim fails *)
 
 op dz = dvector (dRq_ (gamma1 - b - 1)) l.
+const eps_low : { real | eps_low < 1%r } as eps_low_lt1.
 
-op check : matrix -> bool.
-op delta_low : real. (* bound on the difference between lowBits(Az - ct) and uniform *)
-
-axiom check_entropy (mA : matrix) : 
-  check mA => p_max (dmap dy (fun y => highBitsV (mA *^ y))) <= eps_comm.
-
-axiom check_most : mu dA (predC check) <= eps_check.
-
-axiom check_low c (t : vector) (mA : matrix) :
-  c \in dC tau => t \in dvector dRq k => check mA => 
-  sdist (dmap dz (fun z => lowBitsV (mA *^ z - c ** t)))
-        (dvector (dRq_ (gamma2 - b - 1)) k) <= delta_low.
-
-end C.
+axiom bound_low c (t : vector) (mA : matrix) :
+  c \in dC tau => t \in dvector dRq k => check_mx mA =>
+  mu dz (fun z => gamma2 - b <= inf_normv (lowBitsV (mA *^ z - c ** t)) ) <= eps_low. 
 
 
-(* Main Theorem *)
+(* From the assumptions above, we can derive the assumptions of the
+CMA to NMA reduction: *)
+
+op p_rej = line12_magic_number * eps_low + (1%r - line12_magic_number).
+
+lemma p_rej_bounded : 0%r <= p_rej < 1%r.
+have ? : 0%r < line12_magic_number <= 1%r. admit.
+have ? : 0%r <= eps_low < 1%r.  
+  rewrite eps_low_lt1 /=. admit. (* instantiate bound_low *)  
+smt().
+qed.
 
 op valid_sk sk = exists pk, (pk,sk) \in keygen.
 
 (* a check for "good" keys *)
-op check (sk : SK) : bool = C.check (sk.`1).
+op check (sk : SK) : bool = check_mx (sk.`1).
 
 (* all secret keys passing the check have high commitment entropy *)
 lemma check_entropy (sk : SK) : valid_sk sk => check sk =>
   p_max (dfst (commit sk)) <= eps_comm.
 proof.
 case: sk => mA s1 s2 -[[mA' t]] /pk_decomp @/check /= _.
-by rewrite /commit /= dmap_comp /(\o) /=; exact: C.check_entropy.
+by rewrite /commit /= dmap_comp /(\o) /=; exact: check_mx_entropy.
 qed.
 
-lemma mu_eq_l (d2 d1 : 'a distr) p : d1 = d2 => mu d1 p = mu d2 p by smt().
-
-lemma dletEunit (d : 'a distr) F : F == dunit => dlet d F = d by smt(dlet_d_unit).
-
-lemma dletEconst (d2 : 'b distr) (d1 : 'a distr) (F : 'a -> 'b distr) :
-  is_lossless d1 => 
-  (forall x, F x = d2) => dlet d1 F = d2.
-proof.
-move => d1_ll F_const; apply/eq_distr => b; rewrite dletE.
-rewrite (eq_sum _ (fun x : 'a => mu1 d1 x * mu1 d2 b)) 1:/#.
-by rewrite sumZr -weightE d1_ll. 
-qed.
 
 (* most honestly sampled secret keys pass the check *)
 lemma check_most : mu (dsnd keygen) (predC check) <= eps_check.
 proof.
 have ds1_ll : is_lossless ds1 by apply/dvector_ll/dRq__ll.
 have ds2_ll : is_lossless ds2 by apply/dvector_ll/dRq__ll.
-apply: StdOrder.RealOrder.ler_trans C.check_most.
-have -> : (predC check) = (predC C.check) \o (fun sk : SK => sk.`1) by smt().
+apply: StdOrder.RealOrder.ler_trans check_mx_most.
+have -> : (predC check) = (predC check_mx) \o (fun sk : SK => sk.`1) by smt().
 rewrite -dmapE dmap_comp /(\o) (mu_eq_l dA) //.
 apply eq_distr => mA. rewrite dmap1E. 
 rewrite /keygen -/dA -dmapE dmap_dlet /= dletEunit // => {mA} mA.
 rewrite dmap_dlet; apply dletEconst => //= s1.
 by rewrite dmap_comp /dmap; apply dletEconst.
 qed.
-
-(* -- Reject bound shenanigans -- *)
-
-lemma HonestExecutionPRejAsOp keys &m :
-  keys \in dcond keygen (check \o snd) =>
-  let (pk, sk) = keys in
-  Pr[DID.Honest_Execution(P, V).get_trans(keys) @ &m : res = None] = mu (commit sk `*` dC tau) 
-     (fun (x : (ID.W * ID.Pstate) * ID.C) => respond sk x.`2 x.`1.`2 = None).
-proof.
-(* TODO some kinda `rnd*` I think? *)
-admitted.
-
-lemma prej_in_sim keys &m :
-  keys \in dcond keygen (check \o snd) =>
-  let (pk, sk) = keys in
-  Pr[HVZK_Sim_Inst.get_trans(pk) @ &m : res = None] = mu (commit sk `*` dC tau) 
-     (fun (x : (ID.W * ID.Pstate) * ID.C) => respond sk x.`2 x.`1.`2 = None).
-proof.
-print HVZK_Sim_correct.
-admitted.
-
-(* TODO this should be proven elsewhere
- * Maybe axiomatized in DRing then instantiated in ConcreteDRing?
- *)
-axiom cnorm_count a :
-  0 <= a =>
-  size (to_seq (fun x => cnorm x <= a)) = ((2 * a + 1) ^ n).
-
-lemma size_supp_dRq a :
-  0 <= a =>
-  size (to_seq (support (dRq_ a))) = ((2 * a + 1) ^ n).
-proof.
-move => ge0_a.
-suff: support (dRq_ a) = (fun x => cnorm x <= a).
-- move => ->.
-  exact cnorm_count.
-apply fun_ext => x.
-by rewrite eq_iff supp_dRq.
-qed.
-
-(* TODO this should be proven elsewhere.
- * Maybe DVect?
- *)
-axiom dvec_size dR dim :
-  0 <= dim =>
-  size (to_seq (support (dvector dR dim))) = (size (to_seq (support dR))) ^ dim.
-
-lemma size_supp_dvecball r dim :
-  0 <= r =>
-  0 <= dim =>
-  size (to_seq (support (dvector (dRq_ r) dim))) = (2 * r + 1) ^ (n * dim).
-proof.
-move => ge0_r ge0_dim.
-rewrite dvec_size //.
-rewrite size_supp_dRq //.
-by rewrite Ring.IntID.exprM.
-qed.
-
-op dlow_unif = dvector (dRq_ (gamma2 - b - 1)) k.
-
-lemma dlow_unif_supp_sz :
-  size (to_seq (support dlow_unif)) = (2 * (gamma2 - b) - 1) ^ (n * k).
-proof.
-by rewrite size_supp_dvecball; smt(b_gamma2_lt gt0_k).
-qed.
-
-module NoneChecker = {
-  (* Essentially copied from HVZK_Sim_Inst.get_trans *)
-  proc check_none(pk : PK) : bool = {
-    var mA, w', c, z, t, resp;
-    var oz, t0;
-
-    (mA, t) <- pk;
-    t0 <- base2lowbitsV t;
-    c <$ FSa.dC;
-    oz <$ dsimoz;
-    if(oz <> None) {
-      z <- oget oz;
-      w' <- mA *^ z - c ** t;
-      resp <- if inf_normv (lowBitsV w') < gamma2 - b then
-        let h = makeHintV (- c ** t0) (w' + c ** t0) in Some (z, h)
-      else None;
-    } else {
-      resp <- None;
-    }
-    return resp = None;
-  }
-
-  (* Somehow massage into this... *)
-  proc check_none_unif_low(pk : PK) : bool = {
-    var mA, c, t, result;
-    var low;
-    var oz, t0;
-
-    (mA, t) <- pk;
-    t0 <- base2lowbitsV t;
-    c <$ FSa.dC;
-    oz <$ dsimoz;
-    if(oz <> None) {
-      low <$ dlow_unif;
-      result <- inf_normv low < gamma2 - b;
-    } else {
-      result <- false;
-    }
-    return result;
-  }
-}.
-
-require import SDist.
-
-(* @Ethan, this clone breaks the proofs below (likely some name shadowing). 
-clone import Dist with type a <- vector proof *.
-
-(* In fact need a few hops... *)
-lemma lowbits_uniform_hop keys &m :
-  keys \in dcond keygen (check \o snd) =>
-  let (pk, sk) = keys in
-  `|Pr[NoneChecker.check_none(pk) @ &m : res] - Pr[NoneChecker.check_none_unif_low(pk) @ &m : res]|
-    <= C.delta_low.
-proof.
-print adv_sdist.
-admitted.
-
-lemma line12_magic_number_unfold :
-  line12_magic_number = ((2 * (gamma1 - b) - 1)%r / (2 * gamma1 - 1)%r) ^ (n * l).
-proof.
-admitted.
-
-op good_low (low : vector) = size low = k /\ inf_normv low < gamma2 - b.
-lemma lowbits_prej_unfold :
-  (size (to_seq good_low))%r / (size (to_seq (support dlow_unif)))%r =
-  (((2 * (gamma2 - b) - 1)%r / (2 * gamma2 - 1)%r) ^ (n * k)).
-proof.
-admitted.
-*)
-
-(* Ethan: Maybe I can start on this one? *)
-lemma lowbits_rej_bound &m pk :
-  Pr[NoneChecker.check_none_unif_low(pk) @ &m : res] =
-  1%r - (((2 * (gamma1 - b) - 1)%r / (2 * gamma1 - 1)%r) ^ (n * l)) *
-        (((2 * (gamma2 - b) - 1)%r / (2 * gamma2 - 1)%r) ^ (n * k)).
-proof.
-admitted.
 
 (* probability that response fails on "good" keys is bounded by p_rej *)
 lemma rej_bound (sk : SK) :
@@ -1503,20 +1427,39 @@ lemma rej_bound (sk : SK) :
 proof.
 move => Hsk.
 have {Hsk} [pk [pk_sk chk_sk]] : exists pk, (pk,sk) \in keygen /\ check sk. 
-  admit.
-have [&m _] : exists &m, true by smt().
-have /= <- := HonestExecutionPRejAsOp (pk,sk) &m _. 
-  admit. (* TODO: simplify the lemma statement to what's needed *)
-
-admitted.
-
+  by case/supp_dmap : Hsk => -[pk sk']; rewrite dcond_supp /(\o)/= /#.
+(* TODO: use [pose &m] once this has been merged *)
+have [&m _] : exists &m, true by smt(). 
+have /= <- := pr_HonestExecution_op pk sk &m pk_sk. 
+have -> := pr_HonestExecution_Sim &m (pred1 None) pk sk pk_sk.
+have [A' t' [def_pk chk_A]] : exists A t, pk = (A,t) /\ check_mx A; 2: subst.
+  case: pk pk_sk => A t pk_sk; exists A t => /=. smt(pk_decomp).  
+byphoare (: arg = (A',t') ==> _) => //; proc.
+conseq (: _ ==> resp = None); 1: smt().
+seq 4 : (sample_z) line12_magic_number eps_low (1%r - line12_magic_number) 1%r 
+        (mA = A' /\ t = t'). 
+- by auto.
+- rnd. auto => _ _. by rewrite dbiasedE /= clamp_magic.
+- rcondt ^if; 1: by auto. 
+  wp; conseq (: _ ==> gamma2 - b <= inf_normv (lowBitsV (mA *^ z - c ** t))); 1: smt().
+  rnd. auto => /> &1 _ c c_dC. apply bound_low => //. 
+  rewrite supp_dvector ?ltzW ?gt0_k; move/size_t : pk_sk; smt(dRq_fu).
+- rnd; auto => _ _. by rewrite dbiasedE /= clamp_magic.
+- by auto.
+- done.
+qed.
 
 (* Some good key. Since keygen is lossless and check only rules out
 small fraction, we could just use epsilon here. *)
-const sk0 : { SK | (exists pk, (pk,sk0) \in keygen) /\ check sk0 } as sk0P.
 
-(* axiom most_keys_check :  *)
-
+op sk0 = (A0,ll_dflt ds1,ll_dflt ds2).
+lemma sk0P : (exists pk, (pk,sk0) \in keygen) /\ check sk0.
+proof. 
+pose s1 := ll_dflt ds1; pose s2 := ll_dflt ds2.
+split; last exact: A0P.
+exists (A0,A0 *^ s1 + s2). 
+admit.
+qed.
 
 
 import FSaCR.DSS.
@@ -1560,7 +1503,6 @@ clone FSa_CRtoGen as CG with
   theory FSaCR <- FSaCR,
   theory FSaG <- FSaG. 
 
-(* TODO: give reasonable instantiations for alpha and gamma (and rename these ...) *)
 clone import FSa_CMAtoKOA as CMAtoKOA with
   theory FSa <- FSa,
   theory FSaG <- FSaG,
@@ -1574,7 +1516,7 @@ clone import FSa_CMAtoKOA as CMAtoKOA with
   axiom sk0P <- sk0P
 proof *. 
 realize alpha_gt0 by apply eps_comm_gt0.
-realize gamma_gt0 by apply eps_good_gt0.
+realize gamma_gt0 by apply eps_check_gt0.
 realize check_entropy_correct by apply check_entropy.
 realize most_keys_high_entropy. 
   have := check_most; rewrite dmapE. apply StdOrder.RealOrder.ler_trans.
@@ -1620,6 +1562,12 @@ module CountH (H : Hash) = {
     return c;
   } 
 }.
+
+
+(*************************)
+(****  Main Theorem ******)
+(*************************)
+
 
 section PROOF.
 

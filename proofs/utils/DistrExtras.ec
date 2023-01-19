@@ -374,3 +374,17 @@ elim: s => // x s IHs F_ge0; rewrite BRM.big_cons.
 have {IHs} IHs := IHs _; first by smt().
 case: (P x) => [Px F_big_gt0 a [->|a_s] Pa | nPx /IHs]; smt().
 qed.
+
+
+lemma mu_eq_l (d2 d1 : 'a distr) p : d1 = d2 => mu d1 p = mu d2 p by smt().
+
+lemma dletEunit (d : 'a distr) F : F == dunit => dlet d F = d by smt(dlet_d_unit).
+
+lemma dletEconst (d2 : 'b distr) (d1 : 'a distr) (F : 'a -> 'b distr) :
+  is_lossless d1 => 
+  (forall x, F x = d2) => dlet d1 F = d2.
+proof.
+move => d1_ll F_const; apply/eq_distr => b; rewrite dletE.
+rewrite (eq_sum _ (fun x : 'a => mu1 d1 x * mu1 d2 b)) 1:/#.
+by rewrite sumZr -weightE d1_ll. 
+qed.
