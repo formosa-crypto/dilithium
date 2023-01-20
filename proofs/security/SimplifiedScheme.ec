@@ -278,8 +278,6 @@ module RedMSIS (A : Adv_EFKOA_RO) (H : RqStMSIS.PRO.RO) = {
   }
 }.
 
-op locked (x : 'a) = x axiomatized by unlock.
-lemma lock (x : 'a) : x = locked x by rewrite unlock.
 
 section PROOF.
 
@@ -682,14 +680,13 @@ qed.
 
 (* -- OpBased is indeed zero-knowledge -- *)
 
-(* predicate of "good" z vectors, i.e., correct length and small inf norm *)
-op goodz (z : vector) = (size z = l) /\ (inf_normv z < gamma1 - b).
+(* Ditstribution of "good" (i.e., small inf norm) vectors *)
+op dsimz = dvector (dRq_open (gamma1 - b)) l.
 
 (* fraction of "good" z compared to the domain of y *)
-op line12_magic_number = (size (to_seq goodz))%r / (size (to_seq (support dy)))%r.
+op line12_magic_number = (size (to_seq (support dsimz)))%r / (size (to_seq (support dy)))%r.
 
 (* Dicectly sample oz (either a some good z or None) *)
-op dsimz = dvector (dRq_open (gamma1 - b)) l.
 op dsimoz : vector option distr = 
    dlet (dbiased line12_magic_number) 
         (fun b => if b then dmap dsimz Some else dunit None).
@@ -717,99 +714,58 @@ module HVZK_Sim_Inst : DID.HVZK_Sim = {
 
 section OpBasedHVZK.
 
-local lemma dsimz_uni :
-  is_uniform dsimz.
+local lemma dsimz_uni :is_uniform dsimz.
 proof. smt(dRq_open_uni dvector_uni). qed.
 
-local lemma dsimz_ll :
-  is_lossless dsimz.
+local lemma dsimz_ll : is_lossless dsimz.
 proof. smt(dRq_open_ll dvector_ll). qed.
 
-local lemma dsimz_supp : support dsimz = goodz.
-proof.
-apply fun_ext => z.
-rewrite supp_dvector; first smt(Self.gt0_l).
-rewrite /goodz inf_normv_ltr; first smt(b_gamma1_lt).
-smt(supp_dRq_open b_gamma1_lt).
-qed.
+local lemma dsimz1E z : z \in dsimz => 
+  mu1 dsimz z = inv (size (to_seq (support dsimz)))%r.
+proof. by rewrite mu1_uni_ll ?dsimz_uni ?dsimz_ll /#. qed.
 
-local lemma dsimz1E z :
-  goodz z =>
-  mu1 dsimz z = inv (size (to_seq goodz))%r.
-proof.
-by rewrite mu1_uni_ll ?dsimz_uni ?dsimz_ll; smt(dsimz_supp).
-qed.
+lemma supp_ds1 s1 : s1 \in ds1 <=> size s1 = l /\ inf_normv s1 <= e.
+proof. rewrite supp_dRq_vect; smt(Self.gt0_l Self.gt0_k gt0_eta). qed.
+
+lemma supp_ds2 s2 : s2 \in ds2 <=> size s2 = k /\ inf_normv s2 <= e.
+proof. rewrite supp_dRq_vect; smt(Self.gt0_l Self.gt0_k gt0_eta). qed.
+
+lemma supp_dsimz z : z \in dsimz <=> size z = l /\ inf_normv z < gamma1 - b.
+proof. rewrite supp_dRq_vect; smt(Self.gt0_l b_gamma1_lt). qed.
 
 local lemma masking_range c s1 z:
-  c \in FSa.dC => s1 \in ds1 => goodz z =>
+  c \in FSa.dC => s1 \in ds1 => z \in dsimz =>
   (z - c ** s1) \in dy.
 proof.
-move => c_supp s1_supp z_supp.
-apply supp_dvector; first smt(Self.gt0_l).
-split => [|i rg_i].
-- by rewrite size_addv size_oppv size_scalarv; smt(size_dvector).
-rewrite supp_dRq; first smt(b_gamma1_lt gt0_b).
-rewrite get_addv.
-apply (StdOrder.IntOrder.ler_trans (cnorm z.[i] + cnorm (- c ** s1).[i])).
-- exact cnorm_triangle.
-suff: cnorm z.[i] < gamma1 - b /\ cnorm (- c ** s1).[i] <= tau * e by smt(eta_tau_leq_b).
-split.
-- (* bound cnorm z.[i] *)
-  case z_supp => [size_z norm_z_ub].
-  by rewrite inf_normv_ltr in norm_z_ub; smt(b_gamma1_lt).
-- (* bound cnorm cs1 *)
-  rewrite getvN cnormN get_scalarv.
-  apply l1_cnorm_product_ub; 1,2,3:smt(tau_bound gt0_eta supp_dC).
-  smt(supp_dvector supp_dRq gt0_eta Self.gt0_l).
+rewrite supp_dC supp_ds1 supp_dsimz supp_dRq_vect; 
+  1,2: smt(Self.gt0_l b_gamma1_lt gt0_b).
+move => |> cnorm_c l1_c size_s1 norm_s1 size_z norm_z. 
+rewrite size_addv size_oppv size_scalarv size_z size_s1 maxrr /=.
+apply (StdOrder.IntOrder.ler_trans _ _ _ (ler_inf_normv _ _)).
+rewrite inf_normvN. 
+suff: inf_normv (c ** s1) <= tau * e by smt(eta_tau_leq_b).
+by apply l1_inf_norm_product_ub; smt(tau_bound gt0_eta).
 qed.
 
-local lemma is_finite_goodz :
-  is_finite goodz.
+local lemma is_finite_dy : is_finite (support dy).
+proof. apply finite_dRq_vect; smt(Self.gt0_l b_gamma1_lt gt0_b). qed.
+
+local lemma is_finite_dsimz : is_finite (support dsimz).
+proof. apply finite_dRq_vect; smt(Self.gt0_l b_gamma1_lt gt0_b). qed.
+
+lemma mask_size :
+  size (to_seq (support dsimz)) <= size (to_seq (support dy)).
 proof.
-suff: goodz = (fun (v : vector) => size v = l /\
-    forall i, 0 <= i < l => (fun r => cnorm r < gamma1 - b) v.[i]).
-- move => ->.
-  by rewrite is_finite_vector (finite_leq predT) // is_finite_Rq.
-apply fun_ext => v; rewrite eq_iff; split.
-- move => [sz_v znorm_v]; split => [/#|i rg_i] /=.
-  by rewrite inf_normv_ltr in znorm_v; smt(b_gamma1_lt).
-- move => [sz_v cnorm_vi]; split => [/#|].
-  by rewrite inf_normv_ltr; smt(b_gamma1_lt).
+apply leq_size_to_seq => [v|]; last exact is_finite_dy.
+rewrite !supp_dRq_vect; smt(Self.gt0_l gt0_b b_gamma1_lt).
 qed.
 
-local lemma is_finite_dy :
-  is_finite (support dy).
+lemma mask_nonzero :
+  0 < size (to_seq (support dsimz)).
 proof.
-suff: support dy =
-  (fun (y : vector) => size y = l /\
-   forall i, 0 <= i < l => (fun r => r \in dRq_ (gamma1 - 1)) y.[i]).
-- move => ->.
-  by rewrite is_finite_vector (finite_leq predT) // is_finite_Rq.
-rewrite fun_ext => y /=.
-rewrite supp_dvector //; smt(Self.gt0_l).
-qed.
-
-local lemma mask_size :
-  size (to_seq goodz) <= size (to_seq (support dy)).
-proof.
-apply uniq_leq_size => [|v].
-- apply uniq_to_seq; exact is_finite_goodz.
-rewrite mem_to_seq; first exact is_finite_goodz.
-rewrite mem_to_seq; first exact is_finite_dy.
-rewrite supp_dvector; first smt(Self.gt0_l).
-rewrite /goodz inf_normv_ltr; first smt(b_gamma1_lt).
-suff: (forall x, (cnorm x < gamma1 - b => x \in dRq_ (gamma1 - 1))) by smt().
-move => x H.
-by rewrite supp_dRq; smt(gt0_b b_gamma1_lt).
-qed.
-
-local lemma mask_nonzero :
-  0 < size (to_seq goodz).
-proof.
-suff: zerov l \in (to_seq goodz) by smt(size_eq0 List.size_ge0).
-rewrite mem_to_seq; first exact is_finite_goodz.
-split; first smt(size_zerov Self.gt0_l).
-by rewrite inf_normv_zero; smt(b_gamma1_lt).
+suff: zerov l \in (to_seq (support dsimz)) by smt(size_eq0 List.size_ge0).
+by rewrite mem_to_seq ?is_finite_dsimz dRq_zerov; 
+  smt(Self.gt0_l gt0_b b_gamma1_lt).
 qed.
 
 lemma clamp_magic : clamp line12_magic_number = line12_magic_number.
@@ -826,10 +782,10 @@ proof. smt(dvector_uni dRq__uni). qed.
 local op transz (c : Rq) s1 =
   dmap dy (fun y =>
     let z' = y + c ** s1 in
-    if goodz z' then Some z' else None).
+    if z' \in dsimz then Some z' else None).
 
 local lemma line12_magic_some :
-  forall c s1 z0, c \in FSa.dC => s1 \in ds1 => goodz z0 =>
+  forall c s1 z0, c \in FSa.dC => s1 \in ds1 => z0 \in dsimz =>
     mu1 (transz c s1) (Some z0) = 1%r / (size (to_seq (support dy)))%r.
 proof.
 move => c s1 z0 c_valid s1_valid z0_valid.
@@ -847,7 +803,7 @@ by rewrite mu1_uni_ll ?dy_uni ?dy_ll; smt(masking_range).
 qed.
 
 local lemma line12_outofbound :
-  forall c s1 z0, c \in FSa.dC => s1 \in ds1 => ! (goodz z0) =>
+  forall c s1 z0, c \in FSa.dC => s1 \in ds1 => z0 \notin dsimz =>
     (Some z0) \notin (transz c s1).
 proof.
 move => c s1 z0 c_valid s1_valid z0_invalid.
@@ -856,7 +812,7 @@ qed.
 
 local lemma line12_magic_none :
   forall c s1, c \in FSa.dC => s1 \in ds1 =>
-    mu1 (transz c s1) None = 1%r - (size (to_seq goodz))%r / (size (to_seq (support dy)))%r.
+    mu1 (transz c s1) None = 1%r - (size (to_seq (support dsimz)))%r / (size (to_seq (support dy)))%r.
 proof.
 move => c s1 c_valid s1_valid.
 have sumz : (sum (fun z => mu1 (transz c s1) z) = 1%r).
@@ -864,15 +820,15 @@ have sumz : (sum (fun z => mu1 (transz c s1) z) = 1%r).
 rewrite sumD1_None /= in sumz.
 - by apply summable_mu1.
 suff: sum (fun (y : vector) => mu1 (transz c s1) (Some y)) = 
-  (size (to_seq goodz))%r / (size (to_seq (support dy)))%r by smt().
+  (size (to_seq (support dsimz)))%r / (size (to_seq (support dy)))%r by smt().
 (* bug: Doesn't let me do `suff {sumz}: ...` *)
 clear sumz.
 have -> :
   (fun z => mu1 (transz c s1) (Some z)) =
-  (fun z => if goodz z then 1%r / (size (to_seq (support dy)))%r else 0%r).
+  (fun z => if z \in dsimz then 1%r / (size (to_seq (support dy)))%r else 0%r).
 - apply fun_ext.
   smt(line12_magic_some supportPn line12_outofbound).
-by rewrite sum_characteristic // is_finite_goodz.
+by rewrite sum_characteristic // is_finite_dsimz.
 qed.
 
 local lemma line12_magic c s1 :
@@ -886,7 +842,7 @@ apply eq_distr => z; case z.
   rewrite dmap1E /pred1 /(\o) mu0 /=.
   by rewrite dunit1E dbiased1E clamp_magic.
 - move => z.
-  case (goodz z).
+  case (z \in dsimz).
   + move => z_valid.
     rewrite line12_magic_some // dlet1E sum_over_bool /=.
     rewrite dunit1E /= dmap1E /pred1 /(\o) /=.
@@ -895,7 +851,7 @@ apply eq_distr => z; case z.
   + move => z_invalid.
     have -> : mu1 (transz c s1) (Some z) = 0%r by rewrite -supportPn line12_outofbound.
     rewrite eq_sym -supportPn supp_dlet.
-    smt(supp_dmap supp_dunit dsimz_supp).
+    smt(supp_dmap supp_dunit).
 qed.
 
 local module HVZK_Hops = {
@@ -920,7 +876,7 @@ local module HVZK_Hops = {
     c <$ FSa.dC;
     y <$ dy;
     z <- y + c ** s1;
-    if(goodz z) {
+    if(z \in dsimz) {
       w' <- mA *^ y - c ** s2;
       resp <- if inf_normv (lowBitsV w') < gamma2 - b then
         let h = makeHintV (- c ** t0) (mA *^ y - c ** s2 + c ** t0) in Some (z, h)
@@ -942,7 +898,7 @@ local module HVZK_Hops = {
     c <$ FSa.dC;
     y <$ dy;
     z <- y + c ** s1;
-    if(goodz z) {
+    if(z \in dsimz) {
       w' <- mA *^ z - c ** t;
       resp <- if inf_normv (lowBitsV w') < gamma2 - b then
         let h = makeHintV (- c ** t0) (w' + c ** t0) in Some (z, h)
@@ -964,7 +920,7 @@ local module HVZK_Hops = {
     c <$ FSa.dC;
     y <$ dy;
     z <- y + c ** s1;
-    oz <- if goodz z then Some z else None;
+    oz <- if z \in dsimz then Some z else None;
     if(oz <> None) {
       z <- oget oz;
       w' <- mA *^ z - c ** t;
@@ -1108,8 +1064,9 @@ seq 1 1: (#pre /\ st{1} = y{2} /\ size y{2} = l).
   move => _ [w st] @/commit /= /supp_dmap [y [supp_y [??]]]; subst.
   smt(size_dvector Self.gt0_l).
 (* suff: equality of oz *)
-seq 1 2: (#pre /\ oz{1} = resp{2}); last by auto => /#.
-auto => />; smt(sk_size size_addv size_scalarv).
+seq 1 2: (#pre /\ oz{1} = resp{2}); last by auto => /#. 
+conseq />. 
+auto => />; smt(sk_size size_addv size_scalarv supp_dsimz).
 qed.
 
 local equiv hop3_correct :
@@ -1386,32 +1343,14 @@ op p_rej = line12_magic_number * eps_low + (1%r - line12_magic_number).
 
 lemma gt0_magic_number : 0%r < line12_magic_number.
 proof.
-suff: 0 < size (to_seq goodz) /\ 0 < size (to_seq (support dy)) by smt().
-split.
-- suff: zerov l \in to_seq goodz by smt(size_eq0 List.size_ge0).
-  apply mem_to_seq.
-  + apply (finite_leq (fun (v : vector) => size v = l)); first smt().
-    by rewrite is_finite_vectorT is_finite_Rq.
-  split; first smt(size_zerov Top.gt0_l).
-  rewrite inf_normv_zero.
-  smt(b_gamma1_lt).
-suff: zerov l \in to_seq (support dy) by smt(size_eq0 List.size_ge0).
-apply mem_to_seq.
-- apply (finite_leq (fun (v : vector) => size v = l)) => [y supp_y|].
-  + apply size_dvector in supp_y.
-    smt(Top.gt0_l).
-  by rewrite is_finite_vectorT is_finite_Rq.
-apply supp_dvector; first smt(Top.gt0_l).
-split => [|i rg_i]; first smt(size_zerov Top.gt0_l).
-rewrite get_zerov.
-rewrite supp_dRq; first smt(gt0_b b_gamma1_lt).
-rewrite cnorm0.
-smt(gt0_b b_gamma1_lt).
+suff: 0 < size (to_seq (support dsimz)) /\ 0 < size (to_seq (support dy)) by smt().
+rewrite !gt0_dRq_vect; smt(Self.gt0_l gt0_b b_gamma1_lt).
 qed.
 
+(*
 (* Ethan: I'll work on this *)
 lemma size_goodz :
-  size (to_seq goodz) = (2 * (gamma1 - b) - 1) ^ (n * l).
+  size (to_seq (support dsimz)) = (2 * (gamma1 - b) - 1) ^ (n * l).
 proof.
 (* TODO: Probably need helper lemma. *)
 admitted.
@@ -1438,9 +1377,13 @@ suff: (2 * (gamma1 - b) - 1) ^ (n * l) < (2 * gamma1 - 1) ^ (n * l).
 apply ltr_pexpn2r; smt(Top.DR.gt0_n Top.gt0_l gt0_b b_gamma1_lt).
 qed.
 
+*)
+
 lemma p_rej_bounded : 0%r <= p_rej < 1%r.
 have ? : 0%r < line12_magic_number <= 1%r.
-- smt(gt0_magic_number lt1_magic_number).
+- rewrite gt0_magic_number /= /line12_magic_number.
+  suff: 0 < size (to_seq (support dy)) by smt(mask_size size_ge0).
+  apply gt0_dRq_vect; smt(Self.gt0_l b_gamma1_lt gt0_b).
 suff: 0%r <= eps_low < 1%r by smt().
 rewrite eps_low_lt1 /=.
 pose c0 := ll_dflt (dC tau).

@@ -1,6 +1,6 @@
 (* Lifting DRing to vectors *)
 
-require import AllCore IntDiv Distr List Nat.
+require import AllCore IntDiv Distr List Nat Finite.
 require MatPlus DRing.
 
 clone import DRing as DR. 
@@ -282,4 +282,38 @@ lemma b2low_bound t : inf_normv (base2lowbitsV t) <= 2 ^ (d - 1).
 proof.
 rewrite inf_normv_ler ?expr_ge0 // => i; rewrite size_base2lowbitsV => Hi.
 by rewrite !get_mapv // base2low_bound.
+qed.
+
+
+(** Auxiliary lemmas *)
+
+lemma supp_dRq_vect v o k : 0 <= k => 0 <= o =>
+  v \in dvector (dRq_ o) k <=> size v = k /\ inf_normv v <= o.
+proof.
+move => k_ge0 o_ge0; rewrite supp_dvector // inf_normv_ler //.
+by split => />; smt(supp_dRq).
+qed.
+
+lemma dRq_zerov o k : 0 <= k => 0 <= o => 
+  zerov k \in dvector (dRq_ o) k. 
+proof. 
+by move => k_ge0 o_ge0; rewrite supp_dRq_vect // size_zerov inf_normv_zero /#.
+qed.
+
+lemma finite_dRq_vect o k : 0 <= k => 0 <= o => 
+  is_finite (support (dvector (dRq_ o) k)).
+proof.
+move => k_ge0 o_ge0. 
+have := is_finite_vector (support (dRq_ o)) k _.
+- apply (finite_leq predT) => //; exact: is_finite_Rq.
+by apply finite_leq => v; rewrite supp_dvector.
+qed.
+
+lemma gt0_dRq_vect o k : 0 <= k => 0 <= o => 
+  0 < size (to_seq (support (dvector (dRq_ o) k))).
+proof. 
+move => k_ge0 o_ge0.
+suff: zerov k \in (to_seq (support (dvector (dRq_ o) k))).
+  smt(size_eq0 List.size_ge0).
+rewrite mem_to_seq; [exact finite_dRq_vect|exact: dRq_zerov].
 qed.
