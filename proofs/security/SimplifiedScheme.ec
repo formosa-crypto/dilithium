@@ -1391,8 +1391,7 @@ split.
 - suff: zerov l \in to_seq goodz by smt(size_eq0 List.size_ge0).
   apply mem_to_seq.
   + apply (finite_leq (fun (v : vector) => size v = l)); first smt().
-    apply (is_finite_vectorT witness).
-    by apply is_finite_Rq.
+    by rewrite is_finite_vectorT is_finite_Rq.
   split; first smt(size_zerov Top.gt0_l).
   rewrite inf_normv_zero.
   smt(b_gamma1_lt).
@@ -1401,8 +1400,7 @@ apply mem_to_seq.
 - apply (finite_leq (fun (v : vector) => size v = l)) => [y supp_y|].
   + apply size_dvector in supp_y.
     smt(Top.gt0_l).
-  apply (is_finite_vectorT witness).
-  by apply is_finite_Rq.
+  by rewrite is_finite_vectorT is_finite_Rq.
 apply supp_dvector; first smt(Top.gt0_l).
 split => [|i rg_i]; first smt(size_zerov Top.gt0_l).
 rewrite get_zerov.

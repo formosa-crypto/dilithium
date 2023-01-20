@@ -16,7 +16,7 @@ rewrite ler_maxr -?size_v ?size_ge0 size_tolist tolistK /=.
 by apply/allP => x /mem_tolist [i] /#.
 qed.
 
-lemma is_finite_vectorT (P : t -> bool) (k : int) :
+lemma is_finite_vectorT (k : int) :
   is_finite predT<:t> =>
   is_finite (fun (v : vector) => size v = k).
 proof. by move/is_finite_vector/(_ k); apply finite_leq; smt(). qed. 
