@@ -31,13 +31,13 @@ op tau : { int | 1 <= tau <= n } as tau_bound. (* challenge weight *)
 op d : { int | 0 < d } as gt0_d.        (* bits dropped from public key *)
 
 axiom eta_tau_leq_b : eta_ * tau <= beta_.
-
+axiom ub_d : tau * 2 ^ d <= 2 * gamma2.
 
 axiom gamma2_bound  : 2 <= gamma2 <= q %/ 4.
 axiom gamma2_div : 2 * gamma2 %| (q - 1).
 
 axiom beta_gamma1_lt : beta_ < gamma1.
-axiom beta_round_gamma2_lt : beta_ < 2 * gamma2 %/ 2.
+axiom beta_gamma2_lt : beta_ < gamma2.
 
 (* Generate a theory of matrices/vectors over Rq           *)
 clone import DVect as DV with 
@@ -129,76 +129,50 @@ module Dilithium (H: Hash) = {
   }
 }.
 
+(*************************************)
+(**** Parameters of the proof ********)
+(*************************************)
 
-(* keygen as a mathematical distribution - for use in axioms *)
-type SK' = matrix * vector * vector.
-type PK' = matrix * vector.
-
-op dA = dmatrix dRq k l.
-op ds1 = dvector (dRq_ eta_) l.
-op ds2 = dvector (dRq_ eta_) k.
-op keygen : (PK' * SK') distr =
-  dlet (dmatrix dRq k l) (fun mA =>
-  dlet ds1 (fun s1 =>
-  dmap ds2 (fun s2 =>
-  let pk = (mA, mA *^ s1 + s2) in
-  let sk = (mA, s1, s2) in
-  (pk, sk)))).
-
-(* commit as a mathematical distribution - for use in axioms *)
-op dy = dvector (dRq_ (gamma1 - 1)) l.
-type pstate_t = vector. 
-op commit (sk : SK') : (commit_t * pstate_t) distr =
-  let (mA, s1, s2) = sk in
-  dmap dy (fun y =>
-  let w1 = highBitsV (mA *^ y) in
-  (w1, y)).
-
-(* respond as a mathematical function - for use in axioms *)
-op respond (sk : SK') (c : challenge_t) (y: pstate_t) : response_t option =
-  let (mA, s1, s2) = sk in
-  let t0 = base2lowbitsV (mA *^ s1 + s2) in
-  let w = mA *^ y in
-  let z = y + c ** s1 in
-  if inf_normv z < gamma1 - beta_ /\
-     inf_normv (lowBitsV (mA *^ y - c ** s2) ) < gamma2 - beta_ then
-    let h = makeHintV (- c ** t0) (w - c ** s2 + c ** t0) in
-    Some (z, h)
-    else None.
-
-(* Parameters of the proof *)
 (* TOTHINK: can we make these section variables? *)
 const qS : { int | 0 <= qS } as qS_ge0.
 const qH : { int | 0 <= qH } as qH_ge0.
 
 
-op valid_sk sk = exists pk, (pk,sk) \in keygen.
-(* a check for "good" keys *)
-op check (sk : SK') : bool.
+(** We require a check on the matrix component of public and secrect
+key that ensures:
+
+- sufficiently high commitment entropy
+- sufficiently high probability that respond succeeds *)
+
+op dA = dmatrix dRq k l.
+op dy = dvector (dRq_ (gamma1 - 1)) l.
+op dz = dvector (dRq_ (gamma1 - beta_ - 1)) l.
+
+(* Check that ensures that the matrix is "entropy preserving" *)
+(* (and has the right dimensions)                             *)
+op check_mx : matrix -> bool.
+
+axiom check_valid A : check_mx A => A \in dA.
 
 (* upper bound on the mass of the most likely commitment for a good key *)
-const eps_comm  : { real | 0%r < eps_comm }   as eps_comm_gt0.
+const eps_comm  : { real | 0%r < eps_comm } as eps_comm_gt0.
+
+axiom check_mx_entropy (mA : matrix) : 
+  check_mx mA => p_max (dmap dy (fun y => highBitsV (mA *^ y))) <= eps_comm.
+
+op A0 : { matrix | check_mx A0 } as A0P.
+
 (* upper bound on the mass of the keys not passing check *)
-const eps_check : { real | 0%r <= eps_check }  as eps_good_gt0.
-(* upper bound in on the rejection probability for good keys *)
-const p_rej  : { real | 0%r <= p_rej < 1%r} as p_rej_bounded.
+const eps_check : { real | 0%r <= eps_check }  as eps_check_gt0.
 
-(* all secret keys passing the check have high commitment entropy *)
-axiom check_entropy (sk : SK') : valid_sk sk => check sk =>
-  p_max (dfst (commit sk)) <= eps_comm.
+axiom check_mx_most : mu dA (predC check_mx) <= eps_check.
 
-(* most honestly sampled secret keys pass the check *)
-axiom check_most : mu (dsnd keygen) (predC check) <= eps_check.
+(* bound on the probability that he low-bis check in the Sim fails *)
+const eps_low : { real | eps_low < 1%r } as eps_low_lt1.
 
-(* probability that response fails on "good" keys is bounded by p_rej *)
-axiom rej_bound (sk : SK') :
-  sk \in dsnd (dcond keygen (check \o snd)) =>
-  mu (commit sk `*` dC tau) 
-     (fun (x : (commit_t * pstate_t) * challenge_t) => respond sk x.`2 x.`1.`2 = None) <= p_rej.
-
-(* Some good key. Since keygen is lossless and check only rules out
-small fraction, we could just use epsilon here. *)
-const sk0 : { SK' | (exists pk, (pk,sk0) \in keygen) /\ check sk0 } as sk0P.
+axiom bound_low c (t : vector) (mA : matrix) :
+  c \in dC tau => t \in dvector dRq k => check_mx mA =>
+  mu dz (fun z => gamma2 - beta_ <= inf_normv (lowBitsV (mA *^ z - c ** t)) ) <= eps_low. 
 
 (* Instantiate the definitions for digital signature security in the ROM *)
 clone import DigitalSignaturesRO as DSS with 
@@ -221,12 +195,10 @@ module H = DSS.PRO.RO.
 (* TOTHINK: It would be nice to make this a local clone. 
    However, it defines the reductions to MLWE and SelfTargetMSIS that are part of the final statement. 
    It also provides the instances themselves (including the parameters *)
-   
 clone SimplifiedScheme as SD with 
   theory DR <- DR,
   theory DV <- DV,
   type M <- M,
-  (* theory FSaCR.DSS <- DSS, *)
 
   op e <- eta_,
   op b <- beta_,
@@ -238,21 +210,32 @@ clone SimplifiedScheme as SD with
   op d <- d,
   axiom tau_bound <- tau_bound,
 
-  op check <- check,
+  op check_mx <- check_mx,
   op eps_comm <- eps_comm,
   op eps_check <- eps_check,
-  op p_rej <- p_rej,
+  op eps_low <- eps_low,
   axiom eps_comm_gt0 <- eps_comm_gt0,
-  axiom eps_good_gt0 <- eps_good_gt0,
-  axiom check_entropy <- check_entropy,
+  axiom eps_check_gt0 <- eps_check_gt0,
+  axiom check_mx_entropy <- check_mx_entropy,
+  axiom bound_low <- bound_low,
+  axiom eps_low_lt1 <- eps_low_lt1,
+  axiom check_mx_most <- check_mx_most,
+  axiom check_valid <- check_valid,
+
+  op A0 <- A0,
+  axiom A0P <- A0P,
 
   op qS <- qS,
   op qH <- qH,
   axiom qS_ge0 <- qS_ge0,
   axiom qH_ge0 <- qH_ge0
-proof* by admit. (* TODO *)
+proof* by smt(gt0_eta gt0_k gt0_l gamma2_bound gamma2_div gt0_beta beta_gamma1_lt 
+              beta_gamma2_lt gt0_d tau_bound eta_tau_leq_b ub_d).
 
 print SD.FSaCR.DSS.Adv_EFCMA_RO.
+
+type SK' = matrix * vector * vector.
+type PK' = matrix * vector.
 
 (* reduction to simplified scheme: drop t0 *)
 module (RedS (A : Adv_EFCMA_RO) : SD.FSaCR.DSS.Adv_EFCMA_RO)
@@ -318,8 +301,8 @@ lemma SimplifiedDilithium_secure &m :
      `|Pr[SD.RqMLWE.GameL(RedMLWE(A)).main() @ &m : res] -
        Pr[SD.RqMLWE.GameR(RedMLWE(A)).main() @ &m : res]| +
      Pr[SD.RqStMSIS.Game(RedStMSIS(A), SD.RqStMSIS.PRO.RO).main () @ &m : res] +
-     (2%r * qS%r * (qH + qS + 1)%r * eps_comm / (1%r - p_rej) +
-      qS%r * eps_comm * (qS%r + 1%r) / (2%r * (1%r - p_rej) ^ 2)) + 2%r * eps_check.
+     (2%r * qS%r * (qH + qS + 1)%r * eps_comm / (1%r - SD.p_rej) +
+      qS%r * eps_comm * (qS%r + 1%r) / (2%r * (1%r - SD.p_rej) ^ 2)) + 2%r * eps_check.
 proof.
 have SD_security := SD.SimplifiedDilithium_secure (RedS (A)) _ _ &m.
 - by move => H' O'; proc; call (A_bound H' O'); auto.
