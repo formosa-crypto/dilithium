@@ -1384,6 +1384,33 @@ CMA to NMA reduction: *)
 
 op p_rej = line12_magic_number * eps_low + (1%r - line12_magic_number).
 
+lemma gt0_magic_number : 0%r < line12_magic_number.
+proof.
+suff: 0 < size (to_seq goodz) /\ 0 < size (to_seq (support dy)) by smt().
+split.
+- suff: zerov l \in to_seq goodz by smt(size_eq0 List.size_ge0).
+  apply mem_to_seq.
+  + apply (finite_leq (fun (v : vector) => size v = l)); first smt().
+    apply (is_finite_vectorT witness).
+    by apply is_finite_Rq.
+  split; first smt(size_zerov Top.gt0_l).
+  rewrite inf_normv_zero.
+  smt(b_gamma1_lt).
+suff: zerov l \in to_seq (support dy) by smt(size_eq0 List.size_ge0).
+apply mem_to_seq.
+- apply (finite_leq (fun (v : vector) => size v = l)) => [y supp_y|].
+  + apply size_dvector in supp_y.
+    smt(Top.gt0_l).
+  apply (is_finite_vectorT witness).
+  by apply is_finite_Rq.
+apply supp_dvector; first smt(Top.gt0_l).
+split => [|i rg_i]; first smt(size_zerov Top.gt0_l).
+rewrite get_zerov.
+rewrite supp_dRq; first smt(gt0_b b_gamma1_lt).
+rewrite cnorm0.
+smt(gt0_b b_gamma1_lt).
+qed.
+
 lemma p_rej_bounded : 0%r <= p_rej < 1%r.
 have ? : 0%r < line12_magic_number <= 1%r. admit.
 have ? : 0%r <= eps_low < 1%r.  
