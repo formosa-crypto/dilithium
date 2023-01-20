@@ -1457,10 +1457,14 @@ lemma sk0P : (exists pk, (pk,sk0) \in keygen) /\ check sk0.
 proof. 
 pose s1 := ll_dflt ds1; pose s2 := ll_dflt ds2.
 split; last exact: A0P.
-exists (A0,A0 *^ s1 + s2). 
-admit.
+exists (A0,A0 *^ s1 + s2).
+apply supp_dlet; exists A0 => /=.
+split; first by rewrite check_valid A0P.
+apply supp_dlet; exists s1 => /=.
+split; first by rewrite ll_dfltP dvector_ll dRq__ll.
+rewrite supp_dmap; exists s2 => />.
+by rewrite ll_dfltP dvector_ll dRq__ll.
 qed.
-
 
 import FSaCR.DSS.
 import FSaCR.DSS.PRO.
