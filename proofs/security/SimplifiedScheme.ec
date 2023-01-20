@@ -1411,11 +1411,48 @@ rewrite cnorm0.
 smt(gt0_b b_gamma1_lt).
 qed.
 
+(* Ethan: I'll work on this *)
+lemma size_goodz :
+  size (to_seq goodz) = (2 * (gamma1 - b) - 1) ^ (n * l).
+proof.
+(* TODO: Probably need helper lemma. *)
+admitted.
+
+(* Ethan: Same as above *)
+lemma size_supp_dy :
+  size (to_seq (support dy)) = (2 * gamma1 - 1) ^ (n * l).
+proof.
+admitted.
+
+lemma ltr_pexpn2r n x y :
+  0 < n => 0 <= x => 0 <= y =>
+  x ^ n < y ^ n <=> x < y.
+proof.
+smt(StdBigop.Bigint.ler_pexpn2r).
+qed.
+
+lemma lt1_magic_number : line12_magic_number < 1%r.
+proof.
+rewrite /line12_magic_number size_goodz size_supp_dy.
+suff: (2 * (gamma1 - b) - 1) ^ (n * l) < (2 * gamma1 - 1) ^ (n * l).
+- suff: 0 < (2 * gamma1 - 1) ^ (n * l) by smt().
+  by apply StdOrder.IntOrder.expr_gt0; smt(b_gamma1_lt gt0_b).
+apply ltr_pexpn2r; smt(Top.DR.gt0_n Top.gt0_l gt0_b b_gamma1_lt).
+qed.
+
 lemma p_rej_bounded : 0%r <= p_rej < 1%r.
-have ? : 0%r < line12_magic_number <= 1%r. admit.
-have ? : 0%r <= eps_low < 1%r.  
-  rewrite eps_low_lt1 /=. admit. (* instantiate bound_low *)  
-smt().
+have ? : 0%r < line12_magic_number <= 1%r.
+- smt(gt0_magic_number lt1_magic_number).
+suff: 0%r <= eps_low < 1%r by smt().
+rewrite eps_low_lt1 /=.
+pose c0 := ll_dflt (dC tau).
+pose t0 := ll_dflt (dvector dRq k).
+suff: mu dz (fun z => gamma2 - b <= inf_normv (lowBitsV (A0 *^ z - c0 ** t0))) <= eps_low.
+- smt(ge0_mu).
+apply bound_low.
+- by rewrite ll_dfltP dC_ll.
+- by rewrite ll_dfltP dvector_ll dRq_ll.
+- exact A0P.
 qed.
 
 op valid_sk sk = exists pk, (pk,sk) \in keygen.
