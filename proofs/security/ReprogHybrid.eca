@@ -298,7 +298,7 @@ proof.
   by rewrite -Ep_mu Ep_dmap; apply eq_Ep.
 qed.
 
-abstract theory Analysis.
+abstract theory ReprogAlways.
 
 module type Oracle_i_i = {
   include Oracle
@@ -1521,7 +1521,7 @@ qed.
 
 end section Analysis.
 
-end Analysis.
+end ReprogAlways.
 
 (* To remove the dependency to Oi *)
 section.
@@ -1532,7 +1532,7 @@ declare axiom A_bound : forall (O <: Oracle_i{-Adv, -Count}),
   hoare [ Adv(Count(O)).distinguish : Count.countS = 0 /\ Count.countH = 0 ==> 
                                       Count.countS <= qs /\ Count.countH <= qh ].
 
-local clone import Analysis as A.
+local clone import ReprogAlways as A.
 
 lemma GReal_GSet kappa_ &m: 0 < kappa_ =>
   Pr[Game(Adv, Count(OReal)).main() @ &m : res] <=
@@ -1543,13 +1543,9 @@ proof. move=> h; apply (A.GReal_GSet Adv A_bound kappa_ h &m). qed.
 end section.
 
 
-
-
 (* This theory proves the bound for the [OSet] to [OSet1_inf] step (?) *)
 
-abstract theory Analysis1.
-
-
+abstract theory ReprogOnce.
 
 module type Oracle_i_i = {
   include Oracle
@@ -2422,10 +2418,10 @@ qed.
 end section I.
 
 lemma GSet_GSet1 &m: 
-  Pr[Game_k(Adv, CountBound(OSet )).main(kappa_) @ &m : res] - 
-  Pr[Game_k(Adv, CountBound(OSet1)).main(kappa_) @ &m : res] <= 
-     qs%r * (qh%r * eps) / (1%r - p).
+  Pr[Game_k(Adv, CountBound(OSet )).main(kappa_) @ &m : res] <= 
+  Pr[Game_k(Adv, CountBound(OSet1)).main(kappa_) @ &m : res] + qs%r * (qh%r * eps) / (1%r - p).
 proof.
+  rewrite addrC -ler_subl_addr.
   apply (ler_trans (bigi predT (fun (j : int) =>  (qh%r * eps)/(1%r - p)) 0 qs)).
   rewrite GSet_GSet1_aux; apply ler_sum_seq => i /mem_range hi _ /=.
   apply (concl_i i hi).
@@ -2597,26 +2593,35 @@ proof.
   rewrite !to_pos_pos /=; smt(qs_ge0 expr_ge0 p_bounded).
 qed.
 
+
+lemma GSet_GSet_inf &m : 
+  Pr[Game_k(Adv, CountBound(OSet1)).main(kappa_) @ &m : res] <=
+  Pr[Game(Adv, CountBound(OSet1_inf)).main() @ &m : res] + qs%r * p ^ kappa_.
+proof.
+  move: (Set1B1_Set1B2 &m) (Pr_bad &m).
+  by rewrite Set1_Set1B1 Set1B2_Set1_inf_i Set1_i_Set1_inf /#. 
+qed.
+
 lemma GReal_GSet_inf &m : 
   Pr[Game(Adv, Count(OReal)).main() @ &m : res] <=
     (2%r * qs%r) * p^kappa_ + (Pr[Game(Adv, CountBound(OSet1_inf)).main() @ &m : res] +
     qs%r * (qh%r * eps) / (1%r - p) + 
     qs%r * eps * ((qs%r + 1.0)/ (2.0 * (1.0 - p)^2) + qh%r / (1.0 - p))).
 proof.
-  apply (ler_trans ( Pr[Game(Adv, CountBound(OSet1_inf)).main() @ &m : res] + qs%r * p^kappa_ +
-    qs%r * (qh%r * eps) / (1%r - p) + 
-    (qs%r * p^kappa_ + (qs%r * eps * ((qs%r + 1.0)/ (2.0 * (1.0 - p)^2) + qh%r / (1.0 - p)))))); last smt().
-  apply (ler_trans _ _ _ (GReal_GSet Adv A_bound kappa_ &m kappa_gt0)).
-  apply ler_add2r.
-  apply (ler_trans (Pr[Game_k(Adv, CountBound(OSet1)).main(kappa_) @ &m : res] + qs%r * (qh%r * eps) / (1%r - p))).
-  + move: (GSet_GSet1 &m) => /#.
-  apply ler_add2r; move: (Set1B1_Set1B2 &m) (Pr_bad &m).
-  rewrite Set1_Set1B1 Set1B2_Set1_inf_i Set1_i_Set1_inf /#. 
+  pose hop1 := (qs%r * p ^ kappa_ + 
+                qs%r * eps * ((qs%r + 1%r) / (2%r * (1%r - p) ^ 2) + qh%r / (1%r - p))).
+  pose hop2 := qs%r * (qh%r * eps) / (1%r - p).
+  pose hop3 := qs%r * p^kappa_.
+  pose GA := Pr[Game(Adv, CountBound(OSet1_inf)).main() @ &m : res].
+  apply (ler_trans (GA + hop3 + hop2 + hop1)); last smt().
+  apply (ler_trans _ _ _ (GReal_GSet Adv A_bound kappa_ &m kappa_gt0)); rewrite ler_add2r.  
+  apply (ler_trans _ _ _ (GSet_GSet1 &m)); rewrite ler_add2r.
+  exact GSet_GSet_inf.
 qed.
 
 end section Analysis.
 
-end Analysis1.
+end ReprogOnce.
 
 (* As a final step, we remove the dependency on [kappa] by showing
 that the bound converges as [kappa] is increased to infinity *)
@@ -2634,7 +2639,7 @@ declare axiom A_bound : forall (O <: Oracle_i{-Adv, -Count}),
   hoare [ Adv(Count(O)).distinguish : Count.countS = 0 /\ Count.countH = 0 ==> 
                                       Count.countS <= qs /\ Count.countH <= qh ].
 
-local clone import Analysis1 as A.
+local clone import ReprogOnce as A.
 
 lemma GReal_GSet_inf_aux &m :  
   Pr[Game(Adv, Count(OReal)).main() @ &m : res] <= 
@@ -2642,24 +2647,21 @@ lemma GReal_GSet_inf_aux &m :
     2%r * qs%r * qh%r * eps / (1%r - p) + 
     qs%r * eps * (qs%r + 1.0) / (2.0 * (1.0 - p)^2).
 proof.
+  pose hop1 := qs%r * eps * ((qs%r + 1.0)/ (2.0 * (1.0 - p)^2) + qh%r / (1.0 - p)).
+  pose hop2 := qs%r * (qh%r * eps) / (1%r - p).
+  pose GA := Pr[Game(Adv, CountBound(OSet1_inf)).main() @ &m : res].
   have hp : -1%r < p < 1%r by smt(p_bounded).
-  apply (ler_trans (Pr[Game(Adv, CountBound(OSet1_inf)).main() @ &m : res] + 
-                        qs%r * (qh%r * eps) / (1%r - p) + 
-                        qs%r * eps * ((qs%r + 1.0)/ (2.0 * (1.0 - p)^2) + qh%r / (1.0 - p))));
-   last by apply lerr_eq; ring.
+  apply (ler_trans (GA + hop2 + hop1)); last by smt().
   have hc : RealSeq.converge (fun (x : int) => 2%r * qs%r * p ^ x).
   + by apply/cnvZ/cnv_pow/hp. 
-  apply (ler_trans (lim (fun kappa => 
-           (2%r * qs%r) * p^kappa + (Pr[Game(Adv, CountBound(OSet1_inf)).main() @ &m : res] + 
-           qs%r * (qh%r * eps) / (1%r - p) + 
-           qs%r * eps * ((qs%r + 1.0)/ (2.0 * (1.0 - p)^2) + qh%r / (1.0 - p)))))).
+  apply (ler_trans (lim (fun kappa => 2%r * qs%r * p^kappa + (GA + hop2 + hop1)))).
   + apply (geC_lim_from 1) => /=.
     + by move=> kappa_ hk; apply (A.GReal_GSet_inf Adv A_bound A_ll kappa_ _ &m) => /#. 
     apply cnvD => //; apply cnvC.
   by rewrite limD 1:// 1:cnvC limZ lim_pow //= limC.
 qed.
 
-local clone import Analysis as A0.
+local clone ReprogAlways as A0.
 
 lemma GReal_GSet1 &m : 
   Pr[Game(Adv, OReal).main() @ &m : res] <= 
@@ -2679,7 +2681,7 @@ have -> : Pr[Game(Adv, OSet1_inf).main() @ &m : res] =
   + proc*. inline Count(OSet1_inf).h. wp. call(: ={RO.m}). sim. auto.
   + proc. inline OSet1_inf.sign. wp. by sim. 
   inline*; auto => />.
-have -> := Pr_Count_CountBound Adv A_bound OSet1_inf &m. 
+have -> := A0.Pr_Count_CountBound Adv A_bound OSet1_inf &m. 
 exact (GReal_GSet_inf_aux &m).
 qed.
 
