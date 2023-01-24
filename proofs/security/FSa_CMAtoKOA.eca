@@ -7,7 +7,7 @@ require import Int Real List FSet Distr RealExp SmtMap SDist StdOrder.
 require import DistrExtras.
 import RealOrder.
 
-require DigitalSignaturesRO PROM ReprogOnce_Hybrid_inf Collision.
+require DigitalSignaturesRO PROM ReprogHybrid Collision.
 require FSabort.
 
 (* ********************* IDS based on operators ****************** *) 
@@ -401,7 +401,7 @@ local module (Oracle3 : Oracle_CMA) (S : Scheme)  = {
 reduction. The argument is carried out in a dedicated [ReprogOnce]
 theory which we instantiate here. *)
 
-local clone ReprogOnce_Hybrid_inf as R1 with
+local clone ReprogHybrid as R1 with
   type PK <- PK,
   type SK <- SK,
   type ST <- Pstate,
