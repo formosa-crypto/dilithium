@@ -21,7 +21,6 @@ op respond : SK -> ST -> C -> Z option.
 op valid_sk sk =
   exists pk, (pk, sk) \in keygen.
 
-(* FIXME : this need to be properly defined *)
 op p : real.     (* max proba of rejection *)
 op eps : real.   (* max proba of = w *)
 
@@ -51,6 +50,7 @@ clone import PROM.FullRO as RO with
   op dout <= (fun _ => dC)
 proof *.
 
+(* module type(s) merging the singing oracle and the random (i.e., hash) oracle *)
 module type Oracle = {
   proc h(w: W, m: M) : C
   proc sign(m: M) : (W * C * Z)
@@ -61,7 +61,7 @@ module type Oracle_i = {
   proc init(sk_i : SK) : unit
 }.
 
-(* counting wrapper to state query bounds *)
+(* counting wrapper for the combined oracles to state query bounds *)
 module Count (O: Oracle_i) : Oracle = {
   var countS : int
   var countH : int
@@ -83,7 +83,8 @@ module Count (O: Oracle_i) : Oracle = {
   }
 }.
 
-(* bounding wrapper to avoid out-of-bounds reasoning - also stops couniting *)
+(* bounding wrapper to avoid out-of-bounds reasoning *) 
+(* Note: this also stops couniting once the bound has been reached *)
 module CountBound (O: Oracle_i) : Oracle = {
   import var Count
 
@@ -172,6 +173,32 @@ module OSet : Oracle_i = {
   }
 }.
 
+(* The overall goal is to bound the difference between interacting
+with the oracle [OReal] and the oracle [OSet1_inf] below, both having
+no loop bound. *)
+
+module OSet1_inf : Oracle_i = { 
+  import var OReal
+  include var OSet[init, h]
+
+  proc sign(m: M) = {
+    var w, st, c, oz;
+
+    w <- witness;
+    c <- witness;
+    oz <- None;
+    while(oz = None) {
+      (w, st) <$ commit sk;
+      c <$ dC;
+      oz <- respond sk st c;
+    }
+    (* We only store the w and c from the last iteration *) 
+    RO.set((w, m), c); 
+    return (w, c, oget oz);
+  }
+}.
+
+
 (* NOTE: A major complication is that we cannot easily bound the
 probability of [OReal.sign] reaching a [kappa] iterations: The
 (finite) memory of RO could (a priori) contain only challenges that
@@ -192,13 +219,17 @@ through an "alterating" sequence of hybrid steps.
 
       p^j * (i%r / (1.0 - p) + qh%r + j%r) * eps.
 
-
-
-
 3. Performing (1) and (2) qS times gives a bound of
    qS * p^kappa + sum_{j = 0}^{kappa} delta.
 
-4. *)
+4. TODO: finish this
+
+*)
+
+(* Adversary and Game *)
+
+(* We move to a distinguishing game, i.e., the adversary is no longer
+required to output a signature. *)
 
 module type Adversary(O: Oracle) = {
   proc distinguish(pk: PK): bool
@@ -219,9 +250,9 @@ module Game (Adv: Adversary) (O: Oracle_i) = {
 (* Parametric varant, setting OReal.kappa. Oracle implementations
    with loop bounds (have to) use OReal.kappa as the bound *)
 module Game_k (Adv: Adversary) (O: Oracle_i) = {
-  proc main(kappa_: int) = {
+  proc main(kappa_i: int) = {
     var b;
-    OReal.kappa <- kappa_;
+    OReal.kappa <- kappa_i;
     b <@ Game(Adv, O).main();
     return b;
   }
@@ -396,9 +427,9 @@ module Oij : Oracle_i_ij = {
 (** Game wrappers *)
 (* TOTHINK: Are these ever instantiated with something oter than Oi/Oij? *)
 module Hi (Adv: Adversary) (O: Oracle_i_i) = {
-  proc main(kappa_:int, i_i:int) = {
+  proc main(kappa_i:int, i_i:int) = {
     var b, pk, sk;
-    OReal.kappa <- kappa_;
+    OReal.kappa <- kappa_i;
     (pk, sk) <$ keygen;
     RO.init();
     O.init(sk, i_i);
@@ -408,9 +439,9 @@ module Hi (Adv: Adversary) (O: Oracle_i_i) = {
 }.
 
 module Hij (Adv: Adversary) (O: Oracle_i_ij) = {
-  proc main(kappa_:int, i_i:int, j_i:int) = {
+  proc main(kappa_i:int, i_i:int, j_i:int) = {
     var b, pk, sk;
-    OReal.kappa <- kappa_;
+    OReal.kappa <- kappa_i;
     (pk, sk) <$ keygen;
     RO.init();
     O.init(sk, i_i, j_i);
@@ -428,11 +459,9 @@ declare axiom A_bound : forall (O <: Oracle_i{-Adv, -Count}),
                                       Count.countS <= qs /\ Count.countH <= qh ].
 
 (* Since A is query bounded, we can insert CountBound wrappers *)
+section CountBound.
+
 (* NOTE: This is complicated by the fact that we do not have that O is lossless. *)
-(* TOTHINK: Why does the final result equire the shape "Count(O)" *)
-
-section C.
-
 declare module O <: Oracle_i{-Adv, -Count}.
 
 (* Bound queries, but keep counting *)
@@ -672,7 +701,7 @@ rewrite Pr_Game_GameI Pr_Count_CountBad1.
 by rewrite Pr_CountBound_count CB2_CB Pr_CB1_CB2.
 qed. 
 
-end section C.
+end section CountBound.
 
 
 (* ----------------------------------------------------------------- *)
@@ -775,10 +804,10 @@ local module OiB1 : Oracle_i_i = {
 }.
 
 local module HiB1 = {
-  proc main(kappa_ : int, i_i : int) = {
+  proc main(kappa_i : int, i_i : int) = {
     var b;
     OiB1.badj <- false;
-    b <@ Hi(Adv, OiB1).main(kappa_, i + 1);
+    b <@ Hi(Adv, OiB1).main(kappa_i, i + 1);
     return b;
   }
 }.
@@ -824,10 +853,10 @@ local module OiB2 : Oracle_i_i = {
 }.
 
 local module HiB2 = {
-  proc main(kappa_ : int, i_i : int) = {
+  proc main(kappa_i : int, i_i : int) = {
     var b;
     OiB1.badj <- false;
-    b <@ Hi(Adv, OiB2).main(kappa_, i + 1);
+    b <@ Hi(Adv, OiB2).main(kappa_i, i + 1);
     return b;
   }
 }.
@@ -866,7 +895,7 @@ qed.
 (* We can bound both OiB1.badj and OiB2.badj by p^kappa_ *)
 local lemma HiB1_badj &m : Pr[HiB1.main(kappa_, i + 1) @ &m : OiB1.badj] <= p^kappa_.
 proof.
-  byehoare (: (kappa_ = Analysis.kappa_ /\ i_i = i + 1) `|` (p^kappa_)%xr ==> OiB1.badj%xr) => //.
+  byehoare (: (kappa_i = kappa_ /\ i_i = i + 1) `|` (p^kappa_)%xr ==> OiB1.badj%xr) => //.
   proc; inline *; wp.
   call /(fun x => x) (: (valid_sk Oi.sk /\ OReal.kappa = kappa_ /\ (Oi.countS < Oi.i_ => !OiB1.badj)) `|` 
              if Oi.countS < Oi.i_ then (p^kappa_)%xr else OiB1.badj%xr).
@@ -899,7 +928,7 @@ qed.
 (* second part, virtually the same proof *)
 local lemma HiB2_badj &m : Pr[HiB2.main(kappa_, i + 1) @ &m : OiB1.badj] <= p^kappa_.
 proof.
-  byehoare (: (kappa_ = Analysis.kappa_ /\ i_i = i + 1) `|` (p^kappa_)%xr ==> OiB1.badj%xr) => //.
+  byehoare (: (kappa_i = kappa_ /\ i_i = i + 1) `|` (p^kappa_)%xr ==> OiB1.badj%xr) => //.
   proc; inline *; wp.
   call /(fun x => x) (: (valid_sk Oi.sk /\ OReal.kappa = kappa_ /\ (Oi.countS < Oi.i_ => !OiB1.badj)) `|` 
              if Oi.countS < Oi.i_ then (p^kappa_)%xr else OiB1.badj%xr).
@@ -1115,10 +1144,10 @@ local module OijB2 : Oracle_i_ij = {
 }.
 
 local module HijB (Adv: Adversary) (O: Oracle_i_ij) = {
-  proc main(kappa_:int, i_i:int, j_i:int) = {
+  proc main(kappa_i:int, i_i:int, j_i:int) = {
     var b, pk, sk;
     OijB1.badRO <- false;
-    OReal.kappa <- kappa_;
+    OReal.kappa <- kappa_i;
     (pk, sk) <$ keygen;
     RO.init();
     O.init(sk, i_i, j_i);
@@ -1273,7 +1302,7 @@ proof.
   have ? : 0.0 <= (1.0 - p) by smt().
   have ? : 0.0 <= p ^ j by smt (expr_ge0).
   have ? := i_bounded; have ? := j_bounded; have ? := qh_ge0; have ? := eps_ge0.
-  byehoare (: (arg = (Analysis.kappa_, i, j)) `|` (p^j)%xr * (i%xr / (1.0 - p)%xr + qh%xr + j%xr) * eps%xr ==>
+  byehoare (: (arg = (kappa_, i, j)) `|` (p^j)%xr * (i%xr / (1.0 - p)%xr + qh%xr + j%xr) * eps%xr ==>
                OijB1.badRO%xr) => //; 2: by rewrite /= /#.
   proc.
   call /(fun x => x) (: 
@@ -1487,36 +1516,6 @@ end section.
 
 
 
-(* (* Define some necessary abstract stuff *) *)
-(* clone include Reprog_inf. *)
-(* import RO. *)
-
-(* The overall goal is to bound the difference between interacting
-with the oracle [OReal] and the oracle [OSet1_inf] below, both having
-no loop bound. *)
-
-
-module OSet1_inf : Oracle_i = { 
-  import var OReal
-  include var OSet[init, h]
-
-  proc sign(m: M) = {
-    var w, st, c, oz;
-
-    w <- witness;
-    c <- witness;
-    oz <- None;
-    while(oz = None) {
-      (w, st) <$ commit sk;
-      c <$ dC;
-      oz <- respond sk st c;
-    }
-    (* We only store the w and c from the last iteration *) 
-    RO.set((w, m), c); 
-    return (w, c, oget oz);
-  }
-}.
-
 
 (* This theory proves the bound for the [OSet] to [OSet1_inf] step (?) *)
 
@@ -1728,9 +1727,9 @@ module Oij : Oracle_i_ij = {
 
 (* Hybrid game for Oi *)
 module Hi (Adv: Adversary) (O: Oracle_i_i) = {
-  proc main(kappa_:int, i_i:int) = {
+  proc main(kappa_i:int, i_i:int) = {
     var b, pk, sk;
-    OReal.kappa <- kappa_;
+    OReal.kappa <- kappa_i;
     (pk, sk) <$ keygen;
     RO.init();
     O.init(sk, i_i);
@@ -1741,9 +1740,9 @@ module Hi (Adv: Adversary) (O: Oracle_i_i) = {
 
 (* Hybrid game for Oij *)
 module Hij (Adv: Adversary) (O: Oracle_i_ij) = {
-  proc main(kappa_:int, i_i:int, j_i:int) = {
+  proc main(kappa_i:int, i_i:int, j_i:int) = {
     var b, pk, sk;
-    OReal.kappa <- kappa_;
+    OReal.kappa <- kappa_i;
     (pk, sk) <$ keygen;
     RO.init();
     O.init(sk, i_i, j_i);
@@ -2256,9 +2255,9 @@ local module Oij_LE (H : ROsk.RO) : Oracle_i_ij = {
 
 local module D (H :  ROsk.RO) = {
 
-  proc distinguish1 (kappa_:int, i_i:int, j_i:int) = {
+  proc distinguish1 (kappa_i:int, i_i:int, j_i:int) = {
     var b, pk, sk;
-    OReal.kappa <- kappa_;
+    OReal.kappa <- kappa_i;
     (pk, sk) <$ keygen; Oij_LE.i_done <- false;
     RO.init();
     H.init();
@@ -2266,9 +2265,9 @@ local module D (H :  ROsk.RO) = {
     b <@ Adv(Oij_LE(H)).distinguish(pk);
   }
 
-  proc distinguish (kappa_:int, i_i:int, j_i:int) = {
+  proc distinguish (kappa_i:int, i_i:int, j_i:int) = {
     var st;
-    distinguish1 (kappa_, i_i, j_i);
+    distinguish1 (kappa_i, i_i, j_i);
     (Oi.w_, st) <@ H.get(Oi.sk);
     (* TOTHINK: The b2i part is just true ... *)
     return (Oi.j_end /\ b2i Oij_LE.i_done <= 1) /\ Oi.w_ \in Oi.logh;
@@ -2335,7 +2334,7 @@ qed.
 (and unsuccessfull) on the i-th query. *)
 local lemma phr_j_end:
   phoare [D(ROsk.LRO).distinguish1 : 
-      kappa_ = Analysis1.kappa_ /\ i_i = i /\ j_i = j ==> Oi.j_end ] <= (p ^ Analysis1.j).
+      kappa_i = kappa_ /\ i_i = i /\ j_i = j ==> Oi.j_end ] <= (p ^ Analysis1.j).
 proof. 
   conseq (: Oi.j_end /\ b2i (Oij_LE.i_done) <= 1); 1: smt(). 
   bypr => &m *.
@@ -2373,7 +2372,7 @@ qed.
    lazy RO) returning true *)
 local lemma Pr_DLRO &m : Pr[D(ROsk.LRO).distinguish(kappa_, i, j) @ &m : res] <= p^j * (qh%r * eps).
 proof.
-  byphoare ( : kappa_ = Analysis1.kappa_ /\ i_i = i /\ j_i = j ==> res) => //; proc.
+  byphoare ( : kappa_i = kappa_ /\ i_i = i /\ j_i = j ==> res) => //; proc.
   seq 1 : Oi.j_end (p ^ j) (qh%r * eps) _ 0%r 
           (Oi.sk \notin ROsk.RO.m /\ size Oi.logh <= qh /\ valid_sk Oi.sk) => //;
     last by conseq (:false) => />.  
@@ -2509,10 +2508,10 @@ local module OSet1_inf_i : Oracle_i = {
 }.
 
 local module Game_kb(O:Oracle_i) = { 
-  proc main (kappa_:int) = { 
+  proc main (kappa_i:int) = { 
     var b;
     OSet1B1.bad <- false;
-    b <@ Game_k(Adv, CountBound(O)).main(kappa_);
+    b <@ Game_k(Adv, CountBound(O)).main(kappa_i);
     return b;
   }
 }.
@@ -2532,13 +2531,13 @@ local lemma Set1B2_Set1_inf_i &m :
   Pr[Game(Adv, CountBound(OSet1_inf_i)).main() @ &m : res].
 proof.
   byequiv=> //; proc; inline *; wp.
-  call (: ={RO.m, OReal.sk, Count.countH, Count.countS} /\ OReal.kappa{1} = Analysis1.kappa_); last by auto.
+  call (: ={RO.m, OReal.sk, Count.countH, Count.countS} /\ OReal.kappa{1} = kappa_); last by auto.
   + by sim />.
   proc; sp; if => //.
   inline OSet1B2.sign OSet1_inf_i.sign.
   splitwhile{2} ^while  : (i < kappa_).
-  seq 6 6 : (={ m, w, c, i, oz, RO.m, OReal.sk, Count.countH, Count.countS} /\ OReal.kappa{1} = Analysis1.kappa_).
-  + while (={ m, w, c, i, oz, OReal.sk} /\ OReal.kappa{1} = Analysis1.kappa_); 2: by auto.
+  seq 6 6 : (={ m, w, c, i, oz, RO.m, OReal.sk, Count.countH, Count.countS} /\ OReal.kappa{1} = kappa_).
+  + while (={ m, w, c, i, oz, OReal.sk} /\ OReal.kappa{1} = kappa_); 2: by auto.
     by conseq (: ={w, c, i, oz}) => //; sim.
   inline RO.set; if{1}.
   + by wp; while (={ m, w, c, oz, OReal.sk}); [ sim | auto => />].
@@ -2553,9 +2552,9 @@ proof. byequiv => //; sim. qed.
 
 local lemma Pr_bad &m : Pr[Game_kb(OSet1B1).main(kappa_) @ &m : OSet1B1.bad] <= qs%r * p^kappa_.
 proof.
-  byehoare (: (kappa_ = Analysis1.kappa_) `|` (qs%r * p ^ kappa_)%xr  ==> _)=> //; proc. 
+  byehoare (: (kappa_i = kappa_) `|` (qs%r * p ^ kappa_)%xr  ==> _)=> //; proc. 
   inline Game_k(Adv, CountBound(OSet1B1)).main Game(Adv, CountBound(OSet1B1)).main; wp.
-  call /(fun x => x) (: (valid_sk OReal.sk /\ OReal.kappa = Analysis1.kappa_) `|` (OSet1B1.bad%xr + (qs - Count.countS)%xr * (p^kappa_)%xr)). 
+  call /(fun x => x) (: (valid_sk OReal.sk /\ OReal.kappa = kappa_) `|` (OSet1B1.bad%xr + (qs - Count.countS)%xr * (p^kappa_)%xr)). 
   + by move=> &hr; apply xle_cxr_r => /> /#.
   + by conseq /(fun x =>  (valid_sk OReal.sk /\ OReal.kappa = kappa_) `|` (OSet1B1.bad%xr + (qs - Count.countS)%xr * (p ^ kappa_)%xr))
           (: 0%xr ==> 0%xr).
