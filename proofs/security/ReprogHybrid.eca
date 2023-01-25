@@ -13,32 +13,21 @@ import SmtMap RealOrder Biased FSet.
 
 type M, W, C, Z, ST, PK, SK.
 
-op [lossless] keygen : (PK * SK) distr.
+(* op [lossless] keygen : (PK * SK) distr. *)
 op [lossless] commit : SK -> (W * ST) distr.
 op [lossless uniform] dC : C distr.
 op respond : SK -> ST -> C -> Z option.
 
-op valid_sk sk =
-  exists pk, (pk, sk) \in keygen.
+op p :   { real | 0%r <= p < 1%r } as p_bounded. (* max proba of rejection *)
+op eps : { real | 0%r <= eps }     as eps_ge0.   (* max proba of = w *)
 
-op p : real.     (* max proba of rejection *)
-op eps : real.   (* max proba of = w *)
-
-axiom p_def sk : 
-  valid_sk sk => 
-  mu1 (dlet (commit sk) (fun (w_st : W * ST) =>              
-    dmap dC (fun (c : C) =>
-      respond sk w_st.`2 c))) None <= p.
-
-axiom p_bounded : 0%r <= p < 1%r.
-
-axiom valid_sk_mu1_commit sk : 
-  valid_sk sk => 
+op has_entropy (sk:SK) = 
   forall x, mu1 (dfst (commit sk)) x <= eps.
 
-(* This should be provable from valid_sk_mu1_commit *)
-axiom eps_ge0 : 0%r <= eps. 
-
+op bound_reject (sk : SK) = 
+  mu1 (dlet (commit sk) (fun (w_st : W * ST) =>              
+    dmap dC (fun (c : C) => respond sk w_st.`2 c))) None <= p.
+  
  (* max. number of signing queries *)
 op qs : {int | 0 <= qs} as qs_ge0.
 (* max. number of hash queries *)
@@ -262,12 +251,11 @@ module type Adversary(O: Oracle) = {
 
 (* Distinguishing game for sign/hash oracles *)
 module Game (Adv: Adversary) (O: Oracle_i) = {
-  proc main() = {
-    var b, pk, sk;
-    (pk, sk) <$ keygen;
+  proc main(pk_i:PK,sk_i:SK) = {
+    var b;
     RO.init();
-    O.init(sk);
-    b <@ Adv(O).distinguish(pk);
+    O.init(sk_i);
+    b <@ Adv(O).distinguish(pk_i);
     return b;
   }
 }.
@@ -275,10 +263,10 @@ module Game (Adv: Adversary) (O: Oracle_i) = {
 (* Parametric varant, setting OReal.kappa. Oracle implementations
    with loop bounds (have to) use OReal.kappa as the bound *)
 module Game_k (Adv: Adversary) (O: Oracle_i) = {
-  proc main(kappa_i: int) = {
+  proc main(pk_i:PK,sk_i:SK, kappa_i: int) = {
     var b;
     OReal.kappa <- kappa_i;
-    b <@ Game(Adv, O).main();
+    b <@ Game(Adv, O).main(pk_i,sk_i);
     return b;
   }
 }.
@@ -310,6 +298,7 @@ module type Oracle_i_ij = {
   proc init(sk_i : SK, i:int, j:int) : unit
  }.
 
+(* ----------------------------------------------------------------- *)
 (* Outer Hybrid: 
 - answers at most qS signing and qH oracle queries
 - first i signing queries perform a [set] on every iteration (sign_l) 
@@ -455,28 +444,27 @@ module Oij : Oracle_i_ij = {
 (** Game wrappers *)
 (* TOTHINK: Are these ever instantiated with something oter than Oi/Oij? *)
 module Hi (Adv: Adversary) (O: Oracle_i_i) = {
-  proc main(kappa_i:int, i_i:int) = {
-    var b, pk, sk;
+  proc main(pk_i:PK,sk_i:SK,kappa_i:int, i_i:int) = {
+    var b;
     OReal.kappa <- kappa_i;
-    (pk, sk) <$ keygen;
     RO.init();
-    O.init(sk, i_i);
-    b <@ Adv(O).distinguish(pk);
+    O.init(sk_i, i_i);
+    b <@ Adv(O).distinguish(pk_i);
     return b;
   }
 }.
 
 module Hij (Adv: Adversary) (O: Oracle_i_ij) = {
-  proc main(kappa_i:int, i_i:int, j_i:int) = {
-    var b, pk, sk;
+  proc main(pk_i:PK,sk_i:SK,kappa_i:int, i_i:int, j_i:int) = {
+    var b;
     OReal.kappa <- kappa_i;
-    (pk, sk) <$ keygen;
     RO.init();
-    O.init(sk, i_i, j_i);
-    b <@ Adv(O).distinguish(pk);
+    O.init(sk_i, i_i, j_i);
+    b <@ Adv(O).distinguish(pk_i);
     return b;
   }
 }.
+
 
 section Analysis.
 
@@ -486,8 +474,15 @@ declare axiom A_bound : forall (O <: Oracle_i{-Adv, -Count}),
   hoare [ Adv(Count(O)).distinguish : Count.countS = 0 /\ Count.countH = 0 ==> 
                                       Count.countS <= qs /\ Count.countH <= qh ].
 
+declare op pk : PK.
+declare op sk : SK.
+declare axiom sk_entropy : has_entropy sk.
+declare axiom sk_reject  : bound_reject sk.
+
 (* Since A is query bounded, we can insert CountBound wrappers *)
 section CountBound.
+
+
 
 (* NOTE: This is complicated by the fact that we do not have that O is lossless. *)
 declare module O <: Oracle_i{-Adv, -Count}.
@@ -551,8 +546,8 @@ proc (Count.countS = CountB.countS /\ Count.countH = CountB.countH); 1,2: smt().
 qed.
 
 local lemma Pr_CountBound_count &m : 
-  Pr[Game(Adv, CountBound(O)).main() @ &m : res] = 
-  Pr[Game(Adv, CountB(O)).main() @ &m : res].
+  Pr[Game(Adv, CountBound(O)).main(pk,sk) @ &m : res] = 
+  Pr[Game(Adv, CountB(O)).main(pk,sk) @ &m : res].
 proof.
 byequiv => //; proc; inline*.
 call (: ={glob O} /\ 
@@ -565,14 +560,13 @@ qed.
 
 (* TOTHINK: this is needed because Count does not initialize its counters *)
 local module GameI (Adv: Adversary) (O: Oracle_i) = {
-  proc main() = {
-    var b, pk, sk;
-    (pk, sk) <$ keygen;
+  proc main(pk_i:PK,sk_i:SK) = {
+    var b;
     RO.init();
-    O.init(sk);
+    O.init(sk_i);
     Count.countS <- 0;
     Count.countH <- 0;
-    b <@ Adv(O).distinguish(pk);
+    b <@ Adv(O).distinguish(pk_i);
     return b;
   }
 }.
@@ -641,7 +635,7 @@ local module GameB1 = {
   proc main() = {
     var b;
     CountBad1.bad <- false;
-    b <@ GameI(Adv, CountBad1).main();
+    b <@ GameI(Adv, CountBad1).main(pk,sk);
     return b;
   }
 }.
@@ -650,14 +644,14 @@ local module GameB2 = {
   proc main() = {
     var b;
     CountBad1.bad <- false;
-    b <@ GameI(Adv, CountBad2).main();
+    b <@ GameI(Adv, CountBad2).main(pk,sk);
     return b;
   }
 }.
 
 local lemma Pr_Game_GameI &m : 
-  Pr[Game(Adv, Count(O)).main() @ &m : res] =  
-  Pr[GameI(Adv, Count(O)).main() @ &m : res /\ Count.countS <= qs /\ Count.countH <= qh].
+  Pr[Game(Adv, Count(O)).main(pk,sk) @ &m : res] =  
+  Pr[GameI(Adv, Count(O)).main(pk,sk) @ &m : res /\ Count.countS <= qs /\ Count.countH <= qh].
 proof. 
   byequiv => //.
   conseq (: _ ==> ={res}) _ (: true ==> Count.countS <= qs /\ Count.countH <= qh) => />; 2: sim.
@@ -665,19 +659,20 @@ proof.
 qed.
 
 local lemma Pr_Count_CountBad1 &m : 
-  Pr[GameI(Adv, Count(O)).main() @ &m : res /\ Count.countS <= qs /\ Count.countH <= qh] = 
+  Pr[GameI(Adv, Count(O)).main(pk,sk) @ &m : res /\ Count.countS <= qs /\ Count.countH <= qh] = 
   Pr[GameB1.main() @ &m : res /\ Count.countS <= qs /\ Count.countH <= qh].
 proof.
   byequiv => //; proc; inline GameI(Adv, CountBad1).main; wp.
   sim (Count(O).h ~ CountBad1.h : ={glob O, Count.countH})
       (Count(O).sign ~ CountBad1.sign : ={glob O, Count.countS}).
   + by proc; sp 0 1; if{2}; swap{1} 1; sim. 
-  by proc; sp 0 1; if{2}; swap{1} 1; sim. 
+  + by proc; sp 0 1; if{2}; swap{1} 1; sim. 
+  + by auto.
 qed.
 
 local lemma Pr_CountB_CountBad2 &m : 
-  Pr[Game(Adv, CountB(O)).main() @ &m : res] =  
-  Pr[Game(Adv, CountB(O)).main() @ &m : res /\ CountB.countS <= qs /\ CountB.countH <= qh].
+  Pr[Game(Adv, CountB(O)).main(pk,sk) @ &m : res] =  
+  Pr[Game(Adv, CountB(O)).main(pk,sk) @ &m : res /\ CountB.countS <= qs /\ CountB.countH <= qh].
 proof. 
   byequiv => //.
   conseq (: _ ==> ={res}) _
@@ -687,14 +682,14 @@ qed.
 
 
 local lemma CB2_CB &m : 
-  Pr[Game(Adv, CountB(O)).main() @ &m : res] = 
+  Pr[Game(Adv, CountB(O)).main(pk,sk) @ &m : res] = 
   Pr[GameB2.main() @ &m : res /\ Count.countS <= qs /\ Count.countH <= qh].
 proof.
 rewrite Pr_CountB_CountBad2.
   byequiv => //; proc.
   inline *; wp.
   sim (CountBad2.h ~ CountBound(O).h : ={glob O, Count.countH})
-      (CountBad2.sign ~ CountBound(O).sign : ={glob O, Count.countS}).
+      (CountBad2.sign ~ CountBound(O).sign : ={glob O, Count.countS}); auto.
 qed.
 
 local lemma Pr_CB1_CB2 &m : 
@@ -722,8 +717,8 @@ apply/ler_maxrP; split.
 qed.
 
 lemma Pr_Count_CountBound &m : 
-  Pr[Game(Adv, Count(O)).main() @ &m : res] = 
-  Pr[Game(Adv, CountBound(O)).main() @ &m : res].
+  Pr[Game(Adv, Count(O)).main(pk,sk) @ &m : res] = 
+  Pr[Game(Adv, CountBound(O)).main(pk,sk) @ &m : res].
 proof.
 rewrite Pr_Game_GameI Pr_Count_CountBad1. 
 by rewrite Pr_CountBound_count CB2_CB Pr_CB1_CB2.
@@ -740,8 +735,8 @@ lemma kappa_ge0 : 0 <= kappa_
 by smt(kappa_gt0).
 
 local lemma GReal_Hi &m : 
-  Pr[Game(Adv, CountBound(OReal)).main() @ &m : res] = 
-  Pr[Hi(Adv, Oi).main(kappa_, 0) @ &m : res].
+  Pr[Game(Adv, CountBound(OReal)).main(pk,sk) @ &m : res] = 
+  Pr[Hi(Adv, Oi).main(pk,sk,kappa_, 0) @ &m : res].
 proof.
   byequiv => //; proc.
   call (: ={RO.m} /\ OReal.sk{1} = Oi.sk{2} /\ (Oi.i_ <= Oi.countS){2} /\
@@ -755,8 +750,8 @@ proof.
 qed.
   
 local lemma GSet_Hi &m : 
-  Pr[Game_k(Adv, CountBound(OSet)).main(kappa_) @ &m : res] = 
-  Pr[Hi(Adv, Oi).main(kappa_, qs) @ &m : res].
+  Pr[Game_k(Adv, CountBound(OSet)).main(pk,sk,kappa_) @ &m : res] = 
+  Pr[Hi(Adv, Oi).main(pk,sk,kappa_, qs) @ &m : res].
 proof.
   byequiv => //; proc; inline Game(Adv, CountBound(OSet)).main; wp.
   call (: ={RO.m, OReal.kappa} /\ OReal.sk{1} = Oi.sk{2} /\ Oi.i_{2} = qs /\ 
@@ -777,12 +772,12 @@ should be 0), where do we exploit that Hi stops answering queries? *)
 (* TOTHINK: can we refactor this to use the same direction for the
 "telescoping sums"? *)
 local lemma GReal_GSet_aux &m : 
-  Pr[Game(Adv, Count(OReal)).main() @ &m : res] <= 
-  Pr[Game_k(Adv, CountBound(OSet)).main(kappa_) @ &m : res] + 
-     bigi predT (fun (i : int) => Pr[Hi(Adv, Oi).main(kappa_, i) @ &m : res] - 
-                                    Pr[Hi(Adv, Oi).main(kappa_, i+1) @ &m : res]) 0 qs.
+  Pr[Game(Adv, Count(OReal)).main(pk,sk) @ &m : res] <= 
+  Pr[Game_k(Adv, CountBound(OSet)).main(pk,sk,kappa_) @ &m : res] + 
+     bigi predT (fun (i : int) => Pr[Hi(Adv, Oi).main(pk,sk,kappa_, i) @ &m : res] - 
+                                    Pr[Hi(Adv, Oi).main(pk,sk,kappa_, i+1) @ &m : res]) 0 qs.
 proof.
-  have /= <- := telescoping_sum (fun i => Pr[Hi(Adv, Oi).main(kappa_, i) @ &m : res]) 0 qs qs_ge0.
+  have /= <- := telescoping_sum (fun i => Pr[Hi(Adv, Oi).main(pk,sk,kappa_, i) @ &m : res]) 0 qs qs_ge0.
   rewrite -GReal_Hi -GSet_Hi.
   have /# := Pr_Count_CountBound OReal &m.
 qed.
@@ -835,13 +830,13 @@ local module HiB1 = {
   proc main(kappa_i : int, i_i : int) = {
     var b;
     OiB1.badj <- false;
-    b <@ Hi(Adv, OiB1).main(kappa_i, i + 1);
+    b <@ Hi(Adv, OiB1).main(pk,sk,kappa_i, i + 1);
     return b;
   }
 }.
 
 local lemma Hi_HiB1 &m : 
-  Pr[Hi(Adv, Oi).main(kappa_, i + 1) @ &m : res] = 
+  Pr[Hi(Adv, Oi).main(pk,sk,kappa_, i + 1) @ &m : res] = 
   Pr[HiB1.main(kappa_, i + 1) @ &m : res].
 proof.
   byequiv => //; proc. inline Hi(Adv, OiB1).main; wp.
@@ -884,7 +879,7 @@ local module HiB2 = {
   proc main(kappa_i : int, i_i : int) = {
     var b;
     OiB1.badj <- false;
-    b <@ Hi(Adv, OiB2).main(kappa_i, i + 1);
+    b <@ Hi(Adv, OiB2).main(pk,sk,kappa_i, i + 1);
     return b;
   }
 }.
@@ -896,21 +891,21 @@ local lemma HiB1_HiB2 &m :
 proof. byupto. qed.
 
 local ehoare sign_i_l_None : 
-  Oi.sign_i_l : valid_sk Oi.sk `|` p%xr ==> (res.`3 = None)%xr.
+  Oi.sign_i_l : (Oi.sk = sk) `|` p%xr ==> (res.`3 = None)%xr.
 proof.
   proc; inline *; auto => &hr. 
-  apply xle_cxr_r => *; rewrite Ep_commit_dc_None /=.
-  rewrite to_pos_pos;1: smt(p_bounded).
-  by apply p_def.
+  apply xle_cxr_r => /> *.
+  rewrite Ep_commit_dc_None /= to_pos_pos;1: smt(p_bounded).
+  exact sk_reject.
 qed.
 
-local ehoare sign_l_None : Oi.sign_l : (valid_sk Oi.sk /\ OReal.kappa = kappa_) `|` (p^kappa_)%xr ==> (res = None)%xr.
+local ehoare sign_l_None : Oi.sign_l : ((Oi.sk = sk) /\ OReal.kappa = kappa_) `|` (p^kappa_)%xr ==> (res = None)%xr.
 proof.
   proc.
-  while ( (valid_sk Oi.sk /\ j' <= OReal.kappa) `|` (oz=None)%xr * (p^(OReal.kappa - j'))%xr).
+  while ( ((Oi.sk = sk) /\ j' <= OReal.kappa) `|` (oz=None)%xr * (p^(OReal.kappa - j'))%xr).
   + by move=> &hr /=; apply xle_cxr_r => |>; smt(expr0).
   + wp => /=. 
-    call /(fun x => (valid_sk Oi.sk /\ j' + 1 <= OReal.kappa) `|`x * (p ^ (OReal.kappa - (j' + 1)))%xr)  
+    call /(fun x => ((Oi.sk = sk) /\ j' + 1 <= OReal.kappa) `|`x * (p ^ (OReal.kappa - (j' + 1)))%xr)  
          sign_i_l_None.
     auto => &hr /=; apply xle_cxr => |> *; split; 1: smt().
     rewrite !to_pos_pos; 1..3: smt(p_bounded expr_ge0).
@@ -925,32 +920,31 @@ local lemma HiB1_badj &m : Pr[HiB1.main(kappa_, i + 1) @ &m : OiB1.badj] <= p^ka
 proof.
   byehoare (: (kappa_i = kappa_ /\ i_i = i + 1) `|` (p^kappa_)%xr ==> OiB1.badj%xr) => //.
   proc; inline *; wp.
-  call /(fun x => x) (: (valid_sk Oi.sk /\ OReal.kappa = kappa_ /\ (Oi.countS < Oi.i_ => !OiB1.badj)) `|` 
+  call /(fun x => x) (: ((Oi.sk = sk) /\ OReal.kappa = kappa_ /\ (Oi.countS < Oi.i_ => !OiB1.badj)) `|` 
              if Oi.countS < Oi.i_ then (p^kappa_)%xr else OiB1.badj%xr).
   + by move=> &hr; apply xle_cxr_r => />; case (Oi.countS{hr} < Oi.i_{hr}) => //= /#. 
-  + by conseq /(fun _ => (valid_sk Oi.sk /\ OReal.kappa = kappa_ /\ (Oi.countS < Oi.i_ => !OiB1.badj)) `|`
+  + by conseq /(fun _ => ((Oi.sk = sk) /\ OReal.kappa = kappa_ /\ (Oi.countS < Oi.i_ => !OiB1.badj)) `|`
               if Oi.countS < Oi.i_ then (p ^ kappa_)%xr else OiB1.badj%xr) 
            (: 0%xr ==> 0%xr).
   + proc; seq 1: #pre; 1: auto.
     if; wp => /=; 2: by auto => &hr /=; apply xle_cxr => />.
     if. 
-    + by wp; conseq /(fun x => (valid_sk Oi.sk /\ OReal.kappa = kappa_ /\ (Oi.countS + 1 < Oi.i_ => !OiB1.badj)) `|`
+    + by wp; conseq /(fun x => ((Oi.sk = sk) /\ OReal.kappa = kappa_ /\ (Oi.countS + 1 < Oi.i_ => !OiB1.badj)) `|`
               if Oi.countS + 1 < Oi.i_ then (p ^ kappa_)%xr else OiB1.badj%xr) 
            (: 0%xr ==> 0%xr) => //= => &hr; apply xle_cxr => /> * /#.
     if.
-    + seq 1 : ((valid_sk Oi.sk /\ OReal.kappa = kappa_ /\ Oi.countS = Oi.i_ - 1 /\ !OiB1.badj) `|` (or = None)%xr).
+    + seq 1 : (((Oi.sk = sk) /\ OReal.kappa = kappa_ /\ Oi.countS = Oi.i_ - 1 /\ !OiB1.badj) `|` (or = None)%xr).
       + conseq (: (or = None)%xr).
         + by move=> &hr /=; apply xle_cxr => |> *; apply xle_cxr_l => // /#. 
         + move=> &hr /=; apply xle_cxr. 
-          by case: (valid_sk Oi.sk{hr} /\ OReal.kappa{hr} = kappa_ /\ Oi.countS{hr} = Oi.i_{hr} - 1 /\ !OiB1.badj{hr}).
+          by case: ((Oi.sk = sk){hr} /\ OReal.kappa{hr} = kappa_ /\ Oi.countS{hr} = Oi.i_{hr} - 1 /\ !OiB1.badj{hr}).
         by call sign_l_None; auto => &hr /=; apply xle_cxr => |> /#.
       by auto => &hr /=; apply xle_cxr_r => |>; case:(or{hr} = None).
-    conseq /(fun x => (valid_sk Oi.sk /\ OReal.kappa = kappa_ /\ (Oi.countS + 1 < Oi.i_ => !OiB1.badj)) `|`
+    conseq /(fun x => ((Oi.sk = sk) /\ OReal.kappa = kappa_ /\ (Oi.countS + 1 < Oi.i_ => !OiB1.badj)) `|`
               if Oi.countS + 1 < Oi.i_ then (p ^ kappa_)%xr else OiB1.badj%xr) 
            (: 0%xr ==> 0%xr) => //=.
-    by move=> &hr; apply xle_cxr => /> * /#.
-  auto => &hr /=; rewrite Ep_cxr /=; apply xle_cxr => /> *.
-  rewrite EpC keygen_ll /=; smt(i_bounded).
+    by move=> &hr; apply xle_cxr => /> * /#. 
+  auto => &hr /=; apply xle_cxr => /> *; smt(i_bounded).
 qed.
 
 (* second part, virtually the same proof *)
@@ -958,40 +952,39 @@ local lemma HiB2_badj &m : Pr[HiB2.main(kappa_, i + 1) @ &m : OiB1.badj] <= p^ka
 proof.
   byehoare (: (kappa_i = kappa_ /\ i_i = i + 1) `|` (p^kappa_)%xr ==> OiB1.badj%xr) => //.
   proc; inline *; wp.
-  call /(fun x => x) (: (valid_sk Oi.sk /\ OReal.kappa = kappa_ /\ (Oi.countS < Oi.i_ => !OiB1.badj)) `|` 
+  call /(fun x => x) (: ((Oi.sk = sk) /\ OReal.kappa = kappa_ /\ (Oi.countS < Oi.i_ => !OiB1.badj)) `|` 
              if Oi.countS < Oi.i_ then (p^kappa_)%xr else OiB1.badj%xr).
   + by move=> &hr; apply xle_cxr_r => />; case (Oi.countS{hr} < Oi.i_{hr}) => //= /#. 
-  + by conseq /(fun x => (valid_sk Oi.sk /\ OReal.kappa = kappa_ /\ (Oi.countS < Oi.i_ => !OiB1.badj)) `|`
+  + by conseq /(fun x => ((Oi.sk = sk) /\ OReal.kappa = kappa_ /\ (Oi.countS < Oi.i_ => !OiB1.badj)) `|`
               if Oi.countS < Oi.i_ then (p ^ kappa_)%xr else OiB1.badj%xr) 
            (: 0%xr ==> 0%xr).
   + proc; seq 1: #pre; 1: auto.
     if; wp => /=; 2: by auto => &hr /=; apply xle_cxr => />.
     if. 
-    + by conseq /(fun x => (valid_sk Oi.sk /\ OReal.kappa = kappa_ /\ (Oi.countS + 1 < Oi.i_ => !OiB1.badj)) `|`
+    + by conseq /(fun x => ((Oi.sk = sk) /\ OReal.kappa = kappa_ /\ (Oi.countS + 1 < Oi.i_ => !OiB1.badj)) `|`
               if Oi.countS + 1 < Oi.i_ then (p ^ kappa_)%xr else OiB1.badj%xr) 
            (: 0%xr ==> 0%xr) => //= &hr; apply xle_cxr => /> * /#.
     if.
-    + seq 1 : ((valid_sk Oi.sk /\ OReal.kappa = kappa_ /\ Oi.countS = Oi.i_ - 1 /\ !OiB1.badj) `|` (or = None)%xr).
+    + seq 1 : (((Oi.sk = sk) /\ OReal.kappa = kappa_ /\ Oi.countS = Oi.i_ - 1 /\ !OiB1.badj) `|` (or = None)%xr).
       + conseq (: (or = None)%xr).
         + by move=> &hr /=; apply xle_cxr => |> *; apply xle_cxr_l => // /#. 
         + move=> &hr /=; apply xle_cxr. 
-          by case: (valid_sk Oi.sk{hr} /\ OReal.kappa{hr} = kappa_ /\ Oi.countS{hr} = Oi.i_{hr} - 1 /\ !OiB1.badj{hr}).
+          by case: ((Oi.sk = sk){hr} /\ OReal.kappa{hr} = kappa_ /\ Oi.countS{hr} = Oi.i_{hr} - 1 /\ !OiB1.badj{hr}).
         by call sign_l_None; auto => &hr /=; apply xle_cxr => |> /#.
       if; 2: by auto => &hr /=; apply xle_cxr => |>.
-      call /(fun _ => (valid_sk Oi.sk /\ OReal.kappa = kappa_ /\ (Oi.countS + 1 < Oi.i_ => !OiB1.badj)) `|`
+      call /(fun _ => ((Oi.sk = sk) /\ OReal.kappa = kappa_ /\ (Oi.countS + 1 < Oi.i_ => !OiB1.badj)) `|`
                        if Oi.countS + 1 < Oi.i_ then (p ^ kappa_)%xr else OiB1.badj%xr)
            (: 0%xr ==> 0%xr) => //.
       by auto => &hr /=; apply xle_cxr => |>.
-    by conseq /(fun x => (valid_sk Oi.sk /\ OReal.kappa = kappa_ /\ (Oi.countS + 1 < Oi.i_ => !OiB1.badj)) `|`
+    by conseq /(fun x => ((Oi.sk = sk) /\ OReal.kappa = kappa_ /\ (Oi.countS + 1 < Oi.i_ => !OiB1.badj)) `|`
               if Oi.countS + 1 < Oi.i_ then (p ^ kappa_)%xr else OiB1.badj%xr) 
            (: 0%xr ==> 0%xr) => //= &hr; apply xle_cxr => /> * /#.
-  auto => &hr /=; rewrite Ep_cxr /=; apply xle_cxr => /> *.
-  rewrite EpC keygen_ll /=; smt(i_bounded).
+  auto => &hr /=; apply xle_cxr => /> *; smt(i_bounded).
 qed.
 
 local lemma Hi_Hij &m : 
   Pr[HiB2.main(kappa_, i + 1) @ &m : res] = 
-  Pr[Hij(Adv,Oij).main(kappa_, i, kappa_) @ &m : res].
+  Pr[Hij(Adv,Oij).main(pk,sk,kappa_, i, kappa_) @ &m : res].
 proof.
   byequiv => //; proc; inline Hi(Adv, OiB2).main; wp.
   call (: ={Oi.sk, Oi.countS, Oi.countH, RO.m, OReal.kappa} /\ Oi.i_{1} = Oi.i_{2} + 1 /\ Oi.j_{2} = OReal.kappa{2} /\ 0 <= OReal.kappa{2}).
@@ -1023,8 +1016,8 @@ proof.
 qed.
 
 local lemma Hi1_Hij &m : 
-   Pr[Hi(Adv, Oi).main(kappa_, i) @ &m : res] = 
-   Pr[Hij(Adv,Oij).main(kappa_, i,0) @ &m : res].
+   Pr[Hi(Adv, Oi).main(pk,sk,kappa_, i) @ &m : res] = 
+   Pr[Hij(Adv,Oij).main(pk,sk,kappa_, i,0) @ &m : res].
 proof.
   byequiv => //; proc.
   call (: ={Oi.i_, Oi.sk, Oi.countS, Oi.countH, RO.m, OReal.kappa} /\ Oi.j_{2} = 0 /\ 0 < OReal.kappa{2}).
@@ -1039,15 +1032,15 @@ proof.
 qed.
 
 local lemma HiHi1 &m : 
-  Pr[Hi(Adv, Oi).main(kappa_, i) @ &m : res] - 
-  Pr[Hi(Adv, Oi).main(kappa_,i+1) @ &m : res] <=
+  Pr[Hi(Adv, Oi).main(pk,sk,kappa_, i) @ &m : res] - 
+  Pr[Hi(Adv, Oi).main(pk,sk,kappa_,i+1) @ &m : res] <=
   p^kappa_ + 
   bigi predT (fun (j : int) => 
-    Pr[Hij(Adv, Oij).main(kappa_,i,j) @ &m : res] - 
-    Pr[Hij(Adv, Oij).main(kappa_, i, j+1) @ &m : res]) 0 kappa_.
+    Pr[Hij(Adv, Oij).main(pk,sk,kappa_,i,j) @ &m : res] - 
+    Pr[Hij(Adv, Oij).main(pk,sk,kappa_, i, j+1) @ &m : res]) 0 kappa_.
 proof.
   have := HiB1_HiB2 &m; have := HiB1_badj &m; have := HiB2_badj &m.
-  have /= <- := (telescoping_sum (fun j => Pr[Hij(Adv, Oij).main(kappa_,i, j) @ &m : res]) 0 kappa_).
+  have /= <- := (telescoping_sum (fun j => Pr[Hij(Adv, Oij).main(pk,sk,kappa_,i, j) @ &m : res]) 0 kappa_).
   + by apply kappa_ge0.
   rewrite Hi_HiB1 Hi_Hij Hi1_Hij /#.
 qed.
@@ -1173,10 +1166,9 @@ local module OijB2 : Oracle_i_ij = {
 
 local module HijB (Adv: Adversary) (O: Oracle_i_ij) = {
   proc main(kappa_i:int, i_i:int, j_i:int) = {
-    var b, pk, sk;
+    var b;
     OijB1.badRO <- false;
     OReal.kappa <- kappa_i;
-    (pk, sk) <$ keygen;
     RO.init();
     O.init(sk, i_i, j_i);
     b <@ Adv(O).distinguish(pk);
@@ -1185,7 +1177,7 @@ local module HijB (Adv: Adversary) (O: Oracle_i_ij) = {
 }.
 
 local lemma Pr_Hij_OijB1 &m : 
-  Pr[Hij(Adv, Oij).main(kappa_,i,j) @ &m : res] = Pr[HijB(Adv, OijB1).main(kappa_,i,j) @ &m : res].
+  Pr[Hij(Adv, Oij).main(pk,sk,kappa_,i,j) @ &m : res] = Pr[HijB(Adv, OijB1).main(kappa_,i,j) @ &m : res].
 proof.
   byequiv => //; proc.
   call (: ={RO.m, Oi.countS, Oi.countH, Oi.sk, OReal.kappa, Oi.i_, Oi.j_}); last by inline *; auto.
@@ -1204,7 +1196,7 @@ proof.
 qed.
 
 local lemma Pr_Hij_OijB2 &m : 
-  Pr[Hij(Adv, Oij).main(kappa_,i,j+1) @ &m : res] = Pr[HijB(Adv, OijB2).main(kappa_,i,j) @ &m : res].
+  Pr[Hij(Adv, Oij).main(pk,sk,kappa_,i,j+1) @ &m : res] = Pr[HijB(Adv, OijB2).main(kappa_,i,j) @ &m : res].
 proof.
   byequiv => //; proc.
   call (: ={RO.m, Oi.countS, Oi.countH, Oi.sk, OReal.kappa, Oi.i_} /\ Oi.j_{1} = Oi.j_{2} + 1); last by inline *; auto.
@@ -1244,59 +1236,61 @@ proof.
 qed.
 
 local ehoare e_sign_i_l (c:real) : Oi.sign_i_l : 
-  valid_sk sk `|` p%xr * ((card (fdom RO.m))%xr + 1%xr + c%xr) ==> 
+  (Oi.sk = ReprogAlways.sk) `|` p%xr * ((card (fdom RO.m))%xr + 1%xr + c%xr) ==> 
   (res.`3 = None)%xr * ((card (fdom RO.m))%xr + c%xr). 
 proof.
-  proc; inline *; auto => &hr.
-  apply xle_cxr_r => |> /p_def /= ?.
+  proc; inline*; auto => &hr. 
+  apply xle_cxr_r => |>. (* /p_def /= ?. *)
   apply (xle_trans 
              (((card (fdom RO.m{hr}))%rp + 1%rp + c%rp) ** 
-               Ep (commit sk{hr}) (fun (w0st : W * ST) =>
-                  Ep dC (fun (c0_0 : C) => (respond sk{hr} w0st.`2 c0_0 = None)%xr)))).
+               Ep (commit ReprogAlways.sk) (fun (w0st : W * ST) =>
+                  Ep dC (fun (c0_0 : C) => (respond ReprogAlways.sk w0st.`2 c0_0 = None)%xr)))).
   + rewrite -EpsZ; apply le_Ep => x0 _ /=.
     rewrite -EpsZ; apply le_Ep => C _ /=.
     have ? /#: (card (fdom RO.m{hr}.[x0.`1, m{hr} <- C]))%r%pos <= (card (fdom RO.m{hr}))%r%pos + 1%r.
     by rewrite fdom_set fcardU1 mem_fdom /#. 
-  rewrite Ep_commit_dc_None /= mulrC; apply ler_pmul => //; smt(p_bounded).
+  rewrite Ep_commit_dc_None /= mulrC; apply ler_pmul => //. smt(). 
+  rewrite to_pos_pos; 1:smt(p_bounded); exact sk_reject.
 qed.
 
 local ehoare e_sign_i_l_l  (c:real) : Oi.sign_i_l : 
-  valid_sk sk `|` (card (fdom RO.m))%xr + 1%xr + p%xr * c%xr ==> 
+  (Oi.sk = ReprogAlways.sk) `|` (card (fdom RO.m))%xr + 1%xr + p%xr * c%xr ==> 
   (card (fdom RO.m))%xr + (res.`3 = None)%xr * c%xr. 
 proof.
-  proc; inline *; auto => &hr.
+  proc; inline *; auto => &hr. 
+  apply xle_cxr_r => |>.
   apply (xle_trans
-    ( Ep (commit sk{hr}) (fun (wst : W * ST) =>
+    ( Ep (commit ReprogAlways.sk) (fun (wst : W * ST) =>
         ((card (fdom RO.m{hr}))%xr + 1%xr) + 
         c%rp ** Ep dC (fun (c0 : C) =>
-          (respond sk{hr} wst.`2 c0 = None)%xr)))).
+          (respond ReprogAlways.sk wst.`2 c0 = None)%xr)))).
   + apply le_Ep => wst _ /=.
     have := EpC dC ((card (fdom RO.m{hr}))%xr + 1%xr).
     rewrite dC_ll /= => <-; rewrite -EpsZ -EpD; apply le_Ep => C _ /=.
     by rewrite fdom_set fcardU1 mem_fdom /#. 
-  rewrite EpD EpC commit_ll /= EpsZ /= Ep_commit_dc_None /=; apply xle_cxr_r => /p_def ? /=.
+  rewrite EpD EpC commit_ll /= EpsZ /= Ep_commit_dc_None /=. 
   apply ler_add => //; rewrite mulrC.
   apply ler_wpmul2r; 1: smt(). 
-  rewrite to_pos_pos //; smt(p_bounded).
+  rewrite to_pos_pos //; 1: smt(p_bounded); exact sk_reject.
 qed.
 
 (* With every call to [sign_l] the expected size of the domain increases by 1 / (1 - p)  *)
 local ehoare e_sign_l : Oi.sign_l :  
-  (valid_sk sk /\ OReal.kappa = kappa_) `|` (card (fdom RO.m))%xr + (1.0 / (1.0-p))%xr ==> (card (fdom RO.m))%xr.
+  (sk = ReprogAlways.sk /\ OReal.kappa = kappa_) `|` (card (fdom RO.m))%xr + (1.0 / (1.0-p))%xr ==> (card (fdom RO.m))%xr.
 proof.
   proc.
-  while ( (valid_sk sk /\ OReal.kappa = kappa_)`|` (card (fdom RO.m))%xr + 
+  while ( (sk = ReprogAlways.sk /\ OReal.kappa = kappa_)`|` (card (fdom RO.m))%xr + 
            (oz = None)%xr * (bigi predT (fun j => (p^j)) 0 (kappa_ - j'))%xr); last first.
-  + auto => /= &hr; apply xle_cxr => |> _.
+  + auto => /= &hr; apply xle_cxr => |> .
     have /= ? := sum_pow_le p kappa_ kappa_ge0 p_bounded.
     apply ler_add => //.
     by rewrite inv_pos; apply le_pos.
   + by move=> &hr /=; apply xle_cxr_r => /> /#.
   wp.
   exlim (bigi predT (fun (j : int) => p ^ j) 0 (kappa_ - (j' + 1))) => sum.
-  conseq /(fun x => (sum = (bigi predT (fun (j : int) => p ^ j) 0 (kappa_ - (j' + 1))) /\ valid_sk sk /\
+  conseq /(fun x => (sum = (bigi predT (fun (j : int) => p ^ j) 0 (kappa_ - (j' + 1))) /\ sk = ReprogAlways.sk /\
            OReal.kappa = kappa_) `|` x)
-     (: valid_sk sk  `|` ((card (fdom RO.m))%xr + 1%xr + p%xr * sum%xr) ==>
+     (: (sk = ReprogAlways.sk) `|` ((card (fdom RO.m))%xr + 1%xr + p%xr * sum%xr) ==>
         (card (fdom RO.m))%xr + (oz=None)%xr * sum%xr).
   + move=> &hr /=; apply xle_cxr => /> *.
     rewrite -addrA; apply ler_add => //.
@@ -1334,7 +1328,7 @@ proof.
                OijB1.badRO%xr) => //; 2: by rewrite /= /#.
   proc.
   call /(fun x => x) (: 
-    ((countS <= i_ => !OijB1.badRO) /\ j_ = j /\ i_ = i /\ valid_sk sk /\ OReal.kappa = kappa_) `|` 
+    ((countS <= i_ => !OijB1.badRO) /\ j_ = j /\ i_ = i /\ sk = ReprogAlways.sk /\ OReal.kappa = kappa_) `|` 
     if countS <= i_ then 
        (p^j)%xr * ((card (fdom RO.m))%xr + (i_ - countS)%xr / (1.0 - p)%xr + (qh - countH)%xr + j%xr ) * eps%xr 
     else OijB1.badRO%xr).
@@ -1344,7 +1338,7 @@ proof.
   + proc; seq 1: #pre; 1: by auto.
     if => /=; 2: by auto => &hr; apply xle_cxr.
     wp. call /(fun c =>  
-      ((countS <= i_ => !OijB1.badRO) /\ j_ = j /\ i_ = i /\ valid_sk sk /\ OReal.kappa = kappa_) `|`
+      ((countS <= i_ => !OijB1.badRO) /\ j_ = j /\ i_ = i /\ sk = ReprogAlways.sk /\ OReal.kappa = kappa_) `|`
       if countS <= i_ then
        (p ^ j)%xr * (c + (i_ - countS)%xr / (1%r - p)%xr +
                      (qh - (countH + 1))%xr + j%xr) * eps%xr
@@ -1359,7 +1353,7 @@ proof.
     (* countS < i_ *) 
     + move=> /=; wp.
       call /(fun x => 
-       ((countS + 1 <= i_ => !OijB1.badRO) /\ j_ = j /\ i_ = i /\ valid_sk sk /\ OReal.kappa = kappa_) `|`
+       ((countS + 1 <= i_ => !OijB1.badRO) /\ j_ = j /\ i_ = i /\ sk = ReprogAlways.sk /\ OReal.kappa = kappa_) `|`
          if countS + 1 <= i_ then
            (p ^ j)%xr * (x + (i_ - (countS + 1))%xr / (1%r - p)%xr +
               (qh - countH)%xr + j%xr) * eps%xr
@@ -1370,10 +1364,10 @@ proof.
    
     if.
     (* CountS = i_ *)
-    + call /(fun x =>  (i = countS /\ j_ = j /\ i_ = i /\ valid_sk sk /\ OReal.kappa = kappa_) `|` 
+    + call /(fun x =>  (i = countS /\ j_ = j /\ i_ = i /\ sk = ReprogAlways.sk /\ OReal.kappa = kappa_) `|` 
                        x + 
                        (p ^ j)%xr * ( (i_ - countS)%xr / (1%r - p)%xr + (qh - countH)%xr) * eps%xr)
-            (: (!OijB1.badRO /\ i = countS /\ j_ = j /\ i_ = i /\ valid_sk sk /\ OReal.kappa = kappa_) `|` 
+            (: (!OijB1.badRO /\ i = countS /\ j_ = j /\ i_ = i /\ sk = ReprogAlways.sk /\ OReal.kappa = kappa_) `|` 
                   (p ^ j)%xr * ((card (fdom RO.m))%xr + j%xr) * eps%xr 
                 ==>
                 OijB1.badRO%xr); last first.
@@ -1381,7 +1375,7 @@ proof.
       + move=> &hr /=; apply xle_cxr => />. 
         have -> /= : !(i + 1 <= i); smt().
       proc. while ( 
-         ((j' <= j_ => !OijB1.badRO) /\ j_ = j /\ valid_sk sk /\ OReal.kappa = kappa_) `|` 
+         ((j' <= j_ => !OijB1.badRO) /\ j_ = j /\ sk = ReprogAlways.sk /\ OReal.kappa = kappa_) `|` 
               if j' <= j_ then 
                 let k = j - j' in
                 (oz = None)%xr * (p^k)%xr * ((card (fdom RO.m))%xr + k%xr) * eps%xr
@@ -1393,11 +1387,11 @@ proof.
       wp; if => /=.
       (* j' < j_ *)
       + conseq /(fun x =>
-          ((j' + 1 <= j_ => !OijB1.badRO) /\ j_ = j /\ valid_sk sk /\ OReal.kappa = kappa_) `|`
+          ((j' + 1 <= j_ => !OijB1.badRO) /\ j_ = j /\ sk = ReprogAlways.sk /\ OReal.kappa = kappa_) `|`
             if j' + 1 <= j_ then
               x *  (p ^ (j - (j' + 1)))%xr * eps%xr
             else OijB1.badRO%xr) 
-          (: (valid_sk sk /\ OReal.kappa = kappa_) `|`
+          (: (sk = ReprogAlways.sk /\ OReal.kappa = kappa_) `|`
              p%xr * ((card (fdom RO.m))%xr + 1%xr + (j - (j' + 1))%xr) ==>
              ((w,c,oz).`3 = None)%xr * ((card (fdom RO.m))%xr + (j - (j' + 1))%xr)).
         + move=> &hr; apply xle_cxr => |> *.
@@ -1409,7 +1403,7 @@ proof.
           case: (j'{hr} + 1 <= j) => // /#.
         exlim (j - (j' + 1))%r => j0.
         have h0 := e_sign_i_l j0.
-        conseq (:  (valid_sk sk `|` p%xr * ((card (fdom RO.m))%xr + 1%xr + j0%xr))
+        conseq (:  ((sk = ReprogAlways.sk) `|` p%xr * ((card (fdom RO.m))%xr + 1%xr + j0%xr))
                    ==> 
                    ((w, c, oz).`3 = None)%xr * ((card (fdom RO.m))%xr + j0%xr)).
         + by move=> &hr /=; apply xle_cxr => |>.
@@ -1423,7 +1417,7 @@ proof.
         + by move=> &hr; apply xle_cxr_r => h; apply h.
         auto => &hr; apply xle_cxr_r => |> *.
         rewrite expr0 /=.
-        apply (xle_trans (mu (dfst (commit sk{hr})) (fun w => w \in map fst (elems (fdom RO.m{hr}))))%xr).
+        apply (xle_trans (mu (dfst (commit ReprogAlways.sk)) (fun w => w \in map fst (elems (fdom RO.m{hr}))))%xr).
         + rewrite -Ep_mu Ep_dlet; apply le_Ep => wst _ /=.
           rewrite EpC dC_ll /= Ep_dunit /=; case: ((wst.`1, m{hr}) \in RO.m{hr}) => /= ?;
             last by rewrite EpC dC_ll /= /#.
@@ -1431,7 +1425,7 @@ proof.
           by rewrite mem_map_fst; exists m{hr}; rewrite -memE mem_fdom.
         rewrite /= !to_pos_pos;[1:smt(fcard_ge0) | 2: apply eps_ge0].
         rewrite cardE -(size_map fst (elems (fdom RO.m{hr}))).
-        by apply/mu_mem_le_mu1/valid_sk_mu1_commit.
+        by apply/mu_mem_le_mu1/sk_entropy.
       (* j' > j_ *)
       conseq (: OijB1.badRO%xr ==> OijB1.badRO%xr).
       + move=> &hr; apply xle_cxr_r => |> *.
@@ -1453,16 +1447,11 @@ proof.
     by wp; call e_sign_i_r; auto => &hr; apply xle_cxr_r.
   (* initialisation *)
   inline *; auto => &hr /=; apply xle_cxr_r => />.
-  rewrite fdom0 fcards0 /=. 
-  apply (xle_trans (Ep keygen (fun _ => 
-          (p ^ j)%xr * (i%xr / (1%r - p)%xr + qh%xr + j%xr) * eps%xr))).
-  + apply le_Ep => k h /=; apply xle_cxr_l; 1: smt(). 
-    by have -> : 0 <= i by smt().
-  by rewrite EpC keygen_ll.  
+  by rewrite fdom0 fcards0 /= ifT /#.
 qed.
 
 lemma concl_j &m: 
-  Pr[Hij(Adv, Oij).main(kappa_,i,j) @ &m : res] - Pr[Hij(Adv, Oij).main(kappa_, i, j+1) @ &m : res] <=  
+  Pr[Hij(Adv, Oij).main(pk,sk,kappa_,i,j) @ &m : res] - Pr[Hij(Adv, Oij).main(pk,sk,kappa_, i, j+1) @ &m : res] <=  
       p^j * (i%r / (1.0 - p) + qh%r + j%r) * eps.
 proof. 
   rewrite Pr_Hij_OijB1 Pr_Hij_OijB2.
@@ -1475,8 +1464,8 @@ end section J.
 overapproximating the sum over the Hij steps. This is possible since
 the sum converges as kappa grows to infinity. *)
 lemma concl_i &m : 
-  Pr[Hi(Adv, Oi).main(kappa_, i) @ &m : res] - 
-  Pr[Hi(Adv, Oi).main(kappa_, i+1) @ &m : res] <=
+  Pr[Hi(Adv, Oi).main(pk,sk,kappa_, i) @ &m : res] - 
+  Pr[Hi(Adv, Oi).main(pk,sk,kappa_, i+1) @ &m : res] <=
     p^kappa_ + 
     ((i%r / (1%r - p) + qh%r) * eps / (1.0 - p) + eps / (1.0 - p)^2).
 proof.
@@ -1497,8 +1486,8 @@ end section I.
 
 (* Summing over the Hi steps and simplifying, we obtain : *)
 lemma GReal_GSet &m: 
-  Pr[Game(Adv, Count(OReal)).main() @ &m : res] <=
-  Pr[Game_k(Adv, CountBound(OSet)).main(kappa_) @ &m : res] + 
+  Pr[Game(Adv, Count(OReal)).main(pk,sk) @ &m : res] <=
+  Pr[Game_k(Adv, CountBound(OSet)).main(pk,sk,kappa_) @ &m : res] + 
   (qs%r * p^kappa_ + (qs%r * eps * ((qs%r + 1.0)/ (2.0 * (1.0 - p)^2) + qh%r / (1.0 - p)))).
 proof.
   have ? : (1%r - p) <> 0%r by smt(p_bounded).
@@ -1712,26 +1701,24 @@ module Oij : Oracle_i_ij = {
 
 (* Hybrid game for Oi *)
 module Hi (Adv: Adversary) (O: Oracle_i_i) = {
-  proc main(kappa_i:int, i_i:int) = {
-    var b, pk, sk;
+  proc main(pk_i:PK,sk_i:SK,kappa_i:int, i_i:int) = {
+    var b;
     OReal.kappa <- kappa_i;
-    (pk, sk) <$ keygen;
     RO.init();
-    O.init(sk, i_i);
-    b <@ Adv(O).distinguish(pk);
+    O.init(sk_i, i_i);
+    b <@ Adv(O).distinguish(pk_i);
     return b;
   }
 }.
 
 (* Hybrid game for Oij *)
 module Hij (Adv: Adversary) (O: Oracle_i_ij) = {
-  proc main(kappa_i:int, i_i:int, j_i:int) = {
-    var b, pk, sk;
+  proc main(pk_i:PK,sk_i:SK,kappa_i:int, i_i:int, j_i:int) = {
+    var b;
     OReal.kappa <- kappa_i;
-    (pk, sk) <$ keygen;
     RO.init();
-    O.init(sk, i_i, j_i);
-    b <@ Adv(O).distinguish(pk);
+    O.init(sk_i, i_i, j_i);
+    b <@ Adv(O).distinguish(pk_i);
     return b;
   }
 }.
@@ -1749,6 +1736,11 @@ declare axiom A_ll : forall (O <: Oracle{-Adv}),
   islossless O.sign =>
   islossless Adv(O).distinguish.
 
+declare op pk : PK.
+declare op sk : SK.
+declare axiom sk_entropy : has_entropy sk.
+declare axiom sk_reject  : bound_reject sk.
+
 (* This sections argument is parametric in kappa *)
 declare op kappa_ : int.
 declare axiom kappa_gt0 : 0 < kappa_.
@@ -1758,8 +1750,8 @@ by smt(kappa_gt0).
 
 (* inline? *)
 local lemma GSet_Hi &m : 
-  Pr[Game_k(Adv, CountBound(OSet)).main(kappa_) @ &m : res] = 
-  Pr[Hi(Adv, Oi).main(kappa_, qs) @ &m : res].
+  Pr[Game_k(Adv, CountBound(OSet)).main(pk,sk,kappa_) @ &m : res] = 
+  Pr[Hi(Adv, Oi).main(pk,sk,kappa_, qs) @ &m : res].
 proof.
   byequiv => //; proc; inline{1} Game(Adv, CountBound(OSet)).main; wp.
   call (: ={RO.m, OReal.kappa} /\ OReal.sk{1} = Oi.sk{2} /\ Oi.i_{2} = qs /\ 
@@ -1771,8 +1763,8 @@ qed.
   
 (* inline? *)
 local lemma GSet1_Hi &m : 
-  Pr[Game_k(Adv, CountBound(OSet1)).main(kappa_) @ &m : res] = 
-  Pr[Hi(Adv, Oi).main(kappa_, 0) @ &m : res].
+  Pr[Game_k(Adv, CountBound(OSet1)).main(pk,sk,kappa_) @ &m : res] = 
+  Pr[Hi(Adv, Oi).main(pk,sk,kappa_, 0) @ &m : res].
 proof.
   byequiv => //; proc; inline Game(Adv, CountBound(OSet1)).main; wp.
   call (: ={RO.m, OReal.kappa} /\ OReal.sk{1} = Oi.sk{2} /\ (Oi.i_ <= Oi.countS){2} /\
@@ -1789,15 +1781,15 @@ qed.
 
 (* Express difference between [OSet] and [OSet1] as a sum of differences for Hi/Oi *)
 local lemma GSet_GSet1_aux &m: 
-    Pr[Game_k(Adv, CountBound(OSet)).main(kappa_) @ &m : res] - 
-    Pr[Game_k(Adv, CountBound(OSet1)).main(kappa_) @ &m : res] 
+    Pr[Game_k(Adv, CountBound(OSet)).main(pk,sk,kappa_) @ &m : res] - 
+    Pr[Game_k(Adv, CountBound(OSet1)).main(pk,sk,kappa_) @ &m : res] 
   = bigi predT (fun (i : int) => 
-      Pr[Hi(Adv, Oi).main(kappa_, i+1) @ &m : res] - 
-      Pr[Hi(Adv, Oi).main(kappa_, i) @ &m : res]) 0 qs.
+      Pr[Hi(Adv, Oi).main(pk,sk,kappa_, i+1) @ &m : res] - 
+      Pr[Hi(Adv, Oi).main(pk,sk,kappa_, i) @ &m : res]) 0 qs.
 proof.
 rewrite GSet_Hi GSet1_Hi. 
 exact (telescoping_sum_down 
-        (fun i => Pr[Hi(Adv, Oi).main(kappa_, i) @ &m : res]) 0 qs qs_ge0).
+        (fun i => Pr[Hi(Adv, Oi).main(pk,sk,kappa_, i) @ &m : res]) 0 qs qs_ge0).
 qed.
 
 (* We focus on  
@@ -1813,8 +1805,8 @@ declare axiom i_bounded : 0 <= i < qs.
 
 (* inline *)
 local lemma Hi_Hij &m : 
-   Pr[Hi(Adv, Oi).main(kappa_, i) @ &m : res] = 
-   Pr[Hij(Adv,Oij).main(kappa_, i, 0) @ &m : res].
+   Pr[Hi(Adv, Oi).main(pk,sk,kappa_, i) @ &m : res] = 
+   Pr[Hij(Adv,Oij).main(pk,sk,kappa_, i, 0) @ &m : res].
 proof.
   byequiv => //; proc.
   call (: ={Oi.i_, Oi.sk, Oi.countS, Oi.countH, RO.m, OReal.kappa} /\ Oi.j_{2} = 0).
@@ -1830,8 +1822,8 @@ qed.
 
 (* inline*)
 local lemma Hi1_Hij &m : 
-   Pr[Hi(Adv, Oi).main(kappa_, i+1) @ &m : res] = 
-   Pr[Hij(Adv,Oij).main(kappa_, i, kappa_) @ &m : res].
+   Pr[Hi(Adv, Oi).main(pk,sk,kappa_, i+1) @ &m : res] = 
+   Pr[Hij(Adv,Oij).main(pk,sk,kappa_, i, kappa_) @ &m : res].
 proof.
   byequiv => //; proc.
   call (: ={Oi.sk, Oi.countS, Oi.countH, RO.m, OReal.kappa} /\ 
@@ -1850,15 +1842,15 @@ proof.
 qed.
 
 local lemma HiHi1 &m : 
-  Pr[Hi(Adv, Oi).main(kappa_, i+1) @ &m : res] - 
-  Pr[Hi(Adv, Oi).main(kappa_, i) @ &m : res] =
+  Pr[Hi(Adv, Oi).main(pk,sk,kappa_, i+1) @ &m : res] - 
+  Pr[Hi(Adv, Oi).main(pk,sk,kappa_, i) @ &m : res] =
   bigi predT (fun (j : int) => 
-    Pr[Hij(Adv, Oij).main(kappa_, i, j+1) @ &m : res] - 
-    Pr[Hij(Adv, Oij).main(kappa_, i, j) @ &m : res]) 0 kappa_.
+    Pr[Hij(Adv, Oij).main(pk,sk,kappa_, i, j+1) @ &m : res] - 
+    Pr[Hij(Adv, Oij).main(pk,sk,kappa_, i, j) @ &m : res]) 0 kappa_.
 proof.
 rewrite Hi_Hij Hi1_Hij.
 apply (telescoping_sum_down 
-  (fun j => Pr[Hij(Adv, Oij).main(kappa_, i, j) @ &m : res]) 0 kappa_).
+  (fun j => Pr[Hij(Adv, Oij).main(pk,sk,kappa_, i, j) @ &m : res]) 0 kappa_).
 exact (kappa_ge0).
 qed.
 
@@ -1897,9 +1889,9 @@ qed.
 a) the j-th iteration on the i-th query is reached an not final [Oi.wo = Some w]
 b) the adversary queries h using the w of the above iteration. *)
 local lemma bad &m : 
-  Pr[Hij(Adv, Oij).main(kappa_, i, j+1) @ &m : res] <= 
-    Pr[Hij(Adv, Oij).main(kappa_, i, j) @ &m : res] + 
-    Pr[Hij(Adv, Oij).main(kappa_, i, j) @ &m : exists w, w \in Oi.logh /\ Oi.wo = Some w].
+  Pr[Hij(Adv, Oij).main(pk,sk,kappa_, i, j+1) @ &m : res] <= 
+    Pr[Hij(Adv, Oij).main(pk,sk,kappa_, i, j) @ &m : res] + 
+    Pr[Hij(Adv, Oij).main(pk,sk,kappa_, i, j) @ &m : exists w, w \in Oi.logh /\ Oi.wo = Some w].
 proof.
   byequiv (: _ ==> !(exists w, w \in Oi.logh /\ Oi.wo = Some w){2} => ={res}) => //; last first.
   + by move=> &1 &2 h1 /h1 ->.
@@ -2010,8 +2002,8 @@ local module Oij_split : Oracle_i_ij = {
 }.
 
 local lemma Oij_Oij_split &m : 
-  Pr[Hij(Adv, Oij).main(kappa_, i, j) @ &m : exists w, w \in Oi.logh /\ Oi.wo = Some w] = 
-  Pr[Hij(Adv, Oij_split).main(kappa_, i, j) @ &m : exists w, w \in Oi.logh /\ Oi.wo = Some w].
+  Pr[Hij(Adv, Oij).main(pk,sk,kappa_, i, j) @ &m : exists w, w \in Oi.logh /\ Oi.wo = Some w] = 
+  Pr[Hij(Adv, Oij_split).main(pk,sk,kappa_, i, j) @ &m : exists w, w \in Oi.logh /\ Oi.wo = Some w].
 proof.
   byequiv => //; proc.
   call (: ={glob Oi, OReal.kappa} /\ 0 <= Oi.j_{2} < OReal.kappa{2}); last by inline *; auto; smt(j_bounded).
@@ -2095,8 +2087,8 @@ local module Oij_bad : Oracle_i_ij = {
 (* only possible w is the one from j-th iteration of i-th query *)
 (* and only if the j-th iteration is not sucessful              *)
 local lemma Oij_split_Oij_bad &m : 
-   Pr[Hij(Adv, Oij_split).main(kappa_, i, j) @ &m : exists w, w \in Oi.logh /\ Oi.wo = Some w] <= 
-   Pr[Hij(Adv, Oij_bad).main(kappa_, i, j) @ &m : Oi.j_end /\ Oi.w_ \in Oi.logh].
+   Pr[Hij(Adv, Oij_split).main(pk,sk,kappa_, i, j) @ &m : exists w, w \in Oi.logh /\ Oi.wo = Some w] <= 
+   Pr[Hij(Adv, Oij_bad).main(pk,sk,kappa_, i, j) @ &m : Oi.j_end /\ Oi.w_ \in Oi.logh].
 proof. 
   byequiv => //; symmetry; proc. (* why the symmetry?*)
   call (: Oi.j_end /\ Oi.wo = None,
@@ -2198,7 +2190,7 @@ local module Oij_LE (H : ROsk.RO) : Oracle_i_ij = {
 
   proc sign_i (m:M): W * C * Z = {
     var w, c, oz, j';
-    if (!i_done /\ valid_sk Oi.sk) {
+    if (!i_done /\ Oi.sk = ReprogOnce.sk) {
     w <- witness;
     c <- witness;
     j' <- 0;
@@ -2241,9 +2233,9 @@ local module Oij_LE (H : ROsk.RO) : Oracle_i_ij = {
 local module D (H :  ROsk.RO) = {
 
   proc distinguish1 (kappa_i:int, i_i:int, j_i:int) = {
-    var b, pk, sk;
+    var b;
     OReal.kappa <- kappa_i;
-    (pk, sk) <$ keygen; Oij_LE.i_done <- false;
+    Oij_LE.i_done <- false;
     RO.init();
     H.init();
     Oij_LE(H).init(sk, i_i, j_i);
@@ -2261,19 +2253,19 @@ local module D (H :  ROsk.RO) = {
 }.
 
 local lemma Oij_bad_DRO &m : 
-  Pr[Hij(Adv, Oij_bad).main(kappa_, i, j) @ &m : Oi.j_end /\ Oi.w_ \in Oi.logh] = 
+  Pr[Hij(Adv, Oij_bad).main(pk,sk,kappa_, i, j) @ &m : Oi.j_end /\ Oi.w_ \in Oi.logh] = 
   Pr[D(ROsk.RO).distinguish(kappa_, i, j) @ &m : res].
 proof.
-  byequiv (: ={glob Adv, arg} /\ i_i{1} = i /\ j_i{1} = j ==> _) => //.
+  byequiv (: ={glob Adv, i_i,j_i,kappa_i} /\ sk_i{1} = sk /\ pk_i{1} = pk /\ i_i{1} = i /\ j_i{1} = j ==> _) => //.
   proc; wp; inline D(ROsk.RO).distinguish1. sp 1 4.
-  seq 4 6: (={Oi.j_end, Oi.logh} /\
+  seq 3 5: (={Oi.j_end, Oi.logh} /\
              (Oi.j_end => exists st, ROsk.RO.m.[Oi.sk] = Some (Oi.w_{1}, st)){2});
     last first.
   + case: (Oi.j_end{2}). 
     + by inline *; rcondf{2} ^if; auto => /> /#.
     by call{2} (:true ==> true); [islossless | auto].
   call (: ={RO.m, Oi.j_end, Oi.j_, Oi.logh, Oi.countH, Oi.countS, Oi.countH, Oi.sk, Oi.i_, OReal.kappa} /\
-          Oi.j_{2} = j /\ valid_sk Oi.sk{2} /\
+          Oi.j_{2} = j /\ Oi.sk{2} = sk /\
           (Oi.countS <= Oi.i_ => (!Oij_LE.i_done /\ !Oi.j_end /\ Oi.sk \notin ROsk.RO.m)){2} /\
           (Oi.j_end => exists st, ROsk.RO.m.[Oi.sk] = Some (Oi.w_{1}, st)){2}).
   + by sim />.
@@ -2287,7 +2279,7 @@ proof.
     wp; seq 7 7 :
       (={RO.m, m0, oz, w, c, j', Oi.sk, Oi.j_end, Oi.j_, 
          Oi.logh, Oi.countH, Oi.countS, Oi.sk, Oi.i_, OReal.kappa} /\
-      Oi.j_{2} = j /\ valid_sk Oi.sk{2} /\
+      Oi.j_{2} = j /\ Oi.sk{2} = sk /\
       (!Oi.j_end /\  Oi.sk \notin ROsk.RO.m /\ Oi.countS = Oi.i_){2}).
     + conseq (: ={RO.m, m0, oz, w, c, j', Oi.sk, Oi.j_end, 
                   Oi.j_, Oi.logh, Oi.countH, Oi.countS, Oi.sk, Oi.i_}); 1: smt().
@@ -2323,8 +2315,8 @@ local lemma phr_j_end:
 proof. 
   conseq (: Oi.j_end /\ b2i (Oij_LE.i_done) <= 1); 1: smt(). 
   bypr => &m *.
-  fel 6 (b2i (Oij_LE.i_done)) (fun _ => p ^ j) 1 Oi.j_end
-      [Oij_LE(ROsk.LRO).sign_i : (!Oij_LE.i_done /\ valid_sk Oi.sk)]
+  fel 5 (b2i (Oij_LE.i_done)) (fun _ => p ^ j) 1 Oi.j_end
+      [Oij_LE(ROsk.LRO).sign_i : (!Oij_LE.i_done /\ Oi.sk = ReprogOnce.sk)]
       true => //.
   + by have /= -> := big_int1 0.
   + by inline *; auto.
@@ -2332,15 +2324,15 @@ proof.
     seq 6 : (oz = None) (p^j) 1%r _ 0%r (!Oi.j_end) => //.
     + by conseq /> => //.
     + sp; wp; conseq (: _ : <= (if oz = None then p ^ (j - j') else 0%r)) => //.
-      while (j' <= j /\ valid_sk Oi.sk).
+      while (j' <= j /\ Oi.sk = sk).
       + move=> hw; exlim j' => j0.
         conseq (: _ : <= (if oz = None then p ^ (j - j0) else 0%r)) => //.
-        seq 2 : (oz = None) p (p^(j - (j0 + 1))) _ 0%r (j' = j0 + 1 /\ j' <= j /\ valid_sk Oi.sk).
+        seq 2 : (oz = None) p (p^(j - (j0 + 1))) _ 0%r (j' = j0 + 1 /\ j' <= j /\ Oi.sk = sk).
         + by wp; conseq (:true) => // /#.
         + wp; inline *; wp 4.
           rndsem 1.
           rnd (fun (wscoz: _ * _ * _ * _) => wscoz.`4 = None).
-          auto => |> &hr _ hv _; apply (ler_trans _ _ _ _ (p_def Oi.sk{hr} hv)).
+          auto => |> &hr hv; apply: ler_trans sk_reject. 
           apply mu_dlet_le => w_st _ /=; apply mu_dlet_le => c.
           by rewrite dunitE dunit1E.
         + by conseq hw => />. 
@@ -2350,7 +2342,7 @@ proof.
     by rcondf^if; 1: auto => />; conseq />.
   + move=> c; proc; rcondt^if => //; wp.
     by conseq (:true) => />; auto.
-  by move=> b c; proc; rcondf^if => //.
+  by move=>*; proc; rcondf^if => //.
 qed.
 
 (* using the lemma above, we can bound the probability of D (with a
@@ -2359,10 +2351,10 @@ local lemma Pr_DLRO &m : Pr[D(ROsk.LRO).distinguish(kappa_, i, j) @ &m : res] <=
 proof.
   byphoare ( : kappa_i = kappa_ /\ i_i = i /\ j_i = j ==> res) => //; proc.
   seq 1 : Oi.j_end (p ^ j) (qh%r * eps) _ 0%r 
-          (Oi.sk \notin ROsk.RO.m /\ size Oi.logh <= qh /\ valid_sk Oi.sk) => //;
+          (Oi.sk \notin ROsk.RO.m /\ size Oi.logh <= qh /\ Oi.sk = ReprogOnce.sk) => //;
     last by conseq (:false) => />.  
   + inline D(ROsk.LRO).distinguish1.
-    call (: Oi.sk \notin ROsk.RO.m /\ size Oi.logh <= Oi.countH <= qh /\ valid_sk Oi.sk).
+    call (: Oi.sk \notin ROsk.RO.m /\ size Oi.logh <= Oi.countH <= qh /\ Oi.sk = ReprogOnce.sk).
     + by proc; sp; if => //; wp; conseq (:true) => // /#. 
     + by conseq />.
     inline *; auto => />; smt(qh_ge0 mem_empty).  
@@ -2370,14 +2362,14 @@ proof.
   + call (phr_j_end); auto => />.
   (* [w_ <@ dfst (commit sk) : w_ \in logh ] *)
   inline *; rcondt ^if; 1: by auto.
-  wp; rnd (fun x => fst x \in Oi.logh); auto => |> &hr _ hsize hval _; split; 2: smt(get_setE).
-  have := mu_mem_le_mu1 (dfst (commit Oi.sk{hr})) Oi.logh{hr} eps (valid_sk_mu1_commit Oi.sk{hr} hval).
+  wp; rnd (fun x => fst x \in Oi.logh); auto => |> &hr ? hsize hval; split; 2: smt(get_setE).
+  have := mu_mem_le_mu1 (dfst (commit sk)) Oi.logh{hr} eps sk_entropy.
   rewrite /dfst dmapE /(\o); smt (eps_ge0 size_ge0).
 qed.
 
 lemma concl_j &m: 
-  Pr[Hij(Adv, Oij).main(kappa_, i, j+1) @ &m : res] - 
-  Pr[Hij(Adv, Oij).main(kappa_, i, j  ) @ &m : res] <=  p^j * (qh%r*eps).
+  Pr[Hij(Adv, Oij).main(pk,sk,kappa_, i, j+1) @ &m : res] - 
+  Pr[Hij(Adv, Oij).main(pk,sk,kappa_, i, j  ) @ &m : res] <=  p^j * (qh%r*eps).
 proof.
   have := bad &m; have := Oij_split_Oij_bad &m; have := Pr_DLRO &m.
   rewrite (Oij_Oij_split &m) (Oij_bad_DRO &m) (DRO_DLRO &m) /#.
@@ -2386,7 +2378,7 @@ qed.
 end section J.
 
 lemma concl_i &m : 
-  Pr[Hi(Adv, Oi).main(kappa_, i+1) @ &m : res] - Pr[Hi(Adv, Oi).main(kappa_, i) @ &m : res] <=
+  Pr[Hi(Adv, Oi).main(pk,sk,kappa_, i+1) @ &m : res] - Pr[Hi(Adv, Oi).main(pk,sk,kappa_, i) @ &m : res] <=
     (qh%r * eps) / (1%r - p).
 proof.
   apply (ler_trans (bigi predT (fun (j : int) =>  p^j * (qh%r * eps)) 0 kappa_)).
@@ -2398,8 +2390,8 @@ qed.
 end section I.
 
 lemma GSet_GSet1 &m: 
-  Pr[Game_k(Adv, CountBound(OSet )).main(kappa_) @ &m : res] <= 
-  Pr[Game_k(Adv, CountBound(OSet1)).main(kappa_) @ &m : res] + qs%r * (qh%r * eps) / (1%r - p).
+  Pr[Game_k(Adv, CountBound(OSet )).main(pk,sk,kappa_) @ &m : res] <= 
+  Pr[Game_k(Adv, CountBound(OSet1)).main(pk,sk,kappa_) @ &m : res] + qs%r * (qh%r * eps) / (1%r - p).
 proof.
   rewrite addrC -ler_subl_addr.
   apply (ler_trans (bigi predT (fun (j : int) =>  (qh%r * eps)/(1%r - p)) 0 qs)).
@@ -2496,15 +2488,15 @@ local module Game_kb(O:Oracle_i) = {
   proc main (kappa_i:int) = { 
     var b;
     OSet1B1.bad <- false;
-    b <@ Game_k(Adv, CountBound(O)).main(kappa_i);
+    b <@ Game_k(Adv, CountBound(O)).main(pk,sk,kappa_i);
     return b;
   }
 }.
   
 local lemma Set1_Set1B1 &m : 
-  Pr[Game_k(Adv, CountBound(OSet1)).main(kappa_) @ &m : res] =
+  Pr[Game_k(Adv, CountBound(OSet1)).main(pk,sk,kappa_) @ &m : res] =
   Pr[Game_kb(OSet1B1).main(kappa_) @ &m : res].
-proof. byequiv => //; proc; inline *; sim. qed.
+proof. byequiv => //; proc; inline *; sim; auto. qed.
 
 local lemma Set1B1_Set1B2 &m: 
   Pr[Game_kb(OSet1B1).main(kappa_) @ &m : res] <= 
@@ -2513,7 +2505,7 @@ proof. byupto. qed.
 
 local lemma Set1B2_Set1_inf_i &m : 
   Pr[Game_kb(OSet1B2).main(kappa_) @ &m : res] =
-  Pr[Game(Adv, CountBound(OSet1_inf_i)).main() @ &m : res].
+  Pr[Game(Adv, CountBound(OSet1_inf_i)).main(pk,sk) @ &m : res].
 proof.
   byequiv=> //; proc; inline *; wp.
   call (: ={RO.m, OReal.sk, Count.countH, Count.countS} /\ OReal.kappa{1} = kappa_); last by auto.
@@ -2531,51 +2523,50 @@ proof.
 qed.
 
 local lemma Set1_i_Set1_inf &m : 
-   Pr[Game(Adv, CountBound(OSet1_inf_i)).main() @ &m : res] = 
-   Pr[Game(Adv, CountBound(OSet1_inf)).main() @ &m : res].
+   Pr[Game(Adv, CountBound(OSet1_inf_i)).main(pk,sk) @ &m : res] = 
+   Pr[Game(Adv, CountBound(OSet1_inf)).main(pk,sk) @ &m : res].
 proof. byequiv => //; sim. qed.
 
 local lemma Pr_bad &m : Pr[Game_kb(OSet1B1).main(kappa_) @ &m : OSet1B1.bad] <= qs%r * p^kappa_.
 proof.
   byehoare (: (kappa_i = kappa_) `|` (qs%r * p ^ kappa_)%xr  ==> _)=> //; proc. 
   inline Game_k(Adv, CountBound(OSet1B1)).main Game(Adv, CountBound(OSet1B1)).main; wp.
-  call /(fun x => x) (: (valid_sk OReal.sk /\ OReal.kappa = kappa_) `|` (OSet1B1.bad%xr + (qs - Count.countS)%xr * (p^kappa_)%xr)). 
+  call /(fun x => x) (: (OReal.sk = sk /\ OReal.kappa = kappa_) `|` (OSet1B1.bad%xr + (qs - Count.countS)%xr * (p^kappa_)%xr)). 
   + by move=> &hr; apply xle_cxr_r => /> /#.
-  + by conseq /(fun x =>  (valid_sk OReal.sk /\ OReal.kappa = kappa_) `|` (OSet1B1.bad%xr + (qs - Count.countS)%xr * (p ^ kappa_)%xr))
+  + by conseq /(fun x =>  (OReal.sk = sk /\ OReal.kappa = kappa_) `|` (OSet1B1.bad%xr + (qs - Count.countS)%xr * (p ^ kappa_)%xr))
           (: 0%xr ==> 0%xr).
   + proc; seq 1 : #pre; 1: auto; if; 2: by auto => &hr; apply xle_cxr => />.
     inline *; wp => /=.
     seq 5 : ((i = 0 /\ oz = None) `|` #pre); 1: by auto.
-    conseq /(fun x => (valid_sk OReal.sk /\ OReal.kappa = kappa_) `|`
+    conseq /(fun x => (OReal.sk = sk/\ OReal.kappa = kappa_) `|`
              (x + OSet1B1.bad%xr + (qs - (Count.countS + 1))%xr * (p ^ kappa_)%xr)) 
-          (: (valid_sk OReal.sk /\ OReal.kappa = kappa_ /\ i = 0) `|` 
+          (: (OReal.sk = sk /\ OReal.kappa = kappa_ /\ i = 0) `|` 
                ((oz = None)%xr * (p^kappa_)%xr) ==> (oz = None)%xr).
     + by auto => &hr /=; apply xle_cxr => |> * /#.
     + by auto => &hr /=; case: (oz{hr} = None) => ?; apply xle_cxr => |> /#. 
-    while ((valid_sk OReal.sk /\ OReal.kappa = kappa_ /\ i <= kappa_) `|` 
+    while ((OReal.sk = sk /\ OReal.kappa = kappa_ /\ i <= kappa_) `|` 
              ((oz = None)%xr * (p^(kappa_ - i))%xr)).
     + by move=> &hr /=; apply xle_cxr_r => |>; smt(expr0).
     + wp 3 => /=.
-      conseq /(fun x =>  (valid_sk OReal.sk /\ OReal.kappa = kappa_ /\ i + 1 <= kappa_) `|`
+      conseq /(fun x =>  (OReal.sk = sk /\ OReal.kappa = kappa_ /\ i + 1 <= kappa_) `|`
                 (x * (p ^ (kappa_ - (i + 1)))%xr))
-             (: valid_sk OReal.sk `|` p%xr ==> (oz=None)%xr) => //.
+             (: (OReal.sk = sk) `|` p%xr ==> (oz=None)%xr) => //.
       + move=> &hr /=; apply xle_cxr => |> *; split; 1: smt().
         rewrite !to_pos_pos; 1..3: smt(p_bounded expr_ge0).      
         case: (p = 0%r) => [-> /= | ?].
         + by rewrite !expr0z; case (kappa_ - i{hr} = 0).
         by rewrite -{1}(expr1 p) -exprD; smt(p_bounded).
-      auto => &hr; apply xle_cxr_r => *; rewrite Ep_commit_dc_None /=.
+      auto => &hr; apply xle_cxr_r => |> *; rewrite Ep_commit_dc_None /=.
       rewrite to_pos_pos;1: smt(p_bounded).
-      by apply p_def.
+      exact sk_reject.
     by auto => &hr /=; apply xle_cxr => |> *; apply kappa_ge0.
-  inline *; auto => &hr; rewrite Ep_cxr /= EpC keygen_ll.
-  apply xle_cxr => />.
+  inline *; auto => &hr; apply xle_cxr => />.
   rewrite !to_pos_pos /=; smt(qs_ge0 expr_ge0 p_bounded).
 qed.
 
 lemma GSet_GSet_inf &m : 
-  Pr[Game_k(Adv, CountBound(OSet1)).main(kappa_) @ &m : res] <=
-  Pr[Game(Adv, CountBound(OSet1_inf)).main() @ &m : res] + qs%r * p ^ kappa_.
+  Pr[Game_k(Adv, CountBound(OSet1)).main(pk,sk,kappa_) @ &m : res] <=
+  Pr[Game(Adv, CountBound(OSet1_inf)).main(pk,sk) @ &m : res] + qs%r * p ^ kappa_.
 proof.
   move: (Set1B1_Set1B2 &m) (Pr_bad &m).
   by rewrite Set1_Set1B1 Set1B2_Set1_inf_i Set1_i_Set1_inf /#. 
@@ -2606,6 +2597,11 @@ declare axiom A_bound : forall (O <: Oracle_i{-Adv, -Count}),
   hoare [ Adv(Count(O)).distinguish : Count.countS = 0 /\ Count.countH = 0 ==> 
                                       Count.countS <= qs /\ Count.countH <= qh ].
 
+declare op pk : PK.
+declare op sk : SK.
+declare axiom sk_entropy : has_entropy sk.
+declare axiom sk_reject  : bound_reject sk.
+
 section Kappa.
 declare op kappa_ : { int | 0 < kappa_ } as kappa_gt0.
 
@@ -2613,8 +2609,8 @@ local clone import ReprogAlways as RA.
 local clone import ReprogOnce as R1.
 
 lemma GReal_GSet_inf &m : 
-  Pr[Game(Adv, Count(OReal)).main() @ &m : res] <=
-    (2%r * qs%r) * p^kappa_ + (Pr[Game(Adv, Count(OSet1_inf)).main() @ &m : res] +
+  Pr[Game(Adv, Count(OReal)).main(pk,sk) @ &m : res] <=
+    (2%r * qs%r) * p^kappa_ + (Pr[Game(Adv, Count(OSet1_inf)).main(pk,sk) @ &m : res] +
     qs%r * (qh%r * eps) / (1%r - p) + 
     qs%r * eps * ((qs%r + 1.0)/ (2.0 * (1.0 - p)^2) + qh%r / (1.0 - p))).
 proof.
@@ -2622,26 +2618,29 @@ proof.
                 qs%r * eps * ((qs%r + 1%r) / (2%r * (1%r - p) ^ 2) + qh%r / (1%r - p))).
   pose hop2 := qs%r * (qh%r * eps) / (1%r - p).
   pose hop3 := qs%r * p^kappa_.
-  pose GA := Pr[Game(Adv, Count(OSet1_inf)).main() @ &m : res].
+  pose GA := Pr[Game(Adv, Count(OSet1_inf)).main(pk,sk) @ &m : res].
   apply (ler_trans (GA + hop3 + hop2 + hop1)); last smt().
-  apply (ler_trans _ _ _ (GReal_GSet Adv A_bound kappa_ kappa_gt0 &m)); rewrite ler_add2r.
-  apply (ler_trans _ _ _ (GSet_GSet1 Adv A_bound A_ll kappa_ kappa_gt0 &m)); rewrite ler_add2r.
-  apply (ler_trans _ _ _ (GSet_GSet_inf Adv A_bound A_ll kappa_ kappa_gt0 &m)).
-  by rewrite ler_add2r /GA (Pr_Count_CountBound Adv A_bound OSet1_inf &m).
+  have X := (GReal_GSet Adv A_bound pk sk sk_entropy sk_reject kappa_ kappa_gt0 &m).
+  apply (ler_trans _ _ _ X) => {X}; rewrite ler_add2r.
+  have X := GSet_GSet1 Adv A_bound A_ll pk sk sk_entropy sk_reject kappa_ kappa_gt0 &m.
+  apply (ler_trans _ _ _ X) => {X}; rewrite ler_add2r.
+  have X := (GSet_GSet_inf Adv A_bound A_ll pk sk sk_entropy sk_reject kappa_ kappa_gt0 &m).
+  apply (ler_trans _ _ _ X) => {X}; rewrite ler_add2r.
+  by rewrite /GA (Pr_Count_CountBound Adv A_bound pk sk sk_entropy sk_reject OSet1_inf &m).
 qed.
 end section Kappa.
 
 (* As a (almost) final step, we remove the dependency on [kappa] by showing
 that the bound converges as [kappa] is increased to infinity *)
 lemma GReal_GSet_inf_aux &m :  
-  Pr[Game(Adv, Count(OReal)).main() @ &m : res] <= 
-   Pr[Game(Adv, Count(OSet1_inf)).main() @ &m : res] + 
+  Pr[Game(Adv, Count(OReal)).main(pk,sk) @ &m : res] <= 
+   Pr[Game(Adv, Count(OSet1_inf)).main(pk,sk) @ &m : res] + 
     2%r * qs%r * qh%r * eps / (1%r - p) + 
     qs%r * eps * (qs%r + 1.0) / (2.0 * (1.0 - p)^2).
 proof.
   pose hop1 := qs%r * eps * ((qs%r + 1.0)/ (2.0 * (1.0 - p)^2) + qh%r / (1.0 - p)).
   pose hop2 := qs%r * (qh%r * eps) / (1%r - p).
-  pose GA := Pr[Game(Adv, Count(OSet1_inf)).main() @ &m : res].
+  pose GA := Pr[Game(Adv, Count(OSet1_inf)).main(pk,sk) @ &m : res].
   have hp : -1%r < p < 1%r by smt(p_bounded).
   apply (ler_trans (GA + hop2 + hop1)); last by smt().
   have hc : RealSeq.converge (fun (x : int) => 2%r * qs%r * p ^ x).
@@ -2655,19 +2654,19 @@ qed.
 
 (* lastly, we remove the counting wrappers *)
 lemma GReal_GSet1 &m : 
-  Pr[Game(Adv, OReal).main() @ &m : res] <= 
-   Pr[Game(Adv, OSet1_inf).main() @ &m : res] + 
+  Pr[Game(Adv, OReal).main(pk,sk) @ &m : res] <= 
+   Pr[Game(Adv, OSet1_inf).main(pk,sk) @ &m : res] + 
     2%r * qs%r * qh%r * eps / (1%r - p) + 
     qs%r * eps * (qs%r + 1.0) / (2.0 * (1.0 - p)^2).
 proof.
-have -> : Pr[Game(Adv, OReal).main() @ &m : res] = 
-          Pr[Game(Adv, Count(OReal)).main() @ &m : res].
+have -> : Pr[Game(Adv, OReal).main(pk,sk) @ &m : res] = 
+          Pr[Game(Adv, Count(OReal)).main(pk,sk) @ &m : res].
 - byequiv => //; proc;call (: ={RO.m, OReal.sk}). 
   + proc*. inline Count(OReal).h. wp. call(: ={RO.m}). sim. auto.
   + proc. inline OReal.sign. wp. by sim. 
   inline*; auto => />.
-have -> : Pr[Game(Adv, OSet1_inf).main() @ &m : res] = 
-          Pr[Game(Adv, Count(OSet1_inf)).main() @ &m : res].
+have -> : Pr[Game(Adv, OSet1_inf).main(pk,sk) @ &m : res] = 
+          Pr[Game(Adv, Count(OSet1_inf)).main(pk,sk) @ &m : res].
 - byequiv => //; proc;call (: ={RO.m, OReal.sk}). 
   + proc*. inline Count(OSet1_inf).h. wp. call(: ={RO.m}). sim. auto.
   + proc. inline OSet1_inf.sign. wp. by sim. 
