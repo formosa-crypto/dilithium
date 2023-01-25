@@ -289,6 +289,8 @@ while (={oz,w,m,glob O_CMA_Default, glob RO}
        /\ m0{1} = m{2}); by inline*; auto => />. 
 qed.
 
+(*
+
 (* ----------------------------------------------------------------------*)
 (*                           Second game hop:                            *)
 (* Limit the game to use only keys with high committment entropy         *)
@@ -374,6 +376,7 @@ qed.
 (*                                                                       *)
 (* ----------------------------------------------------------------------*)
 
+*)
 
 local module (Oracle3 : Oracle_CMA) (S : Scheme)  = {
     import var O_CMA_Default(S)
@@ -414,21 +417,20 @@ local clone ReprogHybrid as R1 with
   op qh <- qH + 1,
   op eps <- alpha,
   op p <- p_rej,
-  op keygen <- keygen_good,
   op commit <- commit,
   op respond <- (fun sk c st => response sk st c),
   theory RO <= PRO
-proof*. 
-realize keygen_ll by apply keygen_good_ll.
-realize commit_ll by apply commit_ll.
-realize dC_ll by apply dC_ll.
-realize dC_uni by apply dC_uni.
-realize p_def by apply p_def.
-realize p_bounded by admit.
-realize valid_sk_mu1_commit by apply keygen_good_entropy.
-realize qs_ge0 by apply qS_ge0.
-realize qh_ge0 by smt(qH_ge0).
-realize eps_ge0 by smt(alpha_gt0).
+proof* by admit. (* TODO *)
+(* realize keygen_ll by apply keygen_good_ll. *)
+(* realize commit_ll by apply commit_ll. *)
+(* realize dC_ll by apply dC_ll. *)
+(* realize dC_uni by apply dC_uni. *)
+(* realize p_def by apply p_def. *)
+(* realize p_bounded by admit. *)
+(* realize valid_sk_mu1_commit by apply keygen_good_entropy. *)
+(* realize qs_ge0 by apply qS_ge0. *)
+(* realize qh_ge0 by smt(qH_ge0). *)
+(* realize eps_ge0 by smt(alpha_gt0). *)
 
 (* Reduction to the [RedOnce] game *)
 local module RedOnce (O : R1.Oracle) = { 
@@ -465,17 +467,56 @@ local module RedOnce (O : R1.Oracle) = {
   }
 }.
 
-print R1.GReal_GSet_inf.
+print R1.GReal_GSet1.
+
+local module G = { 
+  proc mainL () = { 
+    var pk,sk,r;
+    (pk,sk) <$ keygen;
+    r <@ R1.Game(RedOnce,R1.OReal).main(pk,sk);
+    return r;
+  }
+
+  proc mainR () = { 
+    var pk,sk,r;
+    (pk,sk) <$ keygen;
+    r <@ R1.Game(RedOnce,R1.OSet1_inf).main(pk,sk);
+    return r;
+  }
+}.
+
+
+local lemma hop4_aux &m : 
+  Pr[G.mainL() @ &m : res] <= Pr[G.mainR() @ &m : res] + reprog_bound + gamma.
+proof.
+have R1_bound := R1.GReal_GSet1 RedOnce _ _.
+- move => O ? ?; islossless. 
+  by apply (A_ll (<: CountH(RedOnce(O).H)) (<: CountS(RedOnce(O).SO))) => //; islossless.
+move => O; proc. 
+seq 4 : (R1.Count.countS <= qS /\ R1.Count.countH <= qH); 
+  last by by inline*; wp; call(: true); auto => /> /#.
+conseq (: _ ==> CountH.qh = R1.Count.countH /\ CountS.qs = R1.Count.countS)
+       (: _ ==> CountH.qh <= qH /\ CountS.qs <= qS); 1,2 : smt().
+- call (A_query_bound (<: RedOnce(R1.Count(O)).SO) (<: RedOnce(R1.Count(O)).H)). 
+  by inline*; auto => />.
+call (: CountH.qh = R1.Count.countH /\ CountS.qs = R1.Count.countS).
+- proc; inline*; auto; call(: true); auto => />.
+- proc; inline*; auto; call(: true); auto => />.
+by inline*; auto => />. 
+(* what to do now? *)
+
+admitted.
 
 (* The actual hop: correctness of RedOnce and query counting *)
 local lemma hop4 &m : 
-     Pr [Game1(A,Oracle1).main() @ &m : res ] 
-  <= Pr [Game1(A,Oracle3).main() @ &m : res ] + reprog_bound. 
+     Pr [Game0(A,Oracle1).main() @ &m : res ] 
+  <= Pr [Game0(A,Oracle3).main() @ &m : res ] + reprog_bound + gamma.
 proof.
-have -> : Pr[Game1(A, Oracle1).main() @ &m : res] = 
-          Pr[R1.Game(RedOnce,R1.OReal).main() @ &m : res].
-- byequiv => //. proc. inline{2} 4. 
-  seq 4 8 : (={RO.m,m,sig} /\ pk{1} = pk0{2} 
+have -> : Pr[Game0(A, Oracle1).main() @ &m : res] = Pr[G.mainL() @ &m : res].          
+- byequiv => //. proc. inline{1} 2; inline{2} 2. 
+  inline RedOnce(R1.OReal).distinguish.
+  swap{1} 2 -1.
+  seq 4 10 : (={RO.m,m,sig} /\ pk{1} = pk0{2} 
              /\ O_CMA_Default.qs{1} = RedOnce.SO.qs{2}); 
      last by inline*; auto; sp; if; auto => />.
   call(: ={RO.m}  
@@ -489,10 +530,11 @@ have -> : Pr[Game1(A, Oracle1).main() @ &m : res] =
           /\ O_CMA_Default.sk{1} = R1.OReal.sk{2}).
   + by inline*; auto.
   by auto => /> /#.
-have -> : Pr[Game1(A, Oracle3).main() @ &m : res] = 
-          Pr[R1.Game(RedOnce,R1.OSet1_inf).main() @ &m : res].
-- byequiv (_: ={glob A} ==> ={res}) => //. proc. inline{2} 4. 
-  seq 4 8 : (={RO.m,m,sig} /\ pk{1} = pk0{2} 
+have -> : Pr[Game0(A, Oracle3).main() @ &m : res] = Pr[G.mainR() @ &m : res].
+- byequiv => //. proc. inline{1} 2; inline{2} 2. 
+  inline RedOnce(R1.OSet1_inf).distinguish.
+  swap{1} 2 -1.
+  seq 4 10 : (={RO.m,m,sig} /\ pk{1} = pk0{2} 
              /\ O_CMA_Default.qs{1} = RedOnce.SO.qs{2}); 
      last by inline*; auto; sp; if; auto => />.
   call(: ={RO.m}  
@@ -506,22 +548,12 @@ have -> : Pr[Game1(A, Oracle3).main() @ &m : res] =
           /\ O_CMA_Default.sk{1} = R1.OReal.sk{2}).
   + by inline*; auto.
   by auto => />.
-rewrite /reprog_bound RField.addrA.
-apply (R1.GReal_GSet1 RedOnce).
-- move => O ? ?; islossless. 
-  by apply (A_ll (<: CountH(RedOnce(O).H)) (<: CountS(RedOnce(O).SO))) => //; islossless.
-move => O; proc. 
-seq 4 : (R1.Count.countS <= qS /\ R1.Count.countH <= qH); 
-  last by by inline*; wp; call(: true); auto => /> /#.
-conseq (: _ ==> CountH.qh = R1.Count.countH /\ CountS.qs = R1.Count.countS)
-       (: _ ==> CountH.qh <= qH /\ CountS.qs <= qS); 1,2 : smt().
-- call (A_query_bound (<: RedOnce(R1.Count(O)).SO) (<: RedOnce(R1.Count(O)).H)). 
-  by inline*; auto => />.
-call (: CountH.qh = R1.Count.countH /\ CountS.qs = R1.Count.countS).
-- proc; inline*; auto; call(: true); auto => />.
-- proc; inline*; auto; call(: true); auto => />.
-by inline*; auto => />.
+(* rewrite /reprog_bound RField.addrA. *)
+exact hop4_aux.
 qed.
+
+stop 
+
 
 (* ----------------------------------------------------------------------*)
 (*                           Fith game hop:                             *)
