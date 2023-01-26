@@ -35,17 +35,11 @@ op gamma, alpha : real.
 axiom alpha_gt0 : 0%r < alpha.
 axiom gamma_gt0 : 0%r <= gamma.
 
-op valid_sk sk = exists pk, (pk, sk) \in keygen.
-
 axiom check_entropy_correct :
-  forall sk, valid_sk sk => check_entropy sk => p_max (dfst (commit sk)) <= alpha.
+  forall sk, check_entropy sk => p_max (dfst (commit sk)) <= alpha.
 
 axiom most_keys_high_entropy :
-  mu keygen (fun keys => let (pk, sk) = keys in ! check_entropy sk) <= gamma.
-
-(* (* Alternative keygen that only outputs key pairs with high commitment entropy *) *)
-(* op keygen_good =  *)
-(*   dcond keygen (fun k : PK * SK => check_entropy k.`2). *)
+  mu keygen (fun k : PK * SK => !check_entropy k.`2) <= gamma.
 
 (* Some upper bound on the rejection probability of [response] 
    for valid keys over the commitment distribution *)
@@ -54,7 +48,6 @@ op p_rej : { real | 0%r <= p_rej < 1%r } as p_rej_bounded.
 axiom rej_bound sk : check_entropy sk =>
    mu (commit sk `*` dC) 
       (fun x : (W*Pstate)*C => response sk x.`2 x.`1.`2 = None) <= p_rej. 
-
 
 axiom keygen_finite : is_finite (support keygen).
 
@@ -433,7 +426,7 @@ rewrite mulr_sumr sumrD /=; apply ler_sum_seq => -[pk sk] @/good pk_sk /= chk_sk
 rewrite /Fl /Fr [reprog_bound * _]mulrC -mulrDr ler_wpmul2l // addrA.
 apply (R1_bound pk sk _ _ &m) => @/has_entropy @/bound_reject [x|].
 - rewrite /supK mem_to_seq // in pk_sk.
-- have X := check_entropy_correct sk _ _; 1,2:smt(). 
+- have X := check_entropy_correct sk _; 1:smt(). 
   by apply: ler_trans X; apply pmax_upper_bound.
 - exact (rej_bound' sk chk_sk).
 qed.

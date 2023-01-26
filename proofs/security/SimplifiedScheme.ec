@@ -1396,43 +1396,48 @@ apply bound_low.
 - exact A0P.
 qed.
 
-op valid_sk sk = exists pk, (pk,sk) \in keygen.
+(* op valid_sk sk = exists pk, (pk,sk) \in keygen. *)
 
-(* a check for "good" keys *)
-op check (sk : SK) : bool = check_mx (sk.`1).
+(* a check for "good" secret keys (i.e, well-formed and high entropy) *)
+op check (sk : SK) : bool = check_mx (sk.`1) /\ sk.`2 \in ds1 /\ sk.`3 \in ds2.
 
 (* all secret keys passing the check have high commitment entropy *)
-lemma check_entropy (sk : SK) : valid_sk sk => check sk =>
-  p_max (dfst (commit sk)) <= eps_comm.
+lemma check_entropy (sk : SK) : check sk => p_max (dfst (commit sk)) <= eps_comm.
 proof.
-case: sk => mA s1 s2 -[[mA' t]] /pk_decomp @/check /= _.
+case: sk => mA s1 s2 [] |> *.
 by rewrite /commit /= dmap_comp /(\o) /=; exact: check_mx_entropy.
 qed.
 
-
 (* most honestly sampled secret keys pass the check *)
-lemma check_most : mu (dsnd keygen) (predC check) <= eps_check.
+lemma check_most : mu keygen (fun k : PK * SK => !check k.`2) <= eps_check.
 proof.
 have ds1_ll : is_lossless ds1 by apply/dvector_ll/dRq__ll.
 have ds2_ll : is_lossless ds2 by apply/dvector_ll/dRq__ll.
 apply: StdOrder.RealOrder.ler_trans check_mx_most.
-have -> : (predC check) = (predC check_mx) \o (fun sk : SK => sk.`1) by smt().
-rewrite -dmapE dmap_comp /(\o) (mu_eq_l dA) //.
+rewrite (mu_eq_support _ _ ((predC check_mx) \o (fun k : PK*SK => k.`2.`1))). 
+  smt(keygen_supp_decomp).
+rewrite -dmapE (mu_eq_l dA) //.
 apply eq_distr => mA. rewrite dmap1E. 
 rewrite /keygen -/dA -dmapE dmap_dlet /= dletEunit // => {mA} mA.
 rewrite dmap_dlet; apply dletEconst => //= s1.
 by rewrite dmap_comp /dmap; apply dletEconst.
 qed.
 
+lemma get_pk (sk : SK) : check sk => exists pk, (pk,sk) \in keygen.
+proof.
+case: sk => mA s1 s2 [|> chk_mA s1_d s2_d]; exists (mA,mA *^ s1 + s2).
+rewrite supp_dlet; exists mA; rewrite check_valid //=.
+rewrite supp_dlet; exists s1; rewrite s1_d //=.
+by rewrite supp_dmap; exists s2; rewrite s2_d.
+qed.
+
 (* probability that response fails on "good" keys is bounded by p_rej *)
 lemma rej_bound (sk : SK) :
-  sk \in dsnd (dcond keygen (check \o snd)) =>
+  check sk =>
   mu (commit sk `*` dC tau) 
      (fun (x : (ID.W * ID.Pstate) * ID.C) => respond sk x.`2 x.`1.`2 = None) <= p_rej.
 proof.
-move => Hsk.
-have {Hsk} [pk [pk_sk chk_sk]] : exists pk, (pk,sk) \in keygen /\ check sk. 
-  by case/supp_dmap : Hsk => -[pk sk']; rewrite dcond_supp /(\o)/= /#.
+move => chk_sk; have [pk pk_sk] := get_pk _ chk_sk.
 (* TODO: use [pose &m] once this has been merged *)
 have [&m _] : exists &m, true by smt(). 
 have /= <- := pr_HonestExecution_op pk sk &m pk_sk. 
@@ -1454,21 +1459,12 @@ seq 4 : (sample_z) line12_magic_number eps_low (1%r - line12_magic_number) 1%r
 - done.
 qed.
 
-(* Some good key. Since keygen is lossless and check only rules out
-small fraction, we could just use epsilon here. *)
-
-op sk0 = (A0,ll_dflt ds1,ll_dflt ds2).
-lemma sk0P : (exists pk, (pk,sk0) \in keygen) /\ check sk0.
-proof. 
-pose s1 := ll_dflt ds1; pose s2 := ll_dflt ds2.
-split; last exact: A0P.
-exists (A0,A0 *^ s1 + s2).
-apply supp_dlet; exists A0 => /=.
-split; first by rewrite check_valid A0P.
-apply supp_dlet; exists s1 => /=.
-split; first by rewrite ll_dfltP dvector_ll dRq__ll.
-rewrite supp_dmap; exists s2 => />.
-by rewrite ll_dfltP dvector_ll dRq__ll.
+lemma keygen_finite : is_finite (support keygen).
+proof.
+apply finite_dlet => [|mA ? /=]; first exact/uniform_finite/dmatrix_uni/dRq_uni.
+apply finite_dlet => [|s1 ? /=]; first exact/uniform_finite/dvector_uni/dRq__uni.
+apply finite_dlet; first exact/uniform_finite/dvector_uni/dRq__uni.
+by move => s2 ? @/(\o); exact finite_dunit.
 qed.
 
 import FSaCR.DSS.
@@ -1519,19 +1515,16 @@ clone import FSa_CMAtoKOA as CMAtoKOA with
   op p_rej <- p_rej,
   op check_entropy <- check,
   op alpha <- eps_comm,
-  op gamma <- eps_check,
-  op sk0 <- sk0,
-  
-  axiom sk0P <- sk0P
+  op gamma <- eps_check
 proof *. 
 realize alpha_gt0 by apply eps_comm_gt0.
 realize gamma_gt0 by apply eps_check_gt0.
 realize check_entropy_correct by apply check_entropy.
-realize most_keys_high_entropy. 
-  have := check_most; rewrite dmapE. apply StdOrder.RealOrder.ler_trans.
-  by apply mu_le => /#. qed.
+realize most_keys_high_entropy by apply check_most.
 realize p_rej_bounded by smt(p_rej_bounded).
 realize rej_bound by apply rej_bound.
+realize keygen_finite by apply keygen_finite.
+
 
 module (RedCR (A : Self.FSaG.DSS.Adv_EFKOA_RO) : Adv_EFKOA_RO) (H : Hash) = { 
   proc forge (pk : PK) : M*Sig = { 
@@ -1763,7 +1756,7 @@ qed.
 lemma pr_cma_koa &m : 
   Pr [ EF_CMA_RO_G(OpBasedSigG, CG.RedFSaG(A), RO_G, O_CMA_Default_G).main() @ &m : res ] <= 
   Pr [ EF_KOA_RO_G(OpBasedSigG, RedKOA(CG.RedFSaG(A),HVZK_Sim_Inst),RO_G).main() @ &m : res ] + 
-  reprog_bound + 2%r * eps_check.
+  reprog_bound + eps_check.
 proof.
 have H := CMAtoKOA.FSabort_bound (CG.RedFSaG(Wrap(A))) _ _ HVZK_Sim_Inst _ &m; first last.
 - move => Hx Ox ? ?. islossless. 
@@ -1855,7 +1848,7 @@ lemma SimplifiedDilithium_secure &m :
   + Pr[Game(RedMSIS(RedNMA(A)), G).main() @ &m : res] 
   + (2%r * qS%r * (qH + qS + 1)%r * eps_comm / (1%r - p_rej) +
      qS%r * eps_comm * (qS%r + 1%r) / (2%r * (1%r - p_rej) ^ 2))
-  + 2%r * eps_check.
+  + eps_check.
 proof.
 rewrite pr_code_op.
 apply (StdOrder.RealOrder.ler_trans _ _ _ (pr_cr_gen &m)).
