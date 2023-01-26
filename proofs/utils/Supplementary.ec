@@ -64,3 +64,14 @@ lemma maxrr (z : int) : max z z = z by smt().
 
 op locked (x : 'a) = x axiomatized by unlock.
 lemma lock (x : 'a) : x = locked x by rewrite unlock.
+
+lemma sub_ler_big (P1 P2 : 'a -> bool) (F1 F2 : 'a -> real) s : 
+  (forall x, P1 x => P2 x) => 
+  (forall x, P1 x => F1 x <= F2 x) =>
+  (forall x, P2 x => !P1 x => 0%r <= F2 x) =>
+  big P1 F1 s <= big P2 F2 s.
+proof.
+move => sub_P1_P2 le_F1_F2 pos_F2; rewrite (bigID P2 _ P1).
+have -> : predI P2 P1 = P1 by smt().
+by rewrite -(RField.addr0 (big P1 F1 s)) ler_add ?(ler_sum) // sumr_ge0 /#.
+qed.

@@ -388,3 +388,13 @@ move => d1_ll F_const; apply/eq_distr => b; rewrite dletE.
 rewrite (eq_sum _ (fun x : 'a => mu1 d1 x * mu1 d2 b)) 1:/#.
 by rewrite sumZr -weightE d1_ll. 
 qed.
+
+
+lemma fin_muE (d : 'a distr) (E : 'a -> bool) : is_finite (support d) => 
+  mu d E = big E (mu1 d) (to_seq (support d)).
+proof.
+move => fin_d.
+rewrite (mu_eq_support d _ (mem (filter E (to_seq (support d))))).
+- by move => x x_d; rewrite mem_filter mem_to_seq // x_d.
+by rewrite mu_mem_uniq ?filter_uniq ?uniq_to_seq // big_filter.
+qed.

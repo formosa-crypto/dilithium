@@ -4,8 +4,9 @@
    
    ---------------------------------------------------------------------------------------------- *)
 require import Int Real List FSet Distr RealExp SmtMap SDist StdOrder.
-require import DistrExtras.
-import RealOrder.
+require import StdBigop Finite.
+require import Supplementary DistrExtras.
+import RealOrder Bigreal Bigreal.BRA.
 
 require DigitalSignaturesRO PROM ReprogHybrid Collision.
 require FSabort.
@@ -42,79 +43,33 @@ axiom check_entropy_correct :
 axiom most_keys_high_entropy :
   mu keygen (fun keys => let (pk, sk) = keys in ! check_entropy sk) <= gamma.
 
-(* Alternative keygen that only outputs key pairs with high commitment entropy *)
-op keygen_good = 
-  dcond keygen (fun k : PK * SK => check_entropy k.`2).
+(* (* Alternative keygen that only outputs key pairs with high commitment entropy *) *)
+(* op keygen_good =  *)
+(*   dcond keygen (fun k : PK * SK => check_entropy k.`2). *)
 
 (* Some upper bound on the rejection probability of [response] 
    for valid keys over the commitment distribution *)
-op p_rej : { real | p_rej < 1%r } as p_rej_bounded. 
+op p_rej : { real | 0%r <= p_rej < 1%r } as p_rej_bounded. 
 
-axiom rej_bound sk : sk \in dsnd keygen_good => 
-  mu (commit sk `*` dC) 
-     (fun x : (W*Pstate)*C => response sk x.`2 x.`1.`2 = None) <= p_rej.
+axiom rej_bound sk : check_entropy sk =>
+   mu (commit sk `*` dC) 
+      (fun x : (W*Pstate)*C => response sk x.`2 x.`1.`2 = None) <= p_rej. 
+
+
+axiom keygen_finite : is_finite (support keygen).
 
 (* some annoying shuffling ... *)
-lemma p_def sk : 
-  (exists pk, (pk, sk) \in keygen_good) => 
-  mu1 (dlet (commit sk) (fun (w_st : W * Pstate) =>
-    dmap dC (fun (c : C) =>
-      response sk c w_st.`2))) None <= p_rej.
-proof. 
-case => pk good_sk. have := rej_bound sk _; 1: smt(supp_dmap).
-apply ler_trans.
+lemma rej_bound' sk : check_entropy sk => 
+  mu1 (dlet (commit sk)
+            (fun (w_st : W * Pstate) => 
+             dmap dC (fun (c : C) => response sk c w_st.`2))) None <= p_rej.
+proof.
+move/rej_bound; apply ler_trans; rewrite dprod_dlet. 
 have -> : 
   (fun (x : (W * Pstate) * C) => response sk x.`2 x.`1.`2 = None) = 
   pred1 None \o (fun (x : (W * Pstate) * C) => response sk x.`2 x.`1.`2) by smt().
-rewrite -dmapE; apply lerr_eq; congr; apply/eq_distr => oz /=.
-by rewrite dmap_dprodE.
-qed.
-
-lemma keygen_good_sdist : 
-  sdist keygen keygen_good <= gamma.
-proof.
-apply (ler_trans _ _ _ (sdist_dcond _ _ keygen_ll) _).
-rewrite (mu_eq _ _ 
-  (fun (keys : PK * SK) => let (_, sk) = keys in ! check_entropy sk)).
-- by move => [pk sk] @/predC.
-exact most_keys_high_entropy.
-qed.
-
-lemma keygen_good_entropy (sk : SK) : 
-  (exists pk, (pk, sk) \in keygen_good) =>
-  forall (x : W), mu1 (dfst (commit sk)) x <= alpha.
-proof.
-case => pk; rewrite dcond_supp /=.
-smt(pmax_upper_bound check_entropy_correct).
-qed.
-
-(* alternative commit that always has high entropy *)
-(* used to instantiate (abstract) theories that are not aware of any keygen *)
-const sk0 : SK.
-axiom sk0P : valid_sk sk0 /\ check_entropy sk0.
-
-lemma keygen_good_ll : is_lossless keygen_good.
-proof. 
-case: sk0P => valid_sk0 good_sk0.
-have supp_sk0 : sk0 \in dsnd keygen by smt(supp_dmap).
-apply dcond_ll; apply (ltr_le_trans _ _ _ supp_sk0).
-by rewrite dmapE mu_le /#.
-qed.
-
-op commit_good (sk : SK) = 
-  if valid_sk sk /\ check_entropy sk then commit sk else commit sk0.
-
-lemma commit_good_ll sk : is_lossless (commit_good sk).
-proof. smt(commit_ll). qed.
-
-lemma commit_good_entropy sk : 
-  p_max (dfst (commit_good sk)) <= alpha. 
-proof. smt(check_entropy_correct sk0P). qed.
-
-lemma commit_goodE sk : 
-  sk \in dsnd keygen_good => commit_good sk = commit sk.
-proof.
-case/supp_dmap => -[pk sk'] /> /dcond_supp /#.
+rewrite -dmapE dmap_dlet; apply lerr_eq; do ! congr. 
+by apply/fun_ext => -[w st] /=; rewrite dlet_dunit dmap_comp.
 qed.
 
 (* ----------------------------------------------------------------------*)
@@ -248,7 +203,6 @@ declare axiom Sim_perfect_HVZK k :
 
 module Game0 (A:Adv_EFCMA_RO,O:Oracle_CMA) = EF_CMA_RO(IDS_Sig(P,V),A,RO,O).
 
-
 (* ----------------------------------------------------------------------*)
 (*                            First game hop:                            *)
 (* Simply replace the generic oracle by one that uses our scheme         *)
@@ -289,86 +243,6 @@ while (={oz,w,m,glob O_CMA_Default, glob RO}
        /\ m0{1} = m{2}); by inline*; auto => />. 
 qed.
 
-(*
-
-(* ----------------------------------------------------------------------*)
-(*                           Second game hop:                            *)
-(* Limit the game to use only keys with high committment entropy         *)
-(* ----------------------------------------------------------------------*)
-
-
-local module Game1 (A : Adv_EFCMA_RO) (O: Oracle_CMA) = {
-  proc main() : bool = {
-    var pk : PK;
-    var sk : SK;
-    var m : M;
-    var sig : Sig;
-    var nrqs : int;
-    var is_valid : bool;
-    var is_fresh : bool;
-    
-    RO.init();
-    (pk, sk) <$ keygen_good; (* only use "good" keys *)
-    O(IDS_Sig(P,V,RO)).init(sk);
-    (m, sig) <@ A(RO,O(IDS_Sig(P,V,RO))).forge(pk);
-    is_valid <@ IDS_Sig(P,V,RO).verify(pk, m, sig);
-    is_fresh <@ O(IDS_Sig(P,V,RO)).fresh(m);
-    nrqs <@ O(IDS_Sig(P,V,RO)).nr_queries();
-    
-    return nrqs <= qS /\ is_valid /\ is_fresh;
-  }
-}.
-
-(* We apply the data-processing inequality to bound the difference
-between the games by the statisitcal distance between [keygen] and
-[keygen_good] with is bounded by [gamma]. *)
-
-local clone Dist with type a <- PK * SK.
-
-local module (D (O : Oracle_CMA) : Dist.GenDist.Distinguisher) = { 
-  proc guess (x : PK * SK) = {
-    var pk : PK;
-    var sk : SK;
-    var m : M;
-    var sig : Sig;
-    var nrqs : int;
-    var is_valid : bool;
-    var is_fresh : bool;
-
-    (pk, sk) <- x;
-    RO.init();
-    O(IDS_Sig(P,V,RO)).init(sk);
-    (m, sig) <@ A(RO,O(IDS_Sig(P,V,RO))).forge(pk);
-    is_valid <@ IDS_Sig(P,V,RO).verify(pk, m, sig);
-    is_fresh <@ O(IDS_Sig(P,V,RO)).fresh(m);
-    nrqs <@ O(IDS_Sig(P,V,RO)).nr_queries();
-    
-    return nrqs <= qS /\ is_valid /\ is_fresh;
-  }
-}.
-
-local lemma hop2 &m : 
-     Pr [Game0(A,Oracle1).main()  @ &m : res ] 
-  <= Pr [Game1(A,Oracle1).main() @ &m : res ] + gamma.
-proof.
-suff : `| Pr[ Game0(A, Oracle1).main() @ &m : res] - 
-          Pr[ Game1(A, Oracle1).main() @ &m : res] | <= gamma; 1: smt().
-have -> : Pr[ Game0(A, Oracle1).main() @ &m : res] = 
-          Pr[ Dist.Sample(D(Oracle1)).main(keygen) @&m : res].
-- byequiv (_ : ={glob A,glob Oracle1,glob RO} /\ d{2} = keygen ==> _) => //. 
-  proc; do ! inline{1} 2; inline{2} 2. 
-  swap{1} [2..4] -1.
-  seq 3 3 : (={glob A,glob Oracle1,RO.m,pk,sk}); last by sim.
-  by auto => /> /#. 
-have -> : Pr[ Game1(A, Oracle1).main() @ &m : res] = 
-          Pr[ Dist.Sample(D(Oracle1)).main(keygen_good) @&m : res].
-- byequiv (_ : ={glob A,glob Oracle1,glob RO} /\ d{2} = keygen_good ==> _) => //. 
-  proc. inline{2} 2. wp. swap{1} 2 -1.
-  seq 1 3 : (={glob A,glob Oracle1,RO.m,pk,sk}); last by sim.
-  by auto => /> /#. 
-apply: ler_trans keygen_good_sdist. 
-exact (Dist.adv_sdist (D(Oracle1))).
-qed.
 
 (* ----------------------------------------------------------------------*)
 (*                   Third and fourth game hop:                          *)
@@ -376,7 +250,6 @@ qed.
 (*                                                                       *)
 (* ----------------------------------------------------------------------*)
 
-*)
 
 local module (Oracle3 : Oracle_CMA) (S : Scheme)  = {
     import var O_CMA_Default(S)
@@ -420,17 +293,14 @@ local clone ReprogHybrid as R1 with
   op commit <- commit,
   op respond <- (fun sk c st => response sk st c),
   theory RO <= PRO
-proof* by admit. (* TODO *)
-(* realize keygen_ll by apply keygen_good_ll. *)
-(* realize commit_ll by apply commit_ll. *)
-(* realize dC_ll by apply dC_ll. *)
-(* realize dC_uni by apply dC_uni. *)
-(* realize p_def by apply p_def. *)
-(* realize p_bounded by admit. *)
-(* realize valid_sk_mu1_commit by apply keygen_good_entropy. *)
-(* realize qs_ge0 by apply qS_ge0. *)
-(* realize qh_ge0 by smt(qH_ge0). *)
-(* realize eps_ge0 by smt(alpha_gt0). *)
+proof*.
+realize commit_ll by apply commit_ll.
+realize dC_ll by apply dC_ll.
+realize dC_uni by apply dC_uni.
+realize p_bounded by apply p_rej_bounded.
+realize qs_ge0 by apply qS_ge0.
+realize qh_ge0 by smt(qH_ge0).
+realize eps_ge0 by smt(alpha_gt0).
 
 (* Reduction to the [RedOnce] game *)
 local module RedOnce (O : R1.Oracle) = { 
@@ -467,28 +337,60 @@ local module RedOnce (O : R1.Oracle) = {
   }
 }.
 
-print R1.GReal_GSet1.
+import RField.
 
-local module G = { 
-  proc mainL () = { 
-    var pk,sk,r;
-    (pk,sk) <$ keygen;
-    r <@ R1.Game(RedOnce,R1.OReal).main(pk,sk);
-    return r;
-  }
+(* We use Means to average over the choice of keys *)
+local clone import Means as Mkey with
+  type input <- PK * SK,
+  type output <- bool,
+  op d <- keygen
+proof*.
 
-  proc mainR () = { 
-    var pk,sk,r;
-    (pk,sk) <$ keygen;
-    r <@ R1.Game(RedOnce,R1.OSet1_inf).main(pk,sk);
-    return r;
-  }
-}.
+(* the "workers" for Means are the fixed-key versions of left and right game *)
+local module GSign = { proc work = R1.Game(RedOnce,R1.OReal).main }.
+local module GTrans = { proc work = R1.Game(RedOnce,R1.OSet1_inf).main }.
 
-
-local lemma hop4_aux &m : 
-  Pr[G.mainL() @ &m : res] <= Pr[G.mainR() @ &m : res] + reprog_bound + gamma.
+local lemma hop4 &m : 
+     Pr [Game0(A,Oracle1).main() @ &m : res ] 
+  <= Pr [Game0(A,Oracle3).main() @ &m : res ] + reprog_bound + gamma.
 proof.
+(* We start by expressing both sides as Rand games from Means *)
+have -> : Pr[Game0(A, Oracle1).main() @ &m : res] = Pr[Rand(GSign).main() @ &m : res.`2].
+- byequiv => //. proc. inline{1} 2; inline{2} 2. 
+  inline RedOnce(R1.OReal).distinguish.
+  swap{1} 2 -1.
+  seq 4 9 : (={RO.m,m,sig,pk} /\ O_CMA_Default.qs{1} = RedOnce.SO.qs{2}); 
+     last by inline*; auto; sp; if; auto => />.
+  call(: ={RO.m}  
+          /\ O_CMA_Default.qs{1} = RedOnce.SO.qs{2}
+          /\ O_CMA_Default.sk{1} = R1.OReal.sk{2}); first last.
+  + by proc; inline*; auto => /> /#.
+  + by inline*; auto => />.
+  proc. inline{2} 2. inline{2} 4. wp.
+  while (={oz,w,RO.m} /\ m{1} = m1{2}
+          /\ O_CMA_Default.qs{1} = RedOnce.SO.qs{2}
+          /\ O_CMA_Default.sk{1} = R1.OReal.sk{2}).
+  + by inline*; auto.
+  by auto => /> /#.
+have -> : Pr[Game0(A, Oracle3).main() @ &m : res] = Pr[Rand(GTrans).main() @ &m : res.`2].
+- byequiv => //. proc. inline{1} 2; inline{2} 2. 
+  inline RedOnce(R1.OSet1_inf).distinguish.
+  swap{1} 2 -1.
+  seq 4 9 : (={RO.m,m,sig,pk} /\ O_CMA_Default.qs{1} = RedOnce.SO.qs{2}); 
+     last by inline*; auto; sp; if; auto => />.
+  call(: ={RO.m}  
+          /\ O_CMA_Default.qs{1} = RedOnce.SO.qs{2}
+          /\ O_CMA_Default.sk{1} = R1.OReal.sk{2}); first last.
+  + by proc; inline*; auto => /> /#.
+  + inline*; auto => />.
+  proc. inline{2} 2. inline{2} 4. inline RO.set. wp. 
+  while (={oz,w,c,RO.m} /\ m{1} = m1{2}
+          /\ O_CMA_Default.qs{1} = RedOnce.SO.qs{2}
+          /\ O_CMA_Default.sk{1} = R1.OReal.sk{2}).
+  + by inline*; auto.
+  by auto => />.
+(* Next we prove that the reduction to the distinguisher is correct
+and preserves the query bounds *)
 have R1_bound := R1.GReal_GSet1 RedOnce _ _.
 - move => O ? ?; islossless. 
   by apply (A_ll (<: CountH(RedOnce(O).H)) (<: CountS(RedOnce(O).SO))) => //; islossless.
@@ -503,57 +405,38 @@ call (: CountH.qh = R1.Count.countH /\ CountS.qs = R1.Count.countS).
 - proc; inline*; auto; call(: true); auto => />.
 - proc; inline*; auto; call(: true); auto => />.
 by inline*; auto => />. 
-(* what to do now? *)
-
-admitted.
-
-(* The actual hop: correctness of RedOnce and query counting *)
-local lemma hop4 &m : 
-     Pr [Game0(A,Oracle1).main() @ &m : res ] 
-  <= Pr [Game0(A,Oracle3).main() @ &m : res ] + reprog_bound + gamma.
-proof.
-have -> : Pr[Game0(A, Oracle1).main() @ &m : res] = Pr[G.mainL() @ &m : res].          
-- byequiv => //. proc. inline{1} 2; inline{2} 2. 
-  inline RedOnce(R1.OReal).distinguish.
-  swap{1} 2 -1.
-  seq 4 10 : (={RO.m,m,sig} /\ pk{1} = pk0{2} 
-             /\ O_CMA_Default.qs{1} = RedOnce.SO.qs{2}); 
-     last by inline*; auto; sp; if; auto => />.
-  call(: ={RO.m}  
-          /\ O_CMA_Default.qs{1} = RedOnce.SO.qs{2}
-          /\ O_CMA_Default.sk{1} = R1.OReal.sk{2}); first last.
-  + by proc; inline*; auto => /> /#.
-  + by inline*; auto => />.
-  proc. inline{2} 2. inline{2} 4. wp.
-  while (={oz,w,RO.m} /\ m{1} = m1{2}
-          /\ O_CMA_Default.qs{1} = RedOnce.SO.qs{2}
-          /\ O_CMA_Default.sk{1} = R1.OReal.sk{2}).
-  + by inline*; auto.
-  by auto => /> /#.
-have -> : Pr[Game0(A, Oracle3).main() @ &m : res] = Pr[G.mainR() @ &m : res].
-- byequiv => //. proc. inline{1} 2; inline{2} 2. 
-  inline RedOnce(R1.OSet1_inf).distinguish.
-  swap{1} 2 -1.
-  seq 4 10 : (={RO.m,m,sig} /\ pk{1} = pk0{2} 
-             /\ O_CMA_Default.qs{1} = RedOnce.SO.qs{2}); 
-     last by inline*; auto; sp; if; auto => />.
-  call(: ={RO.m}  
-          /\ O_CMA_Default.qs{1} = RedOnce.SO.qs{2}
-          /\ O_CMA_Default.sk{1} = R1.OReal.sk{2}); first last.
-  + by proc; inline*; auto => /> /#.
-  + inline*; auto => />.
-  proc. inline{2} 2. inline{2} 4. inline RO.set. wp. 
-  while (={oz,w,c,RO.m} /\ m{1} = m1{2}
-          /\ O_CMA_Default.qs{1} = RedOnce.SO.qs{2}
-          /\ O_CMA_Default.sk{1} = R1.OReal.sk{2}).
-  + by inline*; auto.
-  by auto => />.
-(* rewrite /reprog_bound RField.addrA. *)
-exact hop4_aux.
+(* Finally, we average over good (i.e., high entropy) and bad keys *)
+have ? := keygen_finite.
+pose supK := to_seq (support keygen).
+pose good (k : PK * SK) := check_entropy k.`2.
+have mu_goodC : mu keygen (predC good) <= gamma.
+- by apply: ler_trans most_keys_high_entropy; apply mu_le => />.
+pose Fl (k : PK * SK) := mu1 keygen k * Pr [ GSign.work(k) @ &m : res].
+pose Fr (k : PK * SK) := mu1 keygen k * Pr [ GTrans.work(k) @ &m : res].
+have -> :Pr[Rand(GSign).main() @ &m : res.`2] = big predT Fl supK.
+  exact (Mean GSign &m (fun _ _ r => r) keygen_finite).
+have -> : Pr[Rand(GTrans).main() @ &m : res.`2] = big predT Fr supK.
+  exact (Mean GTrans &m (fun _ _ r => r) keygen_finite).
+rewrite !(bigEM good). 
+have -> : big good Fr supK + big (predC good) Fr supK + reprog_bound + gamma = 
+          (big good Fr supK + reprog_bound) + (big (predC good) Fr supK + gamma) by ring.
+apply ler_add; last first.
+- apply (ler_trans gamma); last by apply/ler_paddl => //; apply/sumr_ge0; smt(mu_bounded).
+  apply (ler_trans (big (predC good) (mu1 keygen) supK)); last by rewrite -fin_muE // &(mu_goodC).
+  apply ler_sum => -[pk sk] @/Fl _; apply/ler_pimulr; smt(mu_bounded). 
+rewrite -[reprog_bound]mulr1 -keygen_ll fin_muE // -/supK.  
+apply (ler_trans (big good Fr supK + reprog_bound * big good (mu1 keygen) supK)); last first.
+- rewrite ler_add2l ler_wpmul2l 1:/reprog_bound.
+  rewrite addr_ge0 ?divr_ge0; smt(alpha_gt0 qH_ge0 qS_ge0 p_rej_bounded expr_ge0).
+  exact sub_ler_big. 
+rewrite mulr_sumr sumrD /=; apply ler_sum_seq => -[pk sk] @/good pk_sk /= chk_sk.
+rewrite /Fl /Fr [reprog_bound * _]mulrC -mulrDr ler_wpmul2l // addrA.
+apply (R1_bound pk sk _ _ &m) => @/has_entropy @/bound_reject [x|].
+- rewrite /supK mem_to_seq // in pk_sk.
+- have X := check_entropy_correct sk _ _; 1,2:smt(). 
+  by apply: ler_trans X; apply pmax_upper_bound.
+- exact (rej_bound' sk chk_sk).
 qed.
-
-stop 
-
 
 (* ----------------------------------------------------------------------*)
 (*                           Fith game hop:                             *)
@@ -592,7 +475,7 @@ local module OGame1  = {
    }
 }.
 
-local module Game2 (A : Adv_EFCMA_RO) = {
+local module Game1 (A : Adv_EFCMA_RO) = {
   proc main() : bool = {
     var pk : PK;
     var sk : SK;
@@ -603,7 +486,7 @@ local module Game2 (A : Adv_EFCMA_RO) = {
     var is_fresh : bool;
     
     RO.init();
-    (pk, sk) <$ keygen_good;
+    (pk, sk) <$ keygen;
     OGame1.init(sk,pk); (* pass public key as well *)
     (m, sig) <@ A(RO,OGame1).forge(pk);
     is_valid <@ IDS_Sig(P,V,RO).verify(pk, m, sig);
@@ -615,9 +498,9 @@ local module Game2 (A : Adv_EFCMA_RO) = {
 }.
 
 local lemma hop5 &m : 
-  Pr [Game1(A,Oracle3).main() @ &m : res ] = Pr [Game2(A).main() @ &m : res ].
+  Pr [Game0(A,Oracle3).main() @ &m : res ] = Pr [Game1(A).main() @ &m : res ].
 proof.
-byequiv (: ={glob A} ==> _) => //; proc.
+byequiv (: ={glob A} ==> _) => //; proc. inline{1} 2.
 seq 4 4 : (   ={m,sig,RO.m,pk,glob A} 
            /\ ={qs,sk}(O_CMA_Default,OGame1) 
            /\ pk{2} = OGame1.pk{2}); last first.
@@ -668,7 +551,7 @@ local module OGame2  = {
    }
 }.
 
-local module Game3 (A : Adv_EFCMA_RO) = {
+local module Game2 (A : Adv_EFCMA_RO) = {
   proc main() : bool = {
     var pk : PK;
     var sk : SK;
@@ -679,7 +562,7 @@ local module Game3 (A : Adv_EFCMA_RO) = {
     var is_fresh : bool;
     
     RO.init();
-    (pk, sk) <$ keygen_good;
+    (pk, sk) <$ keygen;
     OGame2.init(pk); (* pass public key only *)
     (m, sig) <@ A(RO,OGame2).forge(pk);
     is_valid <@ IDS_Sig(P,V,RO).verify(pk, m, sig);
@@ -692,97 +575,23 @@ local module Game3 (A : Adv_EFCMA_RO) = {
 
 (* We only handle the case where the HVZK advantage is actually O *)
 local lemma hop6 &m : 
-  Pr [Game2(A).main() @ &m : res ] = Pr [Game3(A).main() @ &m : res ].
+  Pr [Game1(A).main() @ &m : res ] = Pr [Game2(A).main() @ &m : res ].
 proof.
 byequiv => //; proc. 
 seq 4 4 : (={RO.m, m,pk, sig} /\ ={qs}(OGame1,OGame2)); last by sim.
 inline*.
 call (: =   {RO.m} /\ ={qs,pk}(OGame1,OGame2)
-        /\ (OGame2.pk{2},OGame1.sk{1}) \in keygen_good); first last.
+        /\ (OGame2.pk{2},OGame1.sk{1}) \in keygen); first last.
 - by proc; inline*; auto.
 - by auto => /> /#.
 proc. 
 inline RO.set. wp. 
 while (={RO.m,ot} /\ ={qs,pk}(OGame1,OGame2) 
-       /\ (OGame2.pk{2},OGame1.sk{1}) \in keygen_good); last by auto => />.
+       /\ (OGame2.pk{2},OGame1.sk{1}) \in keygen); last by auto => />.
 wp; conseq (: _ ==> ={ot}); 1: smt().
 exlim (OGame2.pk{2}) => pk. 
 exlim (OGame1.sk{1}) => sk.
 call (Sim_perfect_HVZK (pk,sk)); auto => />. 
-smt(dcond_supp).
-qed.
-
-(* ----------------------------------------------------------------------*)
-(*                          Seventh game hop:                            *)
-(* Revert from [keygen_good] to [keygen] to match the KOA game           *)
-(* ----------------------------------------------------------------------*)
-
-local module Game4 (A : Adv_EFCMA_RO) = {
-  proc main() : bool = {
-    var pk : PK;
-    var sk : SK;
-    var m : M;
-    var sig : Sig;
-    var nrqs : int;
-    var is_valid : bool;
-    var is_fresh : bool;
-    
-    RO.init();
-    (pk, sk) <$ keygen; (* original keygen *)
-    OGame2.init(pk);
-    (m, sig) <@ A(RO,OGame2).forge(pk);
-    is_valid <@ IDS_Sig(P,V,RO).verify(pk, m, sig);
-    is_fresh <@ OGame2.fresh(m);
-    nrqs <@ OGame2.nr_queries();
-    
-    return nrqs <= qS /\ is_valid /\ is_fresh;
-  }
-}.
-
-local module D2 = {
-  proc guess(x : PK*SK) : bool = {
-    var pk : PK;
-    var sk : SK;
-    var m : M;
-    var sig : Sig;
-    var nrqs : int;
-    var is_valid : bool;
-    var is_fresh : bool;
-    
-    RO.init();
-    (pk, sk) <- x;
-    OGame2.init(pk);
-    (m, sig) <@ A(RO,OGame2).forge(pk);
-    is_valid <@ IDS_Sig(P,V,RO).verify(pk, m, sig);
-    is_fresh <@ OGame2.fresh(m);
-    nrqs <@ OGame2.nr_queries();
-    
-    return nrqs <= qS /\ is_valid /\ is_fresh;
-  }
-}.
-
-local lemma hop7 &m : 
-     Pr [Game3(A).main()  @ &m : res ] 
-  <= Pr [Game4(A).main() @ &m : res ] + gamma.
-proof.
-suff : `| Pr[ Game3(A).main() @ &m : res] - 
-          Pr[ Game4(A).main() @ &m : res] | <= gamma; 1: smt().
-have -> : Pr[ Game3(A).main() @ &m : res] = 
-          Pr[ Dist.Sample(D2).main(keygen_good) @&m : res].
-- byequiv (_ : ={glob A,glob Sim, glob RO} /\ d{2} = keygen_good ==> _) => //. 
-  proc. inline D2.guess. wp.
-  swap{1} 2 -1. swap{2} 4 -1. 
-  seq 1 3 : (={glob A,glob Sim,RO.m,pk,sk}); last by sim.
-  by auto => /> /#. 
-have -> : Pr[ Game4(A).main() @ &m : res] = 
-          Pr[ Dist.Sample(D2).main(keygen) @&m : res].
-- byequiv (_ : ={glob A,glob Sim, glob RO} /\ d{2} = keygen ==> _) => //. 
-  proc. inline D2.guess. wp.
-  swap{1} 2 -1. swap{2} 4 -1. 
-  seq 1 3 : (={glob A,glob Sim,RO.m,pk,sk}); last by sim.
-  by auto => /> /#. 
-apply: ler_trans keygen_good_sdist;rewrite sdistC.
-exact (Dist.adv_sdist (D2)).
 qed.
 
 (* ----------------------------------------------------------------------*)
@@ -805,7 +614,7 @@ adversary can hit the overlay if he manages to break comutational
 unique response of the ID scheme. *)
 
 local lemma KOA_bound &m : 
-     Pr [ Game4(A).main() @ &m : res ] 
+     Pr [ Game2(A).main() @ &m : res ] 
   <= Pr [ EF_KOA_RO(IDS_Sig(P,V),RedKOA(A,Sim),RO).main() @ &m : res ].
 proof.
 byequiv (_: ={glob RO,glob A,glob Sim} ==> res{1} => res{2}) => //.
@@ -844,9 +653,6 @@ seq 4 3 : (={m,sig,pk}
                     get_setE get_set_sameE mergeE).
 qed.
 
-import RField.
-
-
 (* ----------------------------------------------------------------------*)
 (*      Final Bound for the CMA to NMA reduction                         *)
 (* ----------------------------------------------------------------------*)
@@ -854,15 +660,11 @@ import RField.
 lemma FSabort_bound &m : 
    Pr [ EF_CMA_RO(IDS_Sig(P, V), A, RO, O_CMA_Default).main() @ &m : res] 
 <= Pr [ EF_KOA_RO(IDS_Sig(P,V),RedKOA(A,Sim),RO).main() @ &m : res ] 
- + reprog_bound + 2%r * gamma.
+ + reprog_bound + gamma.
 proof.
 rewrite hop1.
-have -> : forall x, x + reprog_bound + 2%r * gamma = 
-                    x + gamma + reprog_bound + gamma by smt(). 
-apply: (ler_trans _ _ _ (hop2 &m) _); rewrite ler_add2r.
-apply: (ler_trans _ _ _ (hop4 &m) _); rewrite ler_add2r.
+apply (ler_trans _ _ _ (hop4 &m) _); rewrite !ler_add2r.
 rewrite hop5 hop6. 
-apply: (ler_trans _ _ _ (hop7 &m) _); rewrite ler_add2r.
 exact KOA_bound.
 qed.
 
