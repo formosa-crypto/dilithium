@@ -507,8 +507,10 @@ clone include PolyReduce with
     op   BasePoly.Coeff.ofint  <- Zp.ZModpRing.ofint,
     op   BasePoly.Coeff.exp    <- Zp.ZModpRing.exp,
     op   BasePoly.Coeff.intmul <- Zp.ZModpRing.intmul,
-    op   BasePoly.Coeff.lreg   <- Zp.ZModpRing.lreg
-
+    op   BasePoly.Coeff.lreg   <- Zp.ZModpRing.lreg,
+    (* scuffed choice-based inverse operation... *)
+    pred BasePoly.PolyComRing.unit <- fun p => exists q, q * p = oner,
+    op   BasePoly.PolyComRing.invr <- fun p => choiceb (fun q => q * p = oner) p
   proof BasePoly.Coeff.addrA     by exact Zp.ZModpRing.addrA
   proof BasePoly.Coeff.addrC     by exact Zp.ZModpRing.addrC
   proof BasePoly.Coeff.add0r     by exact Zp.ZModpRing.add0r
@@ -521,7 +523,10 @@ clone include PolyReduce with
   proof BasePoly.Coeff.mulVr     by exact Zp.ZModpRing.mulVr
   proof BasePoly.Coeff.unitP     by exact Zp.ZModpRing.unitP
   proof BasePoly.Coeff.unitout   by exact Zp.ZModpRing.unitout
-
+  (* choice-based stuff... *)
+  proof BasePoly.PolyComRing.mulVr by smt(choicebP)
+  proof BasePoly.PolyComRing.unitP by smt()
+  proof BasePoly.PolyComRing.unitout by smt(choiceb_dfl)
   remove abbrev BasePoly.Coeff.(-)
   remove abbrev BasePoly.Coeff.(/).
 
