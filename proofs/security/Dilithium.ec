@@ -302,7 +302,7 @@ lemma SimplifiedDilithium_secure &m :
        Pr[SD.RqMLWE.GameR(RedMLWE(A)).main() @ &m : res]| +
      Pr[SD.RqStMSIS.Game(RedStMSIS(A), SD.RqStMSIS.PRO.RO).main () @ &m : res] +
      (2%r * qS%r * (qH + qS + 1)%r * eps_comm / (1%r - SD.p_rej) +
-      qS%r * eps_comm * (qS%r + 1%r) / (2%r * (1%r - SD.p_rej) ^ 2)) + 2%r * eps_check.
+      qS%r * eps_comm * (qS%r + 1%r) / (2%r * (1%r - SD.p_rej) ^ 2)) + eps_check.
 proof.
 have SD_security := SD.SimplifiedDilithium_secure (RedS (A)) _ _ &m.
 - by move => H' O'; proc; call (A_bound H' O'); auto.
