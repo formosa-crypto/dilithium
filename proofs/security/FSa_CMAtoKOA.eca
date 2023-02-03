@@ -343,6 +343,8 @@ proof*.
 local module GSign = { proc work = R1.Game(RedOnce,R1.OReal).main }.
 local module GTrans = { proc work = R1.Game(RedOnce,R1.OSet1_inf).main }.
 
+print reprog_bound. 
+
 local lemma hop4 &m : 
      Pr [Game0(A,Oracle1).main() @ &m : res ] 
   <= Pr [Game0(A,Oracle3).main() @ &m : res ] + reprog_bound + gamma.

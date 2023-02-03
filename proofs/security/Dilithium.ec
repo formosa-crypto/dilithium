@@ -1,6 +1,6 @@
 require import AllCore Distr List IntDiv StdOrder.
 require import DistrExtras.
-import RealOrder.
+import RealOrder Finite.
 
 require DRing DVect MLWE SelfTargetMSIS.
 require SimplifiedScheme.
@@ -84,13 +84,11 @@ module Dilithium (H: Hash) = {
     var z : vector;
     var h : hint_t list;
     var response : response_t option;
-    var c : R;
+    var c : R <- witness;
     var ctr : int;
     var y, w, w1;
     var mA, s1, s2;
     var t0;
-    (* silences unused variable warning *)
-    c <- witness;
 
     (mA, s1, s2, t0) <- sk;
 
@@ -116,16 +114,13 @@ module Dilithium (H: Hash) = {
     var z, h;
     var c';
     var mA, t1;
-    var result;
     (mA, t1) <- pk;
 
     (c, response) <- sig;
     (z, h) <- response;
     w1 <- useHintV h (mA *^ z - c ** base2shiftV t1);
     c' <@ H.get((w1, m));
-    result <- size z = l /\ size h = k /\ inf_normv z < gamma1 - beta_ /\ c = c';
-
-    return result;
+    return size z = l /\ size h = k /\ inf_normv z < gamma1 - beta_ /\ c = c';
   }
 }.
 
@@ -163,9 +158,9 @@ axiom check_mx_entropy (mA : matrix) :
 op A0 : { matrix | check_mx A0 } as A0P.
 
 (* upper bound on the mass of the keys not passing check *)
-const eps_check : { real | 0%r <= eps_check }  as eps_check_gt0.
+const delta_ : { real | 0%r <= delta_ }  as delta_gt0.
 
-axiom check_mx_most : mu dA (predC check_mx) <= eps_check.
+axiom check_mx_most : mu dA (predC check_mx) <= delta_.
 
 (* bound on the probability that he low-bis check in the Sim fails *)
 const eps_low : { real | eps_low < 1%r } as eps_low_lt1.
@@ -212,10 +207,10 @@ clone SimplifiedScheme as SD with
 
   op check_mx <- check_mx,
   op eps_comm <- eps_comm,
-  op eps_check <- eps_check,
+  op eps_check <- delta_,
   op eps_low <- eps_low,
   axiom eps_comm_gt0 <- eps_comm_gt0,
-  axiom eps_check_gt0 <- eps_check_gt0,
+  axiom eps_check_gt0 <- delta_gt0,
   axiom check_mx_entropy <- check_mx_entropy,
   axiom bound_low <- bound_low,
   axiom eps_low_lt1 <- eps_low_lt1,
@@ -296,18 +291,28 @@ module RedMLWE (A : Adv_EFCMA_RO) =
 module RedStMSIS (A : Adv_EFCMA_RO) = 
   SD.RedMSIS(SD.RedCR(SD.CMAtoKOA.RedKOA(SD.CG.RedFSaG(RedS(A)), SD.HVZK_Sim_Inst))).
 
-lemma SimplifiedDilithium_secure &m :
+(* Left and Right Game of the MLWE assumption *)
+module MLWE_L (A : SD.RqMLWE.Adversary) = SD.RqMLWE.GameL(A).
+module MLWE_R (A : SD.RqMLWE.Adversary) = SD.RqMLWE.GameR(A).
+(* The SelfTargetMSIS Game *)
+module SelfTargetMSIS (A : SD.RqStMSIS.Adversary) = SD.RqStMSIS.Game(A).
+
+op p0 = (size (to_seq (support dz)))%r / (size (to_seq (support dy)))%r.
+op p_rej : real = (p0 * eps_low) + (1.0 - p0).
+
+lemma Dilithium_secure &m :
  Pr[EF_CMA_RO(Dilithium, A, H, O_CMA_Default).main() @ &m : res] <=
-     `|Pr[SD.RqMLWE.GameL(RedMLWE(A)).main() @ &m : res] -
-       Pr[SD.RqMLWE.GameR(RedMLWE(A)).main() @ &m : res]| +
-     Pr[SD.RqStMSIS.Game(RedStMSIS(A), SD.RqStMSIS.PRO.RO).main () @ &m : res] +
-     (2%r * qS%r * (qH + qS + 1)%r * eps_comm / (1%r - SD.p_rej) +
-      qS%r * eps_comm * (qS%r + 1%r) / (2%r * (1%r - SD.p_rej) ^ 2)) + eps_check.
+     `|Pr[MLWE_L(RedMLWE(A)).main() @ &m : res] -
+       Pr[MLWE_R(RedMLWE(A)).main() @ &m : res]| +
+     Pr[SelfTargetMSIS(RedStMSIS(A), SD.RqStMSIS.PRO.RO).main () @ &m : res] +
+     (2%r * qS%r * (qH + qS + 1)%r * eps_comm / (1%r - p_rej) +
+      qS%r * eps_comm * (qS%r + 1%r) / (2%r * (1%r - p_rej) ^ 2)) + delta_.
 proof.
+(* Instantiate the security proof for SimplifiedDilithium, this is 99% of the proof *)
 have SD_security := SD.SimplifiedDilithium_secure (RedS (A)) _ _ &m.
 - by move => H' O'; proc; call (A_bound H' O'); auto.
 - by move => O' H' ? ?; islossless; exact (A_ll O' H').
-apply: ler_trans SD_security; byequiv => //; proc. 
+apply: ler_trans SD_security. byequiv => //; proc. 
 inline{1} 2; inline{2} 2.
 inline{1} 2; inline{2} 2.
 inline{2} 10.
