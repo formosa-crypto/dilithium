@@ -398,3 +398,37 @@ rewrite (mu_eq_support d _ (mem (filter E (to_seq (support d))))).
 - by move => x x_d; rewrite mem_filter mem_to_seq // x_d.
 by rewrite mu_mem_uniq ?filter_uniq ?uniq_to_seq // big_filter.
 qed.
+
+lemma Jensen_fin_concave ['a] (d : 'a distr) f (g : real -> real) :
+     is_finite (support d)
+  => is_lossless d
+  => (forall a b, convex (fun x => - g x) a b)
+  => E d (g \o f) <= g (E d f).
+proof.
+move => d_fin d_ll g_concave.
+have /= J := Jensen_fin d f (fun x => - g x) d_fin d_ll g_concave. 
+rewrite -ler_opp2; apply (@ler_trans _ _ _ J).
+by rewrite -mulN1r -expZ lerr_eq &(eq_exp) => x x_d @/(\o) /=; rewrite mulN1r.
+qed.
+
+lemma E_fin (d : 'a distr) (f : 'a -> real) : 
+  is_finite (support d) => E d f = big predT (fun x => mu1 d x * f x) (to_seq (support d)).
+proof.
+move => fin_d. 
+rewrite /E (RealSeries.sumE_fin _ (to_seq (support d))) ?uniq_to_seq //.
+- move => x /=. rewrite mem_to_seq //. smt(supportP).
+by apply eq_bigr => /#.
+qed.
+
+lemma ler_mu_dcond (d : 'a distr) (p : 'a -> bool) x :
+  p x => mu1 d x <= mu1 (dcond d p) x.
+proof.
+move => p_x; rewrite dcond1E p_x /=. 
+case (x \in d) => [x_d|]; last by move/supportPn => -> /#.
+suff: 0%r < mu d p by smt(mu_bounded).
+by apply/witness_support; exists x.
+qed.
+
+lemma finite_dcond (d : 'a distr) (p : 'a -> bool) : 
+  is_finite (support d) => is_finite (support (dcond d p)).
+proof. by apply finite_leq => x /dcond_supp. qed.

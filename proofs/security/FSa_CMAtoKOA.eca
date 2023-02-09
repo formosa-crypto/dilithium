@@ -35,8 +35,14 @@ op gamma, alpha : real.
 axiom alpha_gt0 : 0%r < alpha.
 axiom gamma_gt0 : 0%r <= gamma.
 
-axiom check_entropy_correct :
-  forall sk, check_entropy sk => p_max (dfst (commit sk)) <= alpha.
+(* axiom check_entropy_correct : *)
+(*   forall sk, check_entropy sk => p_max (dfst (commit sk)) <= alpha. *)
+
+op check (k : PK * SK) = check_entropy k.`2.
+
+axiom check_entropy_correct : 
+  E (dcond keygen check) (fun k : PK * SK => p_max (dfst (commit k.`2))) <= alpha.
+
 
 axiom most_keys_high_entropy :
   mu keygen (fun k : PK * SK => !check_entropy k.`2) <= gamma.
@@ -281,7 +287,6 @@ local clone ReprogHybrid as R1 with
   op dC <- dC,
   op qs <- qS,
   op qh <- qH + 1,
-  op eps <- alpha,
   op p <- p_rej,
   op commit <- commit,
   op respond <- (fun sk c st => response sk st c),
@@ -293,7 +298,7 @@ realize dC_uni by apply dC_uni.
 realize p_bounded by apply p_rej_bounded.
 realize qs_ge0 by apply qS_ge0.
 realize qh_ge0 by smt(qH_ge0).
-realize eps_ge0 by smt(alpha_gt0).
+(* realize eps_ge0 by smt(alpha_gt0). *)
 
 (* Reduction to the [RedOnce] game *)
 local module RedOnce (O : R1.Oracle) = { 
@@ -343,12 +348,28 @@ proof*.
 local module GSign = { proc work = R1.Game(RedOnce,R1.OReal).main }.
 local module GTrans = { proc work = R1.Game(RedOnce,R1.OSet1_inf).main }.
 
-print reprog_bound. 
+local op rb_ eps  = 
+  2%r * qS%r * (qH + 1)%r * eps  / (1%r - p_rej) +
+  qS%r * eps * (qS%r + 1%r) / (2%r * (1%r - p_rej) ^ 2).
+
+local lemma rb_mono (x y : real) : x <= y => rb_ x <= rb_ y.
+proof.
+move => ler_x_y; rewrite /rb_ ler_add; 1: smt(qS_ge0 qH_ge0 p_rej_bounded).
+(* SMT is stupid and doesn't find this cut ... *)
+apply ler_wpmul2r; smt(qS_ge0 qH_ge0 p_rej_bounded invr_ge0 expr_gt0).
+qed.
+
+local lemma rb_ge0 eps : 0%r <= eps => 0%r <= rb_ eps.
+proof. smt(qS_ge0 qH_ge0 p_rej_bounded invr_ge0 expr_gt0). qed.
 
 local lemma hop4 &m : 
      Pr [Game0(A,Oracle1).main() @ &m : res ] 
   <= Pr [Game0(A,Oracle3).main() @ &m : res ] + reprog_bound + gamma.
 proof.
+(* if [gamma >= 1] there is nothing to show, allows us to condition on good keys later *)
+case (gamma < 1%r) => [gamm_lt1|]; last first. 
+  have -> : reprog_bound = rb_ alpha by done.
+  smt(mu_bounded rb_ge0 alpha_gt0).
 (* We start by expressing both sides as Rand games from Means *)
 have -> : Pr[Game0(A, Oracle1).main() @ &m : res] = Pr[Rand(GSign).main() @ &m : res.`2].
 - byequiv => //. proc. inline{1} 2; inline{2} 2. 
@@ -402,9 +423,9 @@ call (: CountH.qh = R1.Count.countH /\ CountS.qs = R1.Count.countS).
 by inline*; auto => />. 
 (* Finally, we average over good (i.e., high entropy) and bad keys *)
 have ? := keygen_finite.
+have ? : is_finite (support (dcond keygen check)) by exact finite_dcond.
 pose supK := to_seq (support keygen).
-pose good (k : PK * SK) := check_entropy k.`2.
-have mu_goodC : mu keygen (predC good) <= gamma.
+have mu_checkC : mu keygen (predC check) <= gamma.
 - by apply: ler_trans most_keys_high_entropy; apply mu_le => />.
 pose Fl (k : PK * SK) := mu1 keygen k * Pr [ GSign.work(k) @ &m : res].
 pose Fr (k : PK * SK) := mu1 keygen k * Pr [ GTrans.work(k) @ &m : res].
@@ -412,25 +433,36 @@ have -> :Pr[Rand(GSign).main() @ &m : res.`2] = big predT Fl supK.
   exact (Mean GSign &m (fun _ _ r => r) keygen_finite).
 have -> : Pr[Rand(GTrans).main() @ &m : res.`2] = big predT Fr supK.
   exact (Mean GTrans &m (fun _ _ r => r) keygen_finite).
-rewrite !(bigEM good). 
-have -> : big good Fr supK + big (predC good) Fr supK + reprog_bound + gamma = 
-          (big good Fr supK + reprog_bound) + (big (predC good) Fr supK + gamma) by ring.
+pose ex := E (dcond keygen check) (fun k : PK * SK => p_max (dfst (commit k.`2))).
+rewrite !(bigEM check). 
+have -> : big check Fr supK + big (predC check) Fr supK + reprog_bound + gamma = 
+          (big check Fr supK + reprog_bound) + (big (predC check) Fr supK + gamma) by ring.
 apply ler_add; last first.
 - apply (ler_trans gamma); last by apply/ler_paddl => //; apply/sumr_ge0; smt(mu_bounded).
-  apply (ler_trans (big (predC good) (mu1 keygen) supK)); last by rewrite -fin_muE // &(mu_goodC).
+  apply (ler_trans (big (predC check) (mu1 keygen) supK)); last by rewrite -fin_muE // &(mu_checkC).
   apply ler_sum => -[pk sk] @/Fl _; apply/ler_pimulr; smt(mu_bounded). 
-rewrite -[reprog_bound]mulr1 -keygen_ll fin_muE // -/supK.  
-apply (ler_trans (big good Fr supK + reprog_bound * big good (mu1 keygen) supK)); last first.
-- rewrite ler_add2l ler_wpmul2l 1:/reprog_bound.
-  rewrite addr_ge0 ?divr_ge0; smt(alpha_gt0 qH_ge0 qS_ge0 p_rej_bounded expr_ge0).
-  exact sub_ler_big. 
-rewrite mulr_sumr sumrD /=; apply ler_sum_seq => -[pk sk] @/good pk_sk /= chk_sk.
-rewrite /Fl /Fr [reprog_bound * _]mulrC -mulrDr ler_wpmul2l // addrA.
-apply (R1_bound pk sk _ _ &m) => @/has_entropy @/bound_reject [x|].
-- rewrite /supK mem_to_seq // in pk_sk.
-- have X := check_entropy_correct sk _; 1:smt(). 
-  by apply: ler_trans X; apply pmax_upper_bound.
-- exact (rej_bound' sk chk_sk).
+have -> : reprog_bound = rb_ alpha by done.
+pose Fl' (k : PK * SK) := mu1 keygen k * Pr[GTrans.work(k) @ &m : res] + 
+                          mu1 keygen k * rb_ (R1.eps k.`2).
+apply (ler_trans (big check Fl' supK)).
+- apply ler_sum => -[pk sk] @/check @/Fl @/Fl' /= chk_sk. 
+  rewrite -mulrDr ler_wpmul2l // addrA; apply (R1_bound pk sk _ &m).
+  exact (rej_bound' sk chk_sk).
+rewrite big_split ler_add2l => {Fl} {Fr} {Fl'}.
+pose f (k : PK * SK) := R1.eps k.`2.
+apply (ler_trans (E (dcond keygen check) (rb_ \o f))).
+- rewrite E_fin ?finite_dcond // -big_filter. 
+  have P : perm_eq (filter check supK) (to_seq (support (dcond keygen check))).
+  + apply uniq_perm_eq; rewrite ?filter_uniq // ?uniq_to_seq // => x.
+    by rewrite mem_filter !mem_to_seq // dcond_supp.     
+  rewrite -(@eq_big_perm _ _ _ _ P); apply ler_sum_seq => k /=.
+  rewrite mem_filter /f /(\o) => -[chk_k sup_k] _.
+  rewrite ler_wpmul2r; 1: exact/rb_ge0/ge0_pmax.
+  exact/ler_mu_dcond.
+apply (ler_trans (rb_ ex)); last exact/rb_mono/check_entropy_correct.
+apply Jensen_fin_concave; [exact finite_dcond | | smt()].
+apply dcond_ll.
+smt(most_keys_high_entropy mu_not mu_bounded gamma_gt0 keygen_ll).
 qed.
 
 (* ----------------------------------------------------------------------*)

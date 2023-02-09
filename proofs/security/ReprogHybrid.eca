@@ -19,13 +19,13 @@ op [lossless uniform] dC : C distr.
 op respond : SK -> ST -> C -> Z option.
 
 op p :   { real | 0%r <= p < 1%r } as p_bounded. (* max proba of rejection *)
-op eps : { real | 0%r <= eps }     as eps_ge0.   (* max proba of = w *)
+(* op eps : { real | 0%r <= eps }     as eps_ge0.   (* max proba of = w *) *)
 
-op has_entropy (sk:SK) = 
-  forall x, mu1 (dfst (commit sk)) x <= eps.
+(* op has_entropy (sk:SK) =  *)
+(*   forall x, mu1 (dfst (commit sk)) x <= eps. *)
 
-op bound_reject (sk : SK) = 
-  mu1 (dlet (commit sk) (fun (w_st : W * ST) =>              
+op bound_reject (sk : SK) =
+  mu1 (dlet (commit sk) (fun (w_st : W * ST) =>
     dmap dC (fun (c : C) => respond sk w_st.`2 c))) None <= p.
   
  (* max. number of signing queries *)
@@ -476,7 +476,17 @@ declare axiom A_bound : forall (O <: Oracle_i{-Adv, -Count}),
 
 declare op pk : PK.
 declare op sk : SK.
-declare axiom sk_entropy : has_entropy sk.
+(* declare axiom sk_entropy : has_entropy sk. *)
+op eps = p_max (dfst (commit sk)).
+(* op p = mu1 (dlet (commit sk) (fun (w_st : W * ST) =>               *)
+(*        dmap dC (fun (c : C) => respond sk w_st.`2 c))) None. *)
+
+(* lemma bound_reject :  *)
+(*   mu1 (dlet (commit sk) (fun (w_st : W * ST) =>               *)
+(*     dmap dC (fun (c : C) => respond sk w_st.`2 c))) None <= p by done. *)
+
+lemma eps_ge0 : 0%r <= eps by apply ge0_pmax.
+
 declare axiom sk_reject  : bound_reject sk.
 
 (* Since A is query bounded, we can insert CountBound wrappers *)
@@ -1333,7 +1343,7 @@ proof.
        (p^j)%xr * ((card (fdom RO.m))%xr + (i_ - countS)%xr / (1.0 - p)%xr + (qh - countH)%xr + j%xr ) * eps%xr 
     else OijB1.badRO%xr).
   + move=> &hr; apply xle_cxr_r => /> h.
-    by case: (countS{hr} <= i) => [ /h -> /= /# | //]. 
+    case: (countS{hr} <= i) => [ /h ->|//]; rewrite /= !mulr_ge0 /#.
   (* h *)
   + proc; seq 1: #pre; 1: by auto.
     if => /=; 2: by auto => &hr; apply xle_cxr.
@@ -1425,7 +1435,7 @@ proof.
           by rewrite mem_map_fst; exists m{hr}; rewrite -memE mem_fdom.
         rewrite /= !to_pos_pos;[1:smt(fcard_ge0) | 2: apply eps_ge0].
         rewrite cardE -(size_map fst (elems (fdom RO.m{hr}))).
-        by apply/mu_mem_le_mu1/sk_entropy.
+        apply/mu_mem_le_mu1/pmax_upper_bound.
       (* j' > j_ *)
       conseq (: OijB1.badRO%xr ==> OijB1.badRO%xr).
       + move=> &hr; apply xle_cxr_r => |> *.
@@ -1738,7 +1748,8 @@ declare axiom A_ll : forall (O <: Oracle{-Adv}),
 
 declare op pk : PK.
 declare op sk : SK.
-declare axiom sk_entropy : has_entropy sk.
+op eps = p_max (dfst (commit sk)).
+lemma eps_ge0 : 0%r <= eps by apply ge0_pmax.
 declare axiom sk_reject  : bound_reject sk.
 
 (* This sections argument is parametric in kappa *)
@@ -2363,7 +2374,7 @@ proof.
   (* [w_ <@ dfst (commit sk) : w_ \in logh ] *)
   inline *; rcondt ^if; 1: by auto.
   wp; rnd (fun x => fst x \in Oi.logh); auto => |> &hr ? hsize hval; split; 2: smt(get_setE).
-  have := mu_mem_le_mu1 (dfst (commit sk)) Oi.logh{hr} eps sk_entropy.
+  have := mu_mem_le_mu1 (dfst (commit sk)) Oi.logh{hr} eps _; 1: exact: pmax_upper_bound.
   rewrite /dfst dmapE /(\o); smt (eps_ge0 size_ge0).
 qed.
 
@@ -2599,7 +2610,8 @@ declare axiom A_bound : forall (O <: Oracle_i{-Adv, -Count}),
 
 declare op pk : PK.
 declare op sk : SK.
-declare axiom sk_entropy : has_entropy sk.
+op eps = p_max (dfst (commit sk)).
+lemma eps_ge0 : 0%r <= eps by apply ge0_pmax.
 declare axiom sk_reject  : bound_reject sk.
 
 section Kappa.
@@ -2611,8 +2623,8 @@ local clone import ReprogOnce as R1.
 lemma GReal_GSet_inf &m : 
   Pr[Game(Adv, Count(OReal)).main(pk,sk) @ &m : res] <=
     (2%r * qs%r) * p^kappa_ + (Pr[Game(Adv, Count(OSet1_inf)).main(pk,sk) @ &m : res] +
-    qs%r * (qh%r * eps) / (1%r - p) + 
-    qs%r * eps * ((qs%r + 1.0)/ (2.0 * (1.0 - p)^2) + qh%r / (1.0 - p))).
+    qs%r * (qh%r * Self.eps) / (1%r - p) + 
+    qs%r * Self.eps * ((qs%r + 1.0)/ (2.0 * (1.0 - p)^2) + qh%r / (1.0 - p))).
 proof.
   pose hop1 := (qs%r * p ^ kappa_ + 
                 qs%r * eps * ((qs%r + 1%r) / (2%r * (1%r - p) ^ 2) + qh%r / (1%r - p))).
@@ -2620,13 +2632,13 @@ proof.
   pose hop3 := qs%r * p^kappa_.
   pose GA := Pr[Game(Adv, Count(OSet1_inf)).main(pk,sk) @ &m : res].
   apply (ler_trans (GA + hop3 + hop2 + hop1)); last smt().
-  have X := (GReal_GSet Adv A_bound pk sk sk_entropy sk_reject kappa_ kappa_gt0 &m).
+  have X := (GReal_GSet Adv A_bound pk sk sk_reject kappa_ kappa_gt0 &m).
   apply (ler_trans _ _ _ X) => {X}; rewrite ler_add2r.
-  have X := GSet_GSet1 Adv A_bound A_ll pk sk sk_entropy sk_reject kappa_ kappa_gt0 &m.
+  have X := GSet_GSet1 Adv A_bound A_ll pk sk sk_reject kappa_ kappa_gt0 &m.
   apply (ler_trans _ _ _ X) => {X}; rewrite ler_add2r.
-  have X := (GSet_GSet_inf Adv A_bound A_ll pk sk sk_entropy sk_reject kappa_ kappa_gt0 &m).
+  have X := (GSet_GSet_inf Adv A_bound A_ll pk sk sk_reject kappa_ kappa_gt0 &m).
   apply (ler_trans _ _ _ X) => {X}; rewrite ler_add2r.
-  by rewrite /GA (Pr_Count_CountBound Adv A_bound pk sk sk_entropy sk_reject OSet1_inf &m).
+  by rewrite /GA (Pr_Count_CountBound Adv A_bound pk sk sk_reject OSet1_inf &m).
 qed.
 end section Kappa.
 
