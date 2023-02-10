@@ -432,3 +432,20 @@ qed.
 lemma finite_dcond (d : 'a distr) (p : 'a -> bool) : 
   is_finite (support d) => is_finite (support (dcond d p)).
 proof. by apply finite_leq => x /dcond_supp. qed.
+
+lemma dmap_dcond (d : 'a distr) (f : 'a -> 'b) (p : 'b -> bool) : 
+  dmap (dcond d (p \o f)) f = dcond (dmap d f) p.
+proof.
+apply/eq_distr => y. rewrite dmap1E dcond1E dcondE !dmapE.
+case (p y) => [py|npy]; last by rewrite mu0_false // /#.
+by congr; apply mu_eq; smt().
+qed.
+
+lemma eq_dcond (d : 'a distr) (p q : 'a -> bool) : 
+  (forall x, x \in d => p x = q x) => dcond d p = dcond d q.
+proof.
+move => eq_p_q; apply/eq_distr => x; rewrite !dcond1E.
+case (x \in d) => [xd|xnd]; last by rewrite !(mu0_false _ (pred1 x)) /#.
+by rewrite eq_p_q // (mu_eq_support _ _ _ eq_p_q).
+qed.
+

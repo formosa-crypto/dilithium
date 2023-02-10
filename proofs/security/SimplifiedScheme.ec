@@ -1316,8 +1316,9 @@ const eps_comm  : { real | 0%r < eps_comm } as eps_comm_gt0.
 
 op A0 : { matrix | check_mx A0 } as A0P.
 
-axiom check_mx_entropy (mA : matrix) : 
-  check_mx mA => p_max (dmap dy (fun y => highBitsV (mA *^ y))) <= eps_comm.
+axiom check_mx_entropy : 
+  E (dcond dA check_mx) (fun mA => 
+    p_max (dmap dy (fun y => highBitsV (mA *^ y)))) <= eps_comm.
 
 
 (* upper bound on the mass of the keys not passing check *)
@@ -1401,26 +1402,46 @@ qed.
 (* a check for "good" secret keys (i.e, well-formed and high entropy) *)
 op check (sk : SK) : bool = check_mx (sk.`1) /\ sk.`2 \in ds1 /\ sk.`3 \in ds2.
 
-(* all secret keys passing the check have high commitment entropy *)
-lemma check_entropy (sk : SK) : check sk => p_max (dfst (commit sk)) <= eps_comm.
+import StdBigop.Bigreal.BRA.
+import StdOrder.RealOrder.
+
+lemma dmap_keygen : dmap keygen (fun (k : PK * SK) => k.`2.`1) = dA.
 proof.
-case: sk => mA s1 s2 [] |> *.
-by rewrite /commit /= dmap_comp /(\o) /=; exact: check_mx_entropy.
+have ds1_ll : is_lossless ds1 by apply/dvector_ll/dRq__ll.
+have ds2_ll : is_lossless ds2 by apply/dvector_ll/dRq__ll.
+apply eq_distr => mA. rewrite dmap1E. 
+rewrite /keygen -/dA -dmapE dmap_dlet /= dletEunit // => {mA} mA.
+rewrite dmap_dlet; apply dletEconst => //= s1.
+by rewrite dmap_comp /dmap; apply dletEconst.
+qed.
+
+(* The expected entropy, conditioned on the SK passing the check, is high *)
+lemma check_entropy: E (dcond keygen (fun k : (PK * SK) => check k.`2))
+                          (fun (k : PK * SK) =>
+                             p_max (dfst ((commit k.`2)))) <= eps_comm.
+proof.
+apply: StdOrder.RealOrder.ler_trans check_mx_entropy.
+pose g (mA : matrix) := p_max (dmap dy (fun (y : vector) => highBitsV (mA *^ y))).
+pose f (k : PK * SK) := k.`2.`1.
+have -> : (fun (k : PK * SK) => p_max (dfst ((commit k.`2)))) = g \o f. 
+  apply/fun_ext => -[pk [A s1 s2]] @/(\o) @/f @/g @/commit /=.
+  by rewrite dmap_comp.
+rewrite -exp_dmap. 
+- pose d := dmap _ _; rewrite /hasE. 
+  rewrite (eq_summable _ (fun x => mu1 d x * g x)) 1:/#. 
+  apply/summable_mu1_wght; smt(ge0_pmax le1_pmax).
+apply lerr_eq; congr; apply/eq_distr => mA. 
+rewrite (eq_dcond _ _ (check_mx \o f)); 1: smt(keygen_supp_decomp).
+by rewrite dmap_dcond dmap_keygen.
 qed.
 
 (* most honestly sampled secret keys pass the check *)
 lemma check_most : mu keygen (fun k : PK * SK => !check k.`2) <= eps_check.
 proof.
-have ds1_ll : is_lossless ds1 by apply/dvector_ll/dRq__ll.
-have ds2_ll : is_lossless ds2 by apply/dvector_ll/dRq__ll.
 apply: StdOrder.RealOrder.ler_trans check_mx_most.
 rewrite (mu_eq_support _ _ ((predC check_mx) \o (fun k : PK*SK => k.`2.`1))). 
   smt(keygen_supp_decomp).
-rewrite -dmapE (mu_eq_l dA) //.
-apply eq_distr => mA. rewrite dmap1E. 
-rewrite /keygen -/dA -dmapE dmap_dlet /= dletEunit // => {mA} mA.
-rewrite dmap_dlet; apply dletEconst => //= s1.
-by rewrite dmap_comp /dmap; apply dletEconst.
+by rewrite -dmapE (mu_eq_l dA) // dmap_keygen.
 qed.
 
 lemma get_pk (sk : SK) : check sk => exists pk, (pk,sk) \in keygen.
@@ -1524,7 +1545,6 @@ realize most_keys_high_entropy by apply check_most.
 realize p_rej_bounded by smt(p_rej_bounded).
 realize rej_bound by apply rej_bound.
 realize keygen_finite by apply keygen_finite.
-
 
 module (RedCR (A : Self.FSaG.DSS.Adv_EFKOA_RO) : Adv_EFKOA_RO) (H : Hash) = { 
   proc forge (pk : PK) : M*Sig = { 

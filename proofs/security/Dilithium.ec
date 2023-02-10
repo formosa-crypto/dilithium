@@ -152,8 +152,9 @@ axiom check_valid A : check_mx A => A \in dA.
 (* upper bound on the mass of the most likely commitment for a good key *)
 const eps_comm  : { real | 0%r < eps_comm } as eps_comm_gt0.
 
-axiom check_mx_entropy (mA : matrix) : 
-  check_mx mA => p_max (dmap dy (fun y => highBitsV (mA *^ y))) <= eps_comm.
+axiom check_mx_entropy : 
+  E (dcond dA check_mx) (fun mA => 
+    p_max (dmap dy (fun y => highBitsV (mA *^ y)))) <= eps_comm.
 
 op A0 : { matrix | check_mx A0 } as A0P.
 
