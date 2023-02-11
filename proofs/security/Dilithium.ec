@@ -1,10 +1,10 @@
 require import AllCore Distr List IntDiv StdOrder.
 require import DistrExtras.
 import RealOrder Finite.
+require import DParams.
 
 require DRing DVect MLWE SelfTargetMSIS.
 require SimplifiedScheme.
-
 
 (** Abstract Version using DRing *)
 
@@ -13,31 +13,11 @@ abstract theory AbstractDilithium.
 (* abstract data structure for Rq                       *)
 (* this defines an abstract type Rq and a constant q    *)
 (* also includes highBits, norms, etc.                  *)
-clone import DRing as DR.
-
-(* Parameters: *)
-(* Note: eta and beta are keywords in EC, so we use a trailing _ *)
-
-op eta_ : {int | 0 < eta_} as gt0_eta.   (* secrect key range *)
-op k    : {int | 0 < k} as gt0_k.        (* matrix rows *)
-op l    : {int | 0 < l} as gt0_l.        (* matrix cols *)
-
-op gamma1 : int.                         (* commitment range *)
-op gamma2 : int.                         (* high- and lowbits rounding range *)
-
-op beta_ : {int | 0 < beta_} as gt0_beta.      (* ??? *)
-op tau : { int | 1 <= tau <= n } as tau_bound. (* challenge weight *)
-
-op d : { int | 0 < d } as gt0_d.        (* bits dropped from public key *)
-
-axiom eta_tau_leq_b : eta_ * tau <= beta_.
-axiom ub_d : tau * 2 ^ d <= 2 * gamma2.
-
-axiom gamma2_bound  : 2 <= gamma2 <= q %/ 4.
-axiom gamma2_div : 2 * gamma2 %| (q - 1).
-
-axiom beta_gamma1_lt : beta_ < gamma1.
-axiom beta_gamma2_lt : beta_ < gamma2.
+clone import DRing as DR with
+  op n <= n,
+  op q <= q
+proof prime_q by exact prime_q
+proof gt0_n by exact gt0_n.
 
 (* Generate a theory of matrices/vectors over Rq           *)
 clone import DVect as DV with 
@@ -65,13 +45,14 @@ module type Hash  = {
   proc get(x : high list * M) : challenge_t
 }.
 
+(* Ethan: There's `Logic.eta_` that conflicts with `DParams.eta_`. *)
 module Dilithium (H: Hash) = {
   proc keygen() : PK * SK = {
     var pk, sk;
     var mA, s1, s2,t, t1,t0;
     mA <$ dmatrix dRq k l;
-    s1 <$ dvector (dRq_ eta_) l;
-    s2 <$ dvector (dRq_ eta_) k;
+    s1 <$ dvector (dRq_ DParams.eta_) l;
+    s2 <$ dvector (dRq_ DParams.eta_) k;
     t  <- mA *^ s1 + s2;
     t1 <- base2highbitsV t;
     t0 <- base2lowbitsV t;
@@ -196,7 +177,7 @@ clone SimplifiedScheme as SD with
   theory DV <- DV,
   type M <- M,
 
-  op e <- eta_,
+  op e <- DParams.eta_,
   op b <- beta_,
   op gamma1 <- gamma1,
   op gamma2 <- gamma2,
@@ -352,9 +333,6 @@ end AbstractDilithium.
 abstract theory ConcreteDilithium.
 
 require ConcreteDRing.
-
-const q : { int | prime q } as prime_q.
-const n : { int | 0 < n } as gt0_n.
 
 (* clone import ConcreteDRing as CR proof*. *)
 
