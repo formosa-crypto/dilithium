@@ -1,6 +1,5 @@
 require import AllCore List IntDiv.
 require import PolyReduce.
-require NonSquareMatrix.
 require ZModFieldExtras.
 import StdOrder IntOrder.
 require import Nat.
