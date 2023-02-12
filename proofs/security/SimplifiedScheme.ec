@@ -17,6 +17,10 @@ require FSa_CRtoGen.
 
 require DRing DVect MLWE SelfTargetMSIS. 
 
+require DParams.
+
+clone import DParams as Params.
+
 (* Parameters of the security games *)
 const qS : int. (* allowed number of sig queries *)
 const qH : int. (* allowed number of ro  queries *)
@@ -25,39 +29,14 @@ axiom qH_ge0 : 0 <= qH.
 
 (* Dilithium-specific parameters *)
 
-(* secret key range.
- * Typically "eta" but that's a reserved keyword in EC. *)
-op e : {int | 0 < e} as gt0_eta.
-
-(* upper bound on number of itertions. *)
-(* op kappa : { int | 0 < kappa } as gt0_kappa. *)
-
-(* matrix dimensions *)
-op k : {int | 0 < k} as gt0_k.
-op l : {int | 0 < l} as gt0_l.
-
 (* Abstract theory representing Rq = Zq[X]/(X^n + 1) and the high/lowBits operations *)
 (* The constants [n] and [q] are defined by this theory *)
-clone import DRing as DR. 
+clone import DRing as DR with
+  op q <= q,
+  op n <= n
+proof prime_q by exact prime_q
+proof gt0_n by exact gt0_n.
 import RqRing.
-
-(* Parameters for "Rounding" (e.g., highBits, lowBits, and shift)  *)
-op gamma1 : int.
-op gamma2 : { int | 2 <= gamma2 <= q %/ 4 } as gamma2_bound.
-axiom gamma2_div : 2 * gamma2 %| (q - 1).
-
-(* beta in spec.
- * beta is again a reserved keyword in EC.
- *
- * Maybe bound should be gt0_beta anyways?
- *)
-op b : {int | 0 < b} as gt0_b.
-
-(* more beta bounds and properties... *)
-axiom b_gamma1_lt : b < gamma1.
-axiom b_gamma2_lt : b < gamma2.
-
-op d : { int | 0 < d } as gt0_d.
 
 clone import DVect as DV with 
   theory DR <- DR,
@@ -72,16 +51,7 @@ realize HL.alpha_almost_divides_q by apply gamma2_div.
 import DV.MatRq. (* Matrices and Vectors over Rq *)
 import DV.HL.    (* highBitsV and lowBitsV with HL.alpha = 2 * gamma2 and HL.d = d *)
 
-(* challenge weight *)
-op tau : { int | 1 <= tau <= n } as tau_bound.
-
-axiom eta_tau_leq_b : e * tau <= b.
-
 lemma cnorm_dC c tau : c \in dC tau => cnorm c <= 1 by smt(supp_dC).
-
-(* RHS supposedly 2 * gamma2 + 1 instead?
- * but this is equivalent due to LHS being even. *)
-axiom ub_d : tau * 2 ^ d <= 2 * gamma2.
 
 type M.
 
@@ -153,8 +123,8 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
     var pk, sk;
     var mA, s1, s2,t;
     mA <$ dmatrix dRq k l;
-    s1 <$ dvector (dRq_ e) l;
-    s2 <$ dvector (dRq_ e) k;
+    s1 <$ dvector (dRq_ Params.eta_) l;
+    s2 <$ dvector (dRq_ Params.eta_) k;
     t  <- mA *^ s1 + s2;
     pk <- (mA, t);
     sk <- (mA, s1, s2);
@@ -183,8 +153,8 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
       w1 <- highBitsV w;
       c <@ H.get((w1, m));
       z <- y + c ** s1;
-      if(inf_normv z < gamma1 - b /\
-         inf_normv (lowBitsV (mA *^ y - c ** s2)) < gamma2 - b) {
+      if(inf_normv z < gamma1 - beta_ /\
+         inf_normv (lowBitsV (mA *^ y - c ** s2)) < gamma2 - beta_) {
         h <- makeHintV (- c ** t0) (w - c ** s2 + c ** t0);
         response <- Some(z,h);
       }
@@ -206,7 +176,7 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
     (z, h) <- response;
     w1 <- useHintV h (mA *^ z - c ** base2shiftV t1);
     c' <@ H.get((w1, m));
-    result <- size z = l /\ size h = k /\ inf_normv z < gamma1 - b /\ c = c';
+    result <- size z = l /\ size h = k /\ inf_normv z < gamma1 - beta_ /\ c = c';
 
     return result;
   }
@@ -217,7 +187,7 @@ module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
 clone import MLWE as RqMLWE with 
   theory M <- MatRq,
   op dR <- dRq,
-  op dS <- dRq_ e,
+  op dS <- dRq_ Params.eta_,
   op k <- k,
   op l <- l
 proof* by smt(gt0_k gt0_l).
@@ -230,8 +200,8 @@ clone import SelfTargetMSIS as RqStMSIS with
   op dR <- dRq,
   op dC <- dC tau,
   op inf_norm <- inf_normv,
-  op gamma <- max (gamma1 - b) (tau * 2^(d-1) + (2*gamma2+1))
-proof* by smt(Self.gt0_k Self.gt0_l). 
+  op gamma <- max (gamma1 - beta_) (tau * 2^(d-1) + (2*gamma2+1))
+proof* by smt(gt0_k Params.gt0_l).
 
 module H = DSS.PRO.RO.
 module G = RqStMSIS.PRO.RO.
@@ -359,21 +329,21 @@ seq 6 7 : (={sig,PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in
     rnd (fun mAt : matrix * vector => (mAt.`1 || -colmx mAt.`2))  
         (fun mAt : matrix => (subm mAt 0 k 0 l,- col mAt l)) : *0 *0.
     skip => /= &1 &2 _. split => [A|?]; last split => [A|?].
-    * rewrite dmap_id => /size_dmatrix /(_ _ _) /=; 1,2: smt(Self.gt0_k Self.gt0_l).
-      rewrite colmxN oppvK => -[<-] ?. rewrite subm_colmx; smt(Self.gt0_k Self.gt0_l).
+    * rewrite dmap_id => /size_dmatrix /(_ _ _) /=; 1,2: smt(gt0_k Params.gt0_l).
+      rewrite colmxN oppvK => -[<-] ?. rewrite subm_colmx; smt(gt0_k Params.gt0_l).
     * rewrite -(dmap_dprodE _ _ (fun x => x)) !dmap_id.
       rewrite dprod1E (@dvector_rnd_funi _ _ (col A l)) ?dRq_funi // -dprod1E.
-      move/size_dmatrix => /(_ _ _); 1,2: smt(Self.gt0_k Self.gt0_l).
-      apply dmatrixRSr1E; 1,2: smt(Self.gt0_k Self.gt0_l).
+      move/size_dmatrix => /(_ _ _); 1,2: smt(gt0_k Params.gt0_l).
+      apply dmatrixRSr1E; 1,2: smt(gt0_k Params.gt0_l).
     case => A t /=; rewrite -(dmap_dprodE _ _ (fun x => x)) !dmap_id supp_dprod /=.
     case => supp_A supp_t. 
-    move: (supp_A) => /size_dmatrix /(_ _ _) /=; 1,2: smt(Self.gt0_k Self.gt0_l).
-    move: (supp_t) => /size_dvector. rewrite lez_maxr; 1:smt(Self.gt0_k). move => s_t [r_A c_A].
+    move: (supp_A) => /size_dmatrix /(_ _ _) /=; 1,2: smt(gt0_k Params.gt0_l).
+    move: (supp_t) => /size_dvector. rewrite lez_maxr; 1:smt(gt0_k). move => s_t [r_A c_A].
     (* case => /supp_dmatrix_Rqkl /= [[r_A c_A] Rq_A] /supp_dvector_Rqk [s_t Rq_t]. *)
     rewrite r_A c_A s_t /= -{2}r_A -{2}c_A subm_catmrCl /=.
     rewrite col_catmrR /= ?r_A ?c_A ?s_t // subrr. 
-    rewrite colN oppmK colK /=; apply supp_dmatrix_catmr => //;1,2: smt(Self.gt0_k Self.gt0_l).
-    rewrite supp_dmatrix_full ?dRq_fu //; smt(Self.gt0_k Self.gt0_l). 
+    rewrite colN oppmK colK /=; apply supp_dmatrix_catmr => //;1,2: smt(gt0_k Params.gt0_l).
+    rewrite supp_dmatrix_full ?dRq_fu //; smt(gt0_k Params.gt0_l). 
   call (: ={PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in dC tau){1}).
     proc; inline*; auto => />; smt(get_setE get_set_sameE).
   auto => /> &1 &2 RO_dC r_mA c_mA s_t. split => [|E1 E2]. 
@@ -381,7 +351,7 @@ seq 6 7 : (={sig,PRO.RO.m} /\ (forall x, x \in PRO.RO.m => oget PRO.RO.m.[x] \in
     rewrite col_catmrR //= 1:/#. 
     by rewrite colN oppmK colK. 
   move => _ _.     
-  by rewrite -E1 -E2 /= rows_catmr //=; smt(Self.gt0_k Self.gt0_l).
+  by rewrite -E1 -E2 /= rows_catmr //=; smt(gt0_k Params.gt0_l).
 (* If A forges successfully the reduction succeeds in the SelfTargetMSIS game *)
 inline S1(H').verify  H'.get. wp. sp.
 (* need [size z{1} = l /\ size h{1} = l] to prove equality of the RO argument *)
@@ -452,8 +422,8 @@ end section PROOF.
 (* -- Operator-based -- *)
 
 op dA = dmatrix dRq k l.
-op ds1 = dvector (dRq_ e) l.
-op ds2 = dvector (dRq_ e) k.
+op ds1 = dvector (dRq_ Params.eta_) l.
+op ds2 = dvector (dRq_ Params.eta_) k.
 
 op keygen : (PK * SK) distr =
   dlet (dmatrix dRq k l) (fun mA =>
@@ -476,8 +446,8 @@ op respond (sk : SK) (c : challenge_t) (y: pstate_t) : response_t option =
   let t0 = base2lowbitsV (mA *^ s1 + s2) in
   let w = mA *^ y in
   let z = y + c ** s1 in
-  if inf_normv z < gamma1 - b /\
-     inf_normv (lowBitsV (mA *^ y - c ** s2) ) < gamma2 - b then
+  if inf_normv z < gamma1 - beta_ /\
+     inf_normv (lowBitsV (mA *^ y - c ** s2) ) < gamma2 - beta_ then
     let h = makeHintV (- c ** t0) (w - c ** s2 + c ** t0) in
     Some (z, h)
     else None.
@@ -488,7 +458,7 @@ op verify (pk : PK) (w1 : commit_t) (c : challenge_t) (resp : response_t) : bool
   let (z, h) = resp in
   size z = l /\ 
   size h = k /\
-  inf_normv z < gamma1 - b /\
+  inf_normv z < gamma1 - beta_ /\
   w1 = useHintV h (mA *^ z - c ** base2shiftV t1).
 
 lemma keygen_ll : is_lossless keygen. 
@@ -519,7 +489,7 @@ case/supp_dlet => s2 /= [s_s2].
 rewrite /(\o) supp_dunit => -[-> _]. 
 rewrite [Vectors.size]lock /= -lock.
 rewrite size_addv size_mulmxv;
-smt(size_dmatrix size_dvector Self.gt0_k Self.gt0_l).
+smt(size_dmatrix size_dvector gt0_k Params.gt0_l).
 qed.
 
 module OpBasedSig = FSaCR.IDS_Sig(OpBased.P, OpBased.V).
@@ -594,7 +564,7 @@ move => [pk /supp_dlet valid_keys].
 case valid_keys => [mA' [mA_supp /supp_dlet valid_keys]].
 case valid_keys => [s1' [s1_supp /supp_dmap valid_keys]].
 case valid_keys => [s2' [s2_supp [#]]] *; subst.
-smt(size_dmatrix size_dvector Self.gt0_l Self.gt0_k).
+smt(size_dmatrix size_dvector gt0_k Params.gt0_l).
 qed.
 
 lemma keygen_supp_decomp pk mA s1 s2 :
@@ -665,23 +635,23 @@ rewrite -addvA [(_ - _)%Vectors]addvC addvA -W.
 have {1}-> : w = w - c**s2 + c**s2. 
   rewrite -addvA [_+ c**s2]addvC addvN size_scalarv. 
   rewrite addvC lin_add0v //; smt(size_mulmxv size_dvector).
-have [C1 C2] {H} : inf_normv z < gamma1 - b /\ 
-                   inf_normv (lowBitsV (mA *^ y - c ** s2)) < gamma2 - b by smt(). 
-apply (hide_lowV _ _ b); 
+have [C1 C2] {H} : inf_normv z < gamma1 - beta_ /\ 
+                   inf_normv (lowBitsV (mA *^ y - c ** s2)) < gamma2 - beta_ by smt(). 
+apply (hide_lowV _ _ beta_); 
   1,2,3,5: smt(size_oppv size_scalarv size_mulmxv size_dvector size_addv
-               gt0_b b_gamma2_lt).
+               gt0_beta beta_gamma2_lt).
 apply: StdOrder.IntOrder.ler_trans eta_tau_leq_b; rewrite mulrC.
 apply l1_inf_norm_product_ub; 1..3: smt(tau_bound gt0_eta supp_dC).
 (* Lemma *)
 apply inf_normv_ler =>[|i rg_i]; first by smt(gt0_eta).
-rewrite supp_dvector in rg_s2; first by smt(Self.gt0_k).
+rewrite supp_dvector in rg_s2; first by smt(gt0_k).
 by rewrite -supp_dRq; smt(gt0_eta). 
 qed.
 
 (* -- OpBased is indeed zero-knowledge -- *)
 
 (* Ditstribution of "good" (i.e., small inf norm) vectors *)
-op dsimz = dvector (dRq_open (gamma1 - b)) l.
+op dsimz = dvector (dRq_open (gamma1 - beta_)) l.
 
 (* fraction of "good" z compared to the domain of y *)
 op line12_magic_number = (size (to_seq (support dsimz)))%r / (size (to_seq (support dy)))%r.
@@ -702,7 +672,7 @@ module HVZK_Sim_Inst : DID.HVZK_Sim = {
       c <$ FSa.dC;
       z <$ dsimz;
       w' <- mA *^ z - c ** t;
-      resp <- if inf_normv (lowBitsV w') < gamma2 - b then
+      resp <- if inf_normv (lowBitsV w') < gamma2 - beta_ then
         let h = makeHintV (- c ** t0) (w' + c ** t0) in Some (z, h)
       else None;
     } else {
@@ -724,40 +694,40 @@ local lemma dsimz1E z : z \in dsimz =>
   mu1 dsimz z = inv (size (to_seq (support dsimz)))%r.
 proof. by rewrite mu1_uni_ll ?dsimz_uni ?dsimz_ll /#. qed.
 
-lemma supp_ds1 s1 : s1 \in ds1 <=> size s1 = l /\ inf_normv s1 <= e.
-proof. rewrite supp_dRq_vect; smt(Self.gt0_l Self.gt0_k gt0_eta). qed.
+lemma supp_ds1 s1 : s1 \in ds1 <=> size s1 = l /\ inf_normv s1 <= Params.eta_.
+proof. rewrite supp_dRq_vect; smt(Params.gt0_l gt0_k gt0_eta). qed.
 
-lemma supp_ds2 s2 : s2 \in ds2 <=> size s2 = k /\ inf_normv s2 <= e.
-proof. rewrite supp_dRq_vect; smt(Self.gt0_l Self.gt0_k gt0_eta). qed.
+lemma supp_ds2 s2 : s2 \in ds2 <=> size s2 = k /\ inf_normv s2 <= Params.eta_.
+proof. rewrite supp_dRq_vect; smt(Params.gt0_l gt0_k gt0_eta). qed.
 
-lemma supp_dsimz z : z \in dsimz <=> size z = l /\ inf_normv z < gamma1 - b.
-proof. rewrite supp_dRq_vect; smt(Self.gt0_l b_gamma1_lt). qed.
+lemma supp_dsimz z : z \in dsimz <=> size z = l /\ inf_normv z < gamma1 - beta_.
+proof. rewrite supp_dRq_vect; smt(Params.gt0_l beta_gamma1_lt). qed.
 
 local lemma masking_range c s1 z:
   c \in FSa.dC => s1 \in ds1 => z \in dsimz =>
   (z - c ** s1) \in dy.
 proof.
 rewrite supp_dC supp_ds1 supp_dsimz supp_dRq_vect; 
-  1,2: smt(Self.gt0_l b_gamma1_lt gt0_b).
+  1,2: smt(Params.gt0_l beta_gamma1_lt gt0_beta).
 move => |> cnorm_c l1_c size_s1 norm_s1 size_z norm_z. 
 rewrite size_addv size_oppv size_scalarv size_z size_s1 maxrr /=.
 apply (StdOrder.IntOrder.ler_trans _ _ _ (ler_inf_normv _ _)).
 rewrite inf_normvN. 
-suff: inf_normv (c ** s1) <= tau * e by smt(eta_tau_leq_b).
+suff: inf_normv (c ** s1) <= tau * Params.eta_ by smt(eta_tau_leq_b).
 by apply l1_inf_norm_product_ub; smt(tau_bound gt0_eta).
 qed.
 
 local lemma is_finite_dy : is_finite (support dy).
-proof. apply finite_dRq_vect; smt(Self.gt0_l b_gamma1_lt gt0_b). qed.
+proof. apply finite_dRq_vect; smt(Params.gt0_l beta_gamma1_lt gt0_beta). qed.
 
 local lemma is_finite_dsimz : is_finite (support dsimz).
-proof. apply finite_dRq_vect; smt(Self.gt0_l b_gamma1_lt gt0_b). qed.
+proof. apply finite_dRq_vect; smt(Params.gt0_l beta_gamma1_lt gt0_beta). qed.
 
 lemma mask_size :
   size (to_seq (support dsimz)) <= size (to_seq (support dy)).
 proof.
 apply leq_size_to_seq => [v|]; last exact is_finite_dy.
-rewrite !supp_dRq_vect; smt(Self.gt0_l gt0_b b_gamma1_lt).
+rewrite !supp_dRq_vect; smt(Params.gt0_l gt0_beta beta_gamma1_lt).
 qed.
 
 lemma mask_nonzero :
@@ -765,7 +735,7 @@ lemma mask_nonzero :
 proof.
 suff: zerov l \in (to_seq (support dsimz)) by smt(size_eq0 List.size_ge0).
 by rewrite mem_to_seq ?is_finite_dsimz dRq_zerov; 
-  smt(Self.gt0_l gt0_b b_gamma1_lt).
+  smt(Params.gt0_l gt0_beta beta_gamma1_lt).
 qed.
 
 lemma clamp_magic : clamp line12_magic_number = line12_magic_number.
@@ -878,7 +848,7 @@ local module HVZK_Hops = {
     z <- y + c ** s1;
     if(z \in dsimz) {
       w' <- mA *^ y - c ** s2;
-      resp <- if inf_normv (lowBitsV w') < gamma2 - b then
+      resp <- if inf_normv (lowBitsV w') < gamma2 - beta_ then
         let h = makeHintV (- c ** t0) (mA *^ y - c ** s2 + c ** t0) in Some (z, h)
       else None;
     } else {
@@ -900,7 +870,7 @@ local module HVZK_Hops = {
     z <- y + c ** s1;
     if(z \in dsimz) {
       w' <- mA *^ z - c ** t;
-      resp <- if inf_normv (lowBitsV w') < gamma2 - b then
+      resp <- if inf_normv (lowBitsV w') < gamma2 - beta_ then
         let h = makeHintV (- c ** t0) (w' + c ** t0) in Some (z, h)
       else None;
     } else {
@@ -924,7 +894,7 @@ local module HVZK_Hops = {
     if(oz <> None) {
       z <- oget oz;
       w' <- mA *^ z - c ** t;
-      resp <- if inf_normv (lowBitsV w') < gamma2 - b then
+      resp <- if inf_normv (lowBitsV w') < gamma2 - beta_ then
         let h = makeHintV (- c ** t0) (w' + c ** t0) in Some (z, h)
       else None;
     } else {
@@ -946,7 +916,7 @@ local module HVZK_Hops = {
     if(oz <> None) {
       z <- oget oz;
       w' <- mA *^ z - c ** t;
-      resp <- if inf_normv (lowBitsV w') < gamma2 - b then
+      resp <- if inf_normv (lowBitsV w') < gamma2 - beta_ then
         let h = makeHintV (- c ** t0) (w' + c ** t0) in Some (z, h)
       else None;
     } else {
@@ -968,7 +938,7 @@ local module HVZK_Hops = {
     if(oz <> None) {
       z <- oget oz;
       w' <- mA *^ z - c ** t;
-      resp <- if inf_normv (lowBitsV w') < gamma2 - b then
+      resp <- if inf_normv (lowBitsV w') < gamma2 - beta_ then
         let h = makeHintV (- c ** t0) (w' + c ** t0) in Some (z, h)
       else None;
     } else {
@@ -989,7 +959,7 @@ local module HVZK_Hops = {
     if(oz <> None) {
       z <- oget oz;
       w' <- mA *^ z - c ** t;
-      resp <- if inf_normv (lowBitsV w') < gamma2 - b then
+      resp <- if inf_normv (lowBitsV w') < gamma2 - beta_ then
         let h = makeHintV (- c ** t0) (w' + c ** t0) in Some (z, h)
       else None;
     } else {
@@ -1012,7 +982,7 @@ local module HVZK_Hops = {
     if(oz <> None) {
       z <- oget oz;
       w' <- mA *^ z - c ** t;
-      resp <- if inf_normv (lowBitsV w') < gamma2 - b then
+      resp <- if inf_normv (lowBitsV w') < gamma2 - beta_ then
         let h = makeHintV (- c ** t0) (w' + c ** t0) in Some (z, h)
       else None;
     } else {
@@ -1032,7 +1002,7 @@ local module HVZK_Hops = {
       c <$ FSa.dC;
       z <$ dsimz;
       w' <- mA *^ z - c ** t;
-      resp <- if inf_normv (lowBitsV w') < gamma2 - b then
+      resp <- if inf_normv (lowBitsV w') < gamma2 - beta_ then
         let h = makeHintV (- c ** t0) (w' + c ** t0) in Some (z, h)
       else None;
     } else {
@@ -1062,7 +1032,7 @@ seq 1 1: (#pre /\ st{1} = y{2} /\ size y{2} = l).
     rewrite /commit /= (dmap1E dy) /(\o).
     by apply mu_eq => ? /#.
   move => _ [w st] @/commit /= /supp_dmap [y [supp_y [??]]]; subst.
-  smt(size_dvector Self.gt0_l).
+  smt(size_dvector Params.gt0_l).
 (* suff: equality of oz *)
 seq 1 2: (#pre /\ oz{1} = resp{2}); last by auto => /#. 
 conseq />. 
@@ -1329,12 +1299,12 @@ axiom check_mx_most : mu dA (predC check_mx) <= eps_check.
 
 (* bound on the probability that he low-bis check in the Sim fails *)
 
-op dz = dvector (dRq_ (gamma1 - b - 1)) l.
+op dz = dvector (dRq_ (gamma1 - beta_ - 1)) l.
 const eps_low : { real | eps_low < 1%r } as eps_low_lt1.
 
 axiom bound_low c (t : vector) (mA : matrix) :
   c \in dC tau => t \in dvector dRq k => check_mx mA =>
-  mu dz (fun z => gamma2 - b <= inf_normv (lowBitsV (mA *^ z - c ** t)) ) <= eps_low. 
+  mu dz (fun z => gamma2 - beta_ <= inf_normv (lowBitsV (mA *^ z - c ** t)) ) <= eps_low. 
 
 
 (* From the assumptions above, we can derive the assumptions of the
@@ -1345,51 +1315,19 @@ op p_rej = line12_magic_number * eps_low + (1%r - line12_magic_number).
 lemma gt0_magic_number : 0%r < line12_magic_number.
 proof.
 suff: 0 < size (to_seq (support dsimz)) /\ 0 < size (to_seq (support dy)) by smt().
-rewrite !gt0_dRq_vect; smt(Self.gt0_l gt0_b b_gamma1_lt).
+rewrite !gt0_dRq_vect; smt(Params.gt0_l gt0_beta beta_gamma1_lt).
 qed.
-
-(*
-(* Ethan: I'll work on this *)
-lemma size_goodz :
-  size (to_seq (support dsimz)) = (2 * (gamma1 - b) - 1) ^ (n * l).
-proof.
-(* TODO: Probably need helper lemma. *)
-admitted.
-
-(* Ethan: Same as above *)
-lemma size_supp_dy :
-  size (to_seq (support dy)) = (2 * gamma1 - 1) ^ (n * l).
-proof.
-admitted.
-
-lemma ltr_pexpn2r n x y :
-  0 < n => 0 <= x => 0 <= y =>
-  x ^ n < y ^ n <=> x < y.
-proof.
-smt(StdBigop.Bigint.ler_pexpn2r).
-qed.
-
-lemma lt1_magic_number : line12_magic_number < 1%r.
-proof.
-rewrite /line12_magic_number size_goodz size_supp_dy.
-suff: (2 * (gamma1 - b) - 1) ^ (n * l) < (2 * gamma1 - 1) ^ (n * l).
-- suff: 0 < (2 * gamma1 - 1) ^ (n * l) by smt().
-  by apply StdOrder.IntOrder.expr_gt0; smt(b_gamma1_lt gt0_b).
-apply ltr_pexpn2r; smt(Top.DR.gt0_n Top.gt0_l gt0_b b_gamma1_lt).
-qed.
-
-*)
 
 lemma p_rej_bounded : 0%r <= p_rej < 1%r.
 have ? : 0%r < line12_magic_number <= 1%r.
 - rewrite gt0_magic_number /= /line12_magic_number.
   suff: 0 < size (to_seq (support dy)) by smt(mask_size size_ge0).
-  apply gt0_dRq_vect; smt(Self.gt0_l b_gamma1_lt gt0_b).
+  apply gt0_dRq_vect; smt(Params.gt0_l beta_gamma1_lt gt0_beta).
 suff: 0%r <= eps_low < 1%r by smt().
 rewrite eps_low_lt1 /=.
 pose c0 := ll_dflt (dC tau).
 pose t0 := ll_dflt (dvector dRq k).
-suff: mu dz (fun z => gamma2 - b <= inf_normv (lowBitsV (A0 *^ z - c0 ** t0))) <= eps_low.
+suff: mu dz (fun z => gamma2 - beta_ <= inf_normv (lowBitsV (A0 *^ z - c0 ** t0))) <= eps_low.
 - smt(ge0_mu).
 apply bound_low.
 - by rewrite ll_dfltP dC_ll.
@@ -1472,7 +1410,7 @@ seq 4 : (sample_z) line12_magic_number eps_low (1%r - line12_magic_number) 1%r
 - by auto.
 - rnd. auto => _ _. by rewrite dbiasedE /= clamp_magic.
 - rcondt ^if; 1: by auto. 
-  wp; conseq (: _ ==> gamma2 - b <= inf_normv (lowBitsV (mA *^ z - c ** t))); 1: smt().
+  wp; conseq (: _ ==> gamma2 - beta_ <= inf_normv (lowBitsV (mA *^ z - c ** t))); 1: smt().
   rnd. auto => /> &1 _ c c_dC. apply bound_low => //. 
   rewrite supp_dvector ?ltzW ?gt0_k; move/size_t : pk_sk; smt(dRq_fu).
 - rnd; auto => _ _. by rewrite dbiasedE /= clamp_magic.

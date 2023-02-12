@@ -177,15 +177,7 @@ clone SimplifiedScheme as SD with
   theory DV <- DV,
   type M <- M,
 
-  op e <- DParams.eta_,
-  op b <- beta_,
-  op gamma1 <- gamma1,
-  op gamma2 <- gamma2,
-  op k <- k,
-  op l <- l,
-  op tau <- tau,
-  op d <- d,
-  axiom tau_bound <- tau_bound,
+  theory Params <- DParams,
 
   op check_mx <- check_mx,
   op eps_comm <- eps_comm,
