@@ -374,6 +374,9 @@ clone import ConcreteDRing as CDR with
   axiom Round.gt0_n <= Params.gt0_n
 (* proof* *)
 (* TODO: proof* gives more than just the (unavoidable) subtype axioms *)
+
+(* Ethan: Not anymore. The fix I did was stranded on a different branch...
+ * btw, the `to_poly` and `of_poly` stuff are just renamed subtype axioms. *)
 .
 
 clone import AbstractDilithium as ConcreteDilithium with 

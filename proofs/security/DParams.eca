@@ -5,14 +5,16 @@ require import AllCore IntDiv.
 op q : {int | prime q} as prime_q.       (* modulo *)
 op n : {int | 0 < n} as gt0_n.           (* poly degrees *)
 
-op eta_ : {int | 0 < eta_} as gt0_eta.   (* secrect key range *)
+op eta_ : {int | 0 < eta_} as gt0_eta.   (* secret key range *)
 op k    : {int | 0 < k} as gt0_k.        (* matrix rows *)
 op l    : {int | 0 < l} as gt0_l.        (* matrix cols *)
 
 op gamma1 : int.                         (* commitment range *)
 op gamma2 : int.                         (* high- and lowbits rounding range *)
 
-op beta_ : {int | 0 < beta_} as gt0_beta.      (* ??? *)
+(* number of "bad" lowbits for public key compression *)
+op beta_ : {int | 0 < beta_} as gt0_beta.
+
 op tau : { int | 1 <= tau <= n } as tau_bound. (* challenge weight *)
 
 op d : { int | 0 < d } as gt0_d.        (* bits dropped from public key *)
