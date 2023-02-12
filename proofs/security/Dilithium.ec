@@ -1,12 +1,14 @@
 require import AllCore Distr List IntDiv StdOrder.
 require import DistrExtras.
 import RealOrder Finite.
-require import DParams.
+require DParams.
 
 require DRing DVect MLWE SelfTargetMSIS.
 require SimplifiedScheme.
 
 (** Abstract Version using DRing *)
+
+clone import DParams as Params.
 
 abstract theory AbstractDilithium.
 
@@ -51,8 +53,8 @@ module Dilithium (H: Hash) = {
     var pk, sk;
     var mA, s1, s2,t, t1,t0;
     mA <$ dmatrix dRq k l;
-    s1 <$ dvector (dRq_ DParams.eta_) l;
-    s2 <$ dvector (dRq_ DParams.eta_) k;
+    s1 <$ dvector (dRq_ Params.eta_) l;
+    s2 <$ dvector (dRq_ Params.eta_) k;
     t  <- mA *^ s1 + s2;
     t1 <- base2highbitsV t;
     t0 <- base2lowbitsV t;
@@ -177,7 +179,7 @@ clone SimplifiedScheme as SD with
   theory DV <- DV,
   type M <- M,
 
-  theory Params <- DParams,
+  theory Params <- Params,
 
   op check_mx <- check_mx,
   op eps_comm <- eps_comm,
