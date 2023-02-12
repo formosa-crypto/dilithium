@@ -72,7 +72,7 @@ hint exact : idI.
 (* -------------------------------------------------------------------- *)
 type polyXnD1.
 
-clone include RingQuotient with
+clone include RingQuotientDflInv with
   type qT <- polyXnD1,
   op p <- I
 
@@ -94,21 +94,11 @@ qed.
 op zeroXnD1 = zeror.
 op oneXnD1 = oner.
 
+print ComRingDflInv.exp.
+
 (* -------------------------------------------------------------------- *)
 clone BigComRing as BigXnD1 with
-  type CR.t      <= polyXnD1,
-    op CR.zeror  <= zeroXnD1,
-    op CR.oner   <= oneXnD1,
-    op CR.( + )  <= ( + ),
-    op CR.([-])  <= ([-]),
-    op CR.( * )  <= ( * ),
-    op CR.invr   <= invr,
-    op CR.intmul <= ComRing.intmul,
-    op CR.ofint  <= ComRing.ofint,
-    op CR.exp    <= ComRing.exp,
-    op CR.lreg   <= ComRing.lreg,
-  pred CR.unit   <= unit
-
+  theory CR <= ComRingDflInv
   proof *
 
   remove abbrev CR.(-)
@@ -116,19 +106,6 @@ clone BigComRing as BigXnD1 with
 
   rename [theory] "BAdd" as "XnD1CA"
          [theory] "BMul" as "XnD1CM".
-
-realize CR.addrA     by apply: ComRing.addrA    .
-realize CR.addrC     by apply: ComRing.addrC    .
-realize CR.add0r     by apply: ComRing.add0r    .
-realize CR.addNr     by apply: ComRing.addNr    .
-realize CR.oner_neq0 by apply: ComRing.oner_neq0.
-realize CR.mulrA     by apply: ComRing.mulrA    .
-realize CR.mulrC     by apply: ComRing.mulrC    .
-realize CR.mul1r     by apply: ComRing.mul1r    .
-realize CR.mulrDl    by apply: ComRing.mulrDl   .
-realize CR.mulVr     by apply: ComRing.mulVr    .
-realize CR.unitP     by apply: ComRing.unitP    .
-realize CR.unitout   by apply: ComRing.unitout  .
 
 import BigXnD1.
 
@@ -391,8 +368,8 @@ lemma polyXnD1_sumN ['a] (P : 'a -> bool) (F : 'a -> polyXnD1) (r : 'a list) :
   - (XnD1CA.big P F r) = (XnD1CA.big P (fun i => - (F i)) r).
 proof.
 rewrite XnD1CA.big_endo //.
-+ by rewrite ComRing.oppr0.
-+ by apply ComRing.opprD. 
++ by rewrite ComRingDflInv.oppr0.
++ by apply ComRingDflInv.opprD. 
 qed.
 
 (* -------------------------------------------------------------------- *)
@@ -414,14 +391,14 @@ by case=> ge0_i lt_in; rewrite reducedP (ler_trans (i+1)) 1:deg_polyXn //#.
 qed.
 
 (* -------------------------------------------------------------------- *)
-lemma eq_expiXn_expXn i : 0 <= i < n => ComRing.exp iX i = pi (exp X i).
+lemma eq_expiXn_expXn i : 0 <= i < n => ComRingDflInv.exp iX i = pi (exp X i).
 move => [ge0i ltni]; elim: i ge0i ltni => [| i ge0_i ih ltn_i1].
-+ by rewrite ComRing.expr0 expr0.
-+ by rewrite ComRing.exprS 2:exprS // -mulE ih /#.
++ by rewrite ComRingDflInv.expr0 expr0.
++ by rewrite ComRingDflInv.exprS 2:exprS // -mulE ih /#.
 qed.
 
 lemma rcoeff_polyXn i k : 0 <= i < n =>
-  (ComRing.exp iX i).[k] = if k = i then Coeff.oner else Coeff.zeror.
+  (ComRingDflInv.exp iX i).[k] = if k = i then Coeff.oner else Coeff.zeror.
 proof. 
 move => rng_i; rewrite eq_expiXn_expXn 1:rng_i piK 1:reducedXn 2:polyXnE //#.
 qed.
@@ -429,7 +406,7 @@ qed.
 (* -------------------------------------------------------------------- *)
 lemma rcoeffZ_sum (F : int -> coeff) (k : int) : 
   0 <= k < n =>
-  (XnD1CA.bigi predT (fun i => (F i) ** ComRing.exp iX i) 0 n).[k] = F k.
+  (XnD1CA.bigi predT (fun i => (F i) ** ComRingDflInv.exp iX i) 0 n).[k] = F k.
 proof.
 move => rng_k; rewrite rcoeff_sum (BCA.bigD1 _ _ k) /=.
 + by rewrite mem_range.
@@ -530,8 +507,10 @@ clone include PolyReduce with
     op   BasePoly.Coeff.ofint  <- Zp.ZModpRing.ofint,
     op   BasePoly.Coeff.exp    <- Zp.ZModpRing.exp,
     op   BasePoly.Coeff.intmul <- Zp.ZModpRing.intmul,
-    op   BasePoly.Coeff.lreg   <- Zp.ZModpRing.lreg
-
+    op   BasePoly.Coeff.lreg   <- Zp.ZModpRing.lreg,
+    (* scuffed choice-based inverse operation... *)
+    pred BasePoly.PolyComRing.unit <- fun p => exists q, q * p = oner,
+    op   BasePoly.PolyComRing.invr <- fun p => choiceb (fun q => q * p = oner) p
   proof BasePoly.Coeff.addrA     by exact Zp.ZModpRing.addrA
   proof BasePoly.Coeff.addrC     by exact Zp.ZModpRing.addrC
   proof BasePoly.Coeff.add0r     by exact Zp.ZModpRing.add0r
@@ -544,7 +523,10 @@ clone include PolyReduce with
   proof BasePoly.Coeff.mulVr     by exact Zp.ZModpRing.mulVr
   proof BasePoly.Coeff.unitP     by exact Zp.ZModpRing.unitP
   proof BasePoly.Coeff.unitout   by exact Zp.ZModpRing.unitout
-
+  (* choice-based stuff... *)
+  proof BasePoly.PolyComRing.mulVr by smt(choicebP)
+  proof BasePoly.PolyComRing.unitP by smt()
+  proof BasePoly.PolyComRing.unitout by smt(choiceb_dfl)
   remove abbrev BasePoly.Coeff.(-)
   remove abbrev BasePoly.Coeff.(/).
 

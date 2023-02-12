@@ -1120,7 +1120,7 @@ rewrite rcoeffD usehint_correct //.
 smt(inf_norm_poly_ler).
 qed.
 
-import ComRing.
+import ComRingDflInv.
 
 lemma poly_hide_low2 alpha (r : polyXnD1) (h : bool list) :
   2 <= alpha <= q %/ 2 =>

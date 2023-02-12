@@ -152,13 +152,13 @@ by rewrite !intmulz.
 qed.
 
 import PolyReduceZq.
-import PolyReduceZq.ComRing.
+import PolyReduceZq.ComRingDflInv.
 
 clone DRing as DR with
   op q <= q,
   op n <= Round.n,
   type Rq <= PolyReduceZq.polyXnD1,
-  theory RqRing <= PolyReduceZq.ComRing,
+  theory RqRing <= PolyReduceZq.ComRingDflInv,
   op cnorm <= Round."`|_|",
   op dRq <= dpolyXnD1,
   op dRq_ <= dpoly_ball,
