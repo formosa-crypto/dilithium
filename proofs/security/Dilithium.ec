@@ -1,20 +1,22 @@
 require import AllCore Distr List IntDiv StdOrder.
 require import DistrExtras.
 import RealOrder Finite.
-require DParams.
+require DParams ConcreteDRing.
 
 require DRing DVect MLWE SelfTargetMSIS.
 require SimplifiedScheme.
 
 (** Abstract Version using DRing *)
 
-clone import DParams as Params.
-
 abstract theory AbstractDilithium.
 
-(* abstract data structure for Rq                       *)
-(* this defines an abstract type Rq and a constant q    *)
-(* also includes highBits, norms, etc.                  *)
+(* We assume some parameter set; this defines:
+   n, q, k, l, eta, gamma1, gamma2, beta, tau, and d. *)
+clone import DParams as Params.
+
+(* Abstract data structure for Rq; this defines:         *)
+(* An abstract type Rq representing ℤq[X]/(X^n + 1)      *)
+(* highBits and lowBits operations on Rq                 *)
 clone import DRing as DR with
   op n <= n,
   op q <= q
@@ -22,12 +24,18 @@ proof prime_q by exact prime_q
 proof gt0_n by exact gt0_n.
 
 (* Generate a theory of matrices/vectors over Rq           *)
+(* This includes vector versions of highBits and lowBits   *)
+(* NOTE: We prove everything except the subType axioms     *)
+(*       The subtype axioms are consistent but not provabe *) 
 clone import DVect as DV with 
   theory DR <= DR,
   op HL.alpha <- 2*gamma2,
   op HL.d     <- d
 proof 
-  HL.ge2_alpha, HL.alpha_halfq_le, HL.even_alpha, HL.alpha_almost_divides_q.
+  HL.ge2_alpha, 
+  HL.alpha_halfq_le, 
+  HL.even_alpha, 
+  HL.alpha_almost_divides_q.
 realize HL.ge2_alpha by smt(gamma2_bound).
 realize HL.even_alpha by smt().
 realize HL.alpha_halfq_le by smt(gamma2_bound).
@@ -35,19 +43,26 @@ realize HL.alpha_almost_divides_q by apply gamma2_div.
 
 import DV.MatRq. (* Matrices and Vectors over Rq *)
 import DV.HL.    (* highBitsV and lowBitsV with HL.alpha = 2 * gamma2 and HL.d = d *)
-type M.
-type SK = matrix * vector * vector * vector.
-type PK = matrix * high2 list.
-type commit_t = high list.
-type challenge_t = Rq.
-type response_t = vector * hint_t list.
-type Sig = challenge_t * response_t.
 
+type M.                                       (* The type of messages to be signed *)
+type SK = matrix * vector * vector * vector.  (* The type of secret keys           *)
+type PK = matrix * high2 list.                (* The type of public keys           *)
+type commit_t = high list.                    (* The type of commitments (for IDS) *)
+type challenge_t = Rq.                        (* The type of challenges  (for IDS) *)
+type response_t = vector * hint_t list.       (* The type of responses   (for IDS) *)
+type Sig = challenge_t * response_t.          (* The type of signatues (of scheme) *)
+
+(* Abstract module type for hash functions or random oracles *)
 module type Hash  = {
   proc get(x : high list * M) : challenge_t
 }.
 
-(* Ethan: There's `Logic.eta_` that conflicts with `DParams.eta_`. *)
+(*************************************)
+(**** The Dilithium Scheme    ********)
+(*************************************)
+
+(* We define the Dilithium scheme parametric in the hash function/oracle *)
+(* TOTHINK: There's `Logic.eta_` that conflicts with `DParams.eta_`. *)
 module Dilithium (H: Hash) = {
   proc keygen() : PK * SK = {
     var pk, sk;
@@ -111,40 +126,44 @@ module Dilithium (H: Hash) = {
 (**** Parameters of the proof ********)
 (*************************************)
 
-(* TOTHINK: can we make these section variables? *)
-const qS : { int | 0 <= qS } as qS_ge0.
-const qH : { int | 0 <= qH } as qH_ge0.
+(*** Query Bounds ***)
+const qS : { int | 0 <= qS } as qS_ge0. (* number of queries to "sign"  *)
+const qH : { int | 0 <= qH } as qH_ge0. (* number of queries to "H.get" *)
 
+(*** Entropy Bounds ***) 
 
 (** We require a check on the matrix component of public and secrect
 key that ensures:
 
-- sufficiently high commitment entropy
+- sufficiently high (expected) commitment entropy
 - sufficiently high probability that respond succeeds *)
 
+(* Abbreviations for the way A, y, and z are sampled *)
 op dA = dmatrix dRq k l.
 op dy = dvector (dRq_ (gamma1 - 1)) l.
 op dz = dvector (dRq_ (gamma1 - beta_ - 1)) l.
 
-(* Check that ensures that the matrix is "entropy preserving" *)
-(* (and has the right dimensions)                             *)
+(* The check on the matrix component of the keys                           *)
+(* This is just predicate used in the proofs, we never compute with it     *)
 op check_mx : matrix -> bool.
 
+(* For convenience, we assume that the check also checks matrix dimensions *)
 axiom check_valid A : check_mx A => A \in dA.
 
-(* upper bound on the mass of the most likely commitment for a good key *)
+(* Also for convenience we assume some (fixed) A0 passing the check        *)
+op A0 : { matrix | check_mx A0 } as A0P.
+
+(* upper bound on the mass of the matrices not passing check               *)
+const delta_ : { real | 0%r <= delta_ }  as delta_gt0.
+axiom check_mx_most : mu dA (predC check_mx) <= delta_.
+
+(* upper bound on the expected probability mass 
+   of the most likely commitment for a good key  *)
 const eps_comm  : { real | 0%r < eps_comm } as eps_comm_gt0.
 
 axiom check_mx_entropy : 
   E (dcond dA check_mx) (fun mA => 
     p_max (dmap dy (fun y => highBitsV (mA *^ y)))) <= eps_comm.
-
-op A0 : { matrix | check_mx A0 } as A0P.
-
-(* upper bound on the mass of the keys not passing check *)
-const delta_ : { real | 0%r <= delta_ }  as delta_gt0.
-
-axiom check_mx_most : mu dA (predC check_mx) <= delta_.
 
 (* bound on the probability that he low-bis check in the Sim fails *)
 const eps_low : { real | eps_low < 1%r } as eps_low_lt1.
@@ -152,6 +171,16 @@ const eps_low : { real | eps_low < 1%r } as eps_low_lt1.
 axiom bound_low c (t : vector) (mA : matrix) :
   c \in dC tau => t \in dvector dRq k => check_mx mA =>
   mu dz (fun z => gamma2 - beta_ <= inf_normv (lowBitsV (mA *^ z - c ** t)) ) <= eps_low. 
+
+
+(*************************************)
+(**** The Security Proof      ********)
+(*************************************)
+
+(* Here we mostry instantiate the security proof for the simplified scheme. 
+   The onyl part we prove here is that security of the scheme above reduces
+   to security of the simplified scheme, where the public key is (A,t) and
+   the private key is (A,s1,s2). *)
 
 (* Instantiate the definitions for digital signature security in the ROM *)
 clone import DigitalSignaturesRO as DSS with 
@@ -169,11 +198,7 @@ import DSS.DS.Stateless.
 (* The digital signature definitions also provide the ROM *)
 module H = DSS.PRO.RO.
 
-(* Clone Simplified Dilithium Scheme *)
-
-(* TOTHINK: It would be nice to make this a local clone. 
-   However, it defines the reductions to MLWE and SelfTargetMSIS that are part of the final statement. 
-   It also provides the instances themselves (including the parameters *)
+(* Pnnstantiate security proof of the simplified scheme *)
 clone SimplifiedScheme as SD with 
   theory DR <- DR,
   theory DV <- DV,
@@ -203,8 +228,7 @@ clone SimplifiedScheme as SD with
 proof* by smt(gt0_eta gt0_k gt0_l gamma2_bound gamma2_div gt0_beta beta_gamma1_lt 
               beta_gamma2_lt gt0_d tau_bound eta_tau_leq_b ub_d).
 
-print SD.FSaCR.DSS.Adv_EFCMA_RO.
-
+(* Key types of the simplified scheme *)
 type SK' = matrix * vector * vector.
 type PK' = matrix * vector.
 
@@ -219,6 +243,28 @@ module (RedS (A : Adv_EFCMA_RO) : SD.FSaCR.DSS.Adv_EFCMA_RO)
     return r;
   }
 }.
+
+(* The clone of the SimplifiedScheme theory above also instantiate the
+   MLWE and SelfTargetMSIS games with the correct parameters and
+   defines the reductions to MLWE and SelfTargetMSIS. Both are part of
+   the final statement. Here we just introduce short names for
+   them: *)
+
+(* Left and Right Game of the MLWE assumption *)
+module MLWE_L (A : SD.RqMLWE.Adversary) = SD.RqMLWE.GameL(A).
+module MLWE_R (A : SD.RqMLWE.Adversary) = SD.RqMLWE.GameR(A).
+
+(* The SelfTargetMSIS Game *)
+module SelfTargetMSIS (A : SD.RqStMSIS.Adversary) = SD.RqStMSIS.Game(A).
+
+(* Reduction to MLWE *)
+module RedMLWE (A : Adv_EFCMA_RO) = 
+  SD.RedMLWE(SD.RedCR(SD.CMAtoKOA.RedKOA(SD.CG.RedFSaG(RedS(A)), SD.HVZK_Sim_Inst)), 
+  SD.FSaCR.DSS.PRO.RO).
+
+(* Reduction to SelfTargetMSIS *)
+module RedStMSIS (A : Adv_EFCMA_RO) = 
+  SD.RedMSIS(SD.RedCR(SD.CMAtoKOA.RedKOA(SD.CG.RedFSaG(RedS(A)), SD.HVZK_Sim_Inst))).
 
 section PROOF.
 
@@ -259,19 +305,10 @@ declare axiom A_bound
       SD.CountH.qh = 0 /\ SD.CountS.qs = 0 ==>
       SD.CountH.qh <= qH /\ SD.CountS.qs <= qS].
 
-(* Reduction to MLWE *)
-module RedMLWE (A : Adv_EFCMA_RO) = 
-  SD.RedMLWE(SD.RedCR(SD.CMAtoKOA.RedKOA(SD.CG.RedFSaG(RedS(A)), SD.HVZK_Sim_Inst)), SD.FSaCR.DSS.PRO.RO).
 
-(* Reduction to SelfTargetMSIS *)
-module RedStMSIS (A : Adv_EFCMA_RO) = 
-  SD.RedMSIS(SD.RedCR(SD.CMAtoKOA.RedKOA(SD.CG.RedFSaG(RedS(A)), SD.HVZK_Sim_Inst))).
-
-(* Left and Right Game of the MLWE assumption *)
-module MLWE_L (A : SD.RqMLWE.Adversary) = SD.RqMLWE.GameL(A).
-module MLWE_R (A : SD.RqMLWE.Adversary) = SD.RqMLWE.GameR(A).
-(* The SelfTargetMSIS Game *)
-module SelfTargetMSIS (A : SD.RqStMSIS.Adversary) = SD.RqStMSIS.Game(A).
+(************************************************)
+(*         M A I N       T H E R O E M          *)
+(************************************************)
 
 op p0 = (size (to_seq (support dz)))%r / (size (to_seq (support dy)))%r.
 op p_rej : real = (p0 * eps_low) + (1.0 - p0).
@@ -323,28 +360,27 @@ end section PROOF.
 
 end AbstractDilithium.
 
-
 abstract theory ConcreteDilithium.
 
-require ConcreteDRing.
+(* We again assume some parameter set *)
+clone import DParams as Params.
 
-(* clone import ConcreteDRing as CR proof*. *)
-
+(* We instantiate the concrete ring ℤq[X]/(X^n + 1) 
+   using q and n as given by the paramers *)
 clone import ConcreteDRing as CDR with 
-  op Round.q <= q,
-  op Round.n <= n,
-  axiom Round.prime_q <= prime_q,
-  axiom Round.gt0_n <= gt0_n
+  op Round.q <= Params.q,
+  op Round.n <= Params.n,
+  axiom Round.prime_q <= Params.prime_q,
+  axiom Round.gt0_n <= Params.gt0_n
 (* proof* *)
 (* TODO: proof* gives more than just the (unavoidable) subtype axioms *)
 .
 
 clone import AbstractDilithium as ConcreteDilithium with 
+  theory Params <- Params,
   theory DR <- CDR.DR.
+(* The above is accepted by EC. This verifies that the concrete 
+   DRing instance (CDR.DR) implements the abstract DRing (DR) assumed by 
+   the AbstractDilithium theory. *)
 
 end ConcreteDilithium.
-
-(* TODO: this has more axioms than there should be *)
-(* clone ConcreteDilithium as CD proof*. *)
-
-
