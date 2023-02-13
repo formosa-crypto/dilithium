@@ -42,11 +42,19 @@ clone import DVect as DV with
   theory DR <- DR,
   op HL.alpha <- 2*gamma2,
   op HL.d     <- d
-proof HL.ge2_alpha, HL.alpha_halfq_le, HL.even_alpha, HL.alpha_almost_divides_q.
+proof HL.ge2_alpha, HL.alpha_halfq_le, HL.even_alpha, HL.alpha_almost_divides_q, HL.d_bound.
 realize HL.ge2_alpha by smt(gamma2_bound).
 realize HL.even_alpha by smt().
 realize HL.alpha_halfq_le by smt(gamma2_bound).
 realize HL.alpha_almost_divides_q by apply gamma2_div.
+realize HL.d_bound.
+  split; 1: smt(gt0_d). 
+  apply (StdOrder.IntOrder.ler_lt_trans (tau * 2 ^ d)). 
+    smt(gt0_d tau_bound StdOrder.IntOrder.expr_gt0).
+  apply (StdOrder.IntOrder.ler_lt_trans (2 * gamma2) _ _ ub_d). 
+  suff : `| 2 * gamma2 | <= `|Params.q -1| by smt(gamma2_bound prime_q gt1_prime). 
+  by apply dvdz_le; smt(prime_q gt1_prime gamma2_div).
+qed.
 
 import DV.MatRq. (* Matrices and Vectors over Rq *)
 import DV.HL.    (* highBitsV and lowBitsV with HL.alpha = 2 * gamma2 and HL.d = d *)

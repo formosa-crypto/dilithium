@@ -141,6 +141,8 @@ abstract theory HighLow.
 op alpha : int. (* low-order rounding range - 2 * gamma2 *)
 op d : int.     (* dropped bits from t      - d *)
 
+axiom d_bound : 1 <= d /\ 2^d < q.
+
 axiom ge2_alpha : 2 <= alpha.
 axiom alpha_halfq_le : alpha <= q %/ 2.
 axiom even_alpha : 2 %| alpha.
@@ -214,7 +216,7 @@ op base2shift (z0 : high2) = Flex.shift2 d z0.
 op base2lowbits (z : Rq) = z - base2shift (base2highbits z).
 
 lemma base2low_bound z : cnorm (base2lowbits z) <= 2^(d-1).
-proof. exact Flex.power2round_bound. qed.
+proof. apply Flex.power2round_bound; smt(d_bound). qed.
 
 lemma base2high_low (z : Rq) : 
   base2shift (base2highbits z) + base2lowbits z = z.

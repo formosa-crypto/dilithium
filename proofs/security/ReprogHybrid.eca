@@ -2200,12 +2200,11 @@ local module Oij_LE (H : ROsk.RO) : Oracle_i_ij = {
   var i_done : bool
 
   proc sign_i (m:M): W * C * Z = {
-    var w, c, oz, j';
+    var w <- witness;
+    var c <- witness;
+    var j' <- 0;
+    var oz <- None;
     if (!i_done /\ Oi.sk = ReprogOnce.sk) {
-    w <- witness;
-    c <- witness;
-    j' <- 0;
-    oz <- None;
     while(oz = None /\ j' < j) {
       (w, c, oz) <@ sign_i_l (m);
       j' <- j' + 1;
@@ -2331,7 +2330,7 @@ proof.
       true => //.
   + by have /= -> := big_int1 0.
   + by inline *; auto.
-  + proc; rcondt^if => //.
+  + proc; rcondt^if; 1:by auto.
     seq 6 : (oz = None) (p^j) 1%r _ 0%r (!Oi.j_end) => //.
     + by conseq /> => //.
     + sp; wp; conseq (: _ : <= (if oz = None then p ^ (j - j') else 0%r)) => //.
@@ -2351,9 +2350,9 @@ proof.
         move=> /> *; rewrite -exprS /#. 
       by auto => />; smt (expr0 j_bounded).
     by rcondf^if; 1: auto => />; conseq />.
-  + move=> c; proc; rcondt^if => //; wp.
+  + move=> c; proc; rcondt^if; wp; 1: by auto.
     by conseq (:true) => />; auto.
-  by move=>*; proc; rcondf^if => //.
+  by move=>*; proc; rcondf^if; auto.
 qed.
 
 (* using the lemma above, we can bound the probability of D (with a
