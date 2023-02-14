@@ -8,7 +8,7 @@ require import StdBigop Finite.
 require import Supplementary DistrExtras.
 import RealOrder Bigreal Bigreal.BRA.
 
-require DigitalSignaturesRO PROM ReprogHybrid Collision.
+require DigitalSignaturesRO PROM ReprogHybrid.
 require FSabort.
 
 (* ********************* IDS based on operators ****************** *) 
