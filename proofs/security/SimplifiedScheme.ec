@@ -548,7 +548,7 @@ equiv verify_opbased_correct :
 proof.
 proc; inline *.
 wp; call (: true).
-auto => /> /#.
+auto => /> &m; move: (pk{m}) (sig{m}) => [A t] [c [z h]] //.
 qed.
 
 end section OpBasedCorrectness.
