@@ -12,7 +12,10 @@ RUN \
 	apt-get -q -y install sudo && \
 	apt-get -q -y clean
 
-COPY --chown=root:root --chmod=0400 sudoers /etc/sudoers.d/
+COPY --chown=root:root sudoers /etc/sudoers.d/
+
+RUN \
+	chmod 0400 /etc/sudoers.d/sudoers
 
 RUN \
 	useradd -ms /bin/bash -d /home/$user -g root -G sudo -u $UID $user
