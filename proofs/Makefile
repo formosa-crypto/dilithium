@@ -28,7 +28,7 @@ test-%: docker __test-%
 	@true
 
 __test-%: __force__
-	docker run --rm -t -v ".:/home/charlie/dilithium:Z" -w /home/charlie/dilithium \
+	docker run --rm -t -v ".:/home/charlie/dilithium:z" -w /home/charlie/dilithium \
 	  easycrypt opam config exec -- easycrypt runtest tests.config "$*"
 
 clean:
