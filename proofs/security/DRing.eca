@@ -6,16 +6,12 @@ require Subtype.
 require import Supplementary.
 import Finite.
 
-(* Modulo *)
-op q : {int | prime q} as prime_q. 
+op q : {int | prime q} as prime_q.  (* Modulus *)
+op n : {int | 0 < n} as gt0_n.      (* Polynomial degrees *)
 
-(* Poly degrees *)
-op n : {int | 0 < n} as gt0_n.
+type Rq.                            (* (abstract) Polynomial ring ℤq[X]/(X^n +1 ) *)
 
-(* Polynomial ring ℤq[X]/(X^n +1 ) *)
-type Rq.
-
-clone import Ring.ComRing as RqRing with type t <= Rq.
+clone import Ring.ComRing as RqRing with type t <= Rq. (* Rq is a commutative ring *)
 
 op cnorm : Rq -> int.             (* infinity norm (after centered reduction modulo) *)
 op l1_norm : Rq -> int.           (* sum over absolute values                        *)
@@ -30,9 +26,6 @@ axiom l1_cnorm_product_ub (x y : Rq) (b1 b2 : int) :
   cnorm y <= b2 =>
   cnorm (x * y) <= b1 * b2.
 
-(* TOTHINK: If [high = Rq] is a problem, we either need to have a
-ComRing structure on high or use lists rather than vectors to pass
-[w1] around *)
 
 op [lossless full uniform] dRq : Rq distr. 
 
@@ -41,8 +34,7 @@ lemma dRq_funi : is_funiform dRq by smt(dRq_fu dRq_uni).
 lemma is_finite_Rq : is_finite predT<:Rq>.
 proof.
 have ->: predT = support dRq by smt(dRq_fu).
-apply uniform_finite.
-exact dRq_uni.
+exact/uniform_finite/dRq_uni.
 qed.
 
 op [lossless uniform] dRq_ : int -> Rq distr.
@@ -63,15 +55,13 @@ lemma dRq_open_uni a :
 proof. smt(dRq__uni). qed.
 
 op [uniform] dC : int -> Rq distr.
-(* This was a [lossless] tag.
- * Had to make it a separate lemma for the side-condition. *)
 axiom dC_ll a : 0 <= a <= n => is_lossless (dC a).
 axiom supp_dC c a : c \in dC a <=> cnorm c <= 1 /\ l1_norm c = a.
 
 axiom cnorm_ge0 (r : Rq) : 0 <= cnorm r.
 axiom cnormN (r : Rq) : cnorm (-r) = cnorm r.
 
-(* high/low-bits operations (fixed modulus) *)
+(*** High- and LowBits Operations (modulus as argument) ***)
 
 type hint_t.
 
@@ -136,6 +126,12 @@ axiom power2round_bound d (r : Rq) :
   cnorm (r - shift2 d (power2round d r)) <= 2^(d-1).
 
 end Flex.
+
+(** High- and LowBits Operations (fixed modulus) **)
+
+(* In the following we create an abstract theory of high- and lowBits
+operations where the modulus is fixed. This allows us to define the
+type of images for this particular instance as subType. *)
     
 abstract theory HighLow.
 op alpha : int. (* low-order rounding range - 2 * gamma2 *)
@@ -187,12 +183,12 @@ proof. by rewrite /lowsBits (Flex.lowbit_small) rg_alpha. qed.
 lemma shift_inj : injective shift. 
 proof.
 move => x y ?.
-have H : injective_in (image ((Flex.highBits alpha))) ((Flex.shift alpha)).
-- apply Flex.shift_inj.
-  + exact rg_alpha.
-  + exact even_alpha.
-  + exact alpha_almost_divides_q.
-smt(val_inj valP).
+suff : injective_in (image ((Flex.highBits alpha))) ((Flex.shift alpha)).
+- smt(val_inj valP).
+apply Flex.shift_inj.
+- exact rg_alpha.
+- exact even_alpha.
+- exact alpha_almost_divides_q.
 qed.
 
 lemma usehint_correct (z r : Rq) :
