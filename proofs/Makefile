@@ -3,6 +3,7 @@
 # --------------------------------------------------------------------
 TESTS ?= utils security
 UID   ?= ${UID}
+ECRJOBS ?= 1
 
 # --------------------------------------------------------------------
 .PHONY: all docker tests clean __force__
@@ -27,7 +28,7 @@ test-%: docker __test-%
 
 __test-%: __force__
 	docker run --rm -t -v "$$(pwd):/home/charlie/dilithium:z" -w /home/charlie/dilithium \
-	  easycrypt opam config exec -- easycrypt runtest tests.config "$*"
+	  easycrypt env ECRJOBS="$(ECRJOBS)" opam config exec -- easycrypt runtest tests.config "$*"
 
 clean:
 	rm -f utils/*.eco security/*.eco
