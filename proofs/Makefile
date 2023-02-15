@@ -1,9 +1,10 @@
 # -*- Makefile -*-
 
 # --------------------------------------------------------------------
-TESTS ?= utils security
-UID   ?= ${UID}
-ECRJOBS ?= 1
+TESTS      ?= utils security
+BRANCH     ?= dilithium
+ECRJOBS    ?= 1
+DOCKERUID  ?= $(shell id -u)
 DOCKEROPTS ?= 
 
 # --------------------------------------------------------------------
@@ -16,8 +17,8 @@ tests: docker $(TESTS:%=__test-%)
 
 docker:
 	docker build $(DOCKEROPTS) \
-	  --build-arg SOURCE_BRANCH=dilithium \
-	  --build-arg UID=1000 \
+	  --build-arg SOURCE_BRANCH=$(BRANCH) \
+	  --build-arg UID=$(DOCKERUID) \
 	  -t easycrypt docker
 
 shell: __force__
