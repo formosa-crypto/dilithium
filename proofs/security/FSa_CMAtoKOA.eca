@@ -29,23 +29,21 @@ clone import OpBased as OP.
 
 (* -- Extra assumptions on the min-entropy of commitments for (good) secret keys -- *)
 
+op dlt, eps : real.
+
+axiom eps_gt0 : 0%r < eps.
+
 op check_entropy : SK -> bool.
-op gamma, alpha : real.
-
-axiom alpha_gt0 : 0%r < alpha.
-axiom gamma_gt0 : 0%r <= gamma.
-
-(* axiom check_entropy_correct : *)
-(*   forall sk, check_entropy sk => p_max (dfst (commit sk)) <= alpha. *)
-
 op check (k : PK * SK) = check_entropy k.`2.
 
 axiom check_entropy_correct : 
-  E (dcond keygen check) (fun k : PK * SK => p_max (dfst (commit k.`2))) <= alpha.
-
+  E (dcond keygen check) (fun k : PK * SK => p_max (dfst (commit k.`2))) <= eps.
 
 axiom most_keys_high_entropy :
-  mu keygen (fun k : PK * SK => !check_entropy k.`2) <= gamma.
+  mu keygen (fun k : PK * SK => !check_entropy k.`2) <= dlt.
+
+lemma dlt_ge0 : 0%r <= dlt.
+proof. by apply: ler_trans most_keys_high_entropy; apply ge0_mu. qed.
 
 (* Some upper bound on the rejection probability of [response] 
    for valid keys over the commitment distribution *)
@@ -77,12 +75,12 @@ qed.
 
 (* We will prove that, given a EUF-CMA adversary, we can actually
    break EUF-KOA. The bound (loss) of the reduction consists of the
-   reprogramming bound below plus [2*gamma] for ruling our secret keys
-   that do not provide sufficent entropy for hte [commit sk] *)
+   reprogramming bound below plus [dlt] for ruling our secret keys
+   that do not provide sufficent entropy for [commit sk] *)
 
 const reprog_bound = 
-    2%r * qS%r * (qH + 1)%r * alpha / (1%r - p_rej) 
-  + qS%r * alpha * (qS%r + 1%r) / (2%r * (1%r - p_rej) ^ 2).
+    2%r * qS%r * (qH + 1)%r * eps / (1%r - p_rej) 
+  + qS%r * eps * (qS%r + 1%r) / (2%r * (1%r - p_rej) ^ 2).
 
 (* The following is the actual reduction that can break EF_KOA using 
    an EF_CMA adversary. The first module is the sign oracle the reduction 
@@ -298,7 +296,6 @@ realize dC_uni by apply dC_uni.
 realize p_bounded by apply p_rej_bounded.
 realize qs_ge0 by apply qS_ge0.
 realize qh_ge0 by smt(qH_ge0).
-(* realize eps_ge0 by smt(alpha_gt0). *)
 
 (* Reduction to the [RedOnce] game *)
 local module RedOnce (O : R1.Oracle) = { 
@@ -364,12 +361,12 @@ proof. smt(qS_ge0 qH_ge0 p_rej_bounded invr_ge0 expr_gt0). qed.
 
 local lemma hop4 &m : 
      Pr [Game0(A,Oracle1).main() @ &m : res ] 
-  <= Pr [Game0(A,Oracle3).main() @ &m : res ] + reprog_bound + gamma.
+  <= Pr [Game0(A,Oracle3).main() @ &m : res ] + reprog_bound + dlt.
 proof.
-(* if [gamma >= 1] there is nothing to show, allows us to condition on good keys later *)
-case (gamma < 1%r) => [gamm_lt1|]; last first. 
-  have -> : reprog_bound = rb_ alpha by done.
-  smt(mu_bounded rb_ge0 alpha_gt0).
+(* if [dlt >= 1] there is nothing to show, allows us to condition on good keys later *)
+case (dlt < 1%r) => [gamm_lt1|]; last first. 
+  have -> : reprog_bound = rb_ eps by done.
+  smt(mu_bounded rb_ge0 eps_gt0).
 (* We start by expressing both sides as Rand games from Means *)
 have -> : Pr[Game0(A, Oracle1).main() @ &m : res] = Pr[Rand(GSign).main() @ &m : res.`2].
 - byequiv => //. proc. inline{1} 2; inline{2} 2. 
@@ -425,7 +422,7 @@ by inline*; auto => />.
 have ? := keygen_finite.
 have ? : is_finite (support (dcond keygen check)) by exact finite_dcond.
 pose supK := to_seq (support keygen).
-have mu_checkC : mu keygen (predC check) <= gamma.
+have mu_checkC : mu keygen (predC check) <= dlt.
 - by apply: ler_trans most_keys_high_entropy; apply mu_le => />.
 pose Fl (k : PK * SK) := mu1 keygen k * Pr [ GSign.work(k) @ &m : res].
 pose Fr (k : PK * SK) := mu1 keygen k * Pr [ GTrans.work(k) @ &m : res].
@@ -435,13 +432,13 @@ have -> : Pr[Rand(GTrans).main() @ &m : res.`2] = big predT Fr supK.
   exact (Mean GTrans &m (fun _ _ r => r) keygen_finite).
 pose ex := E (dcond keygen check) (fun k : PK * SK => p_max (dfst (commit k.`2))).
 rewrite !(bigEM check). 
-have -> : big check Fr supK + big (predC check) Fr supK + reprog_bound + gamma = 
-          (big check Fr supK + reprog_bound) + (big (predC check) Fr supK + gamma) by ring.
+have -> : big check Fr supK + big (predC check) Fr supK + reprog_bound + dlt = 
+          (big check Fr supK + reprog_bound) + (big (predC check) Fr supK + dlt) by ring.
 apply ler_add; last first.
-- apply (ler_trans gamma); last by apply/ler_paddl => //; apply/sumr_ge0; smt(mu_bounded).
+- apply (ler_trans dlt); last by apply/ler_paddl => //; apply/sumr_ge0; smt(mu_bounded).
   apply (ler_trans (big (predC check) (mu1 keygen) supK)); last by rewrite -fin_muE // &(mu_checkC).
   apply ler_sum => -[pk sk] @/Fl _; apply/ler_pimulr; smt(mu_bounded). 
-have -> : reprog_bound = rb_ alpha by done.
+have -> : reprog_bound = rb_ eps by done.
 pose Fl' (k : PK * SK) := mu1 keygen k * Pr[GTrans.work(k) @ &m : res] + 
                           mu1 keygen k * rb_ (R1.eps k.`2).
 apply (ler_trans (big check Fl' supK)).
@@ -462,7 +459,7 @@ apply (ler_trans (E (dcond keygen check) (rb_ \o f))).
 apply (ler_trans (rb_ ex)); last exact/rb_mono/check_entropy_correct.
 apply Jensen_fin_concave; [exact finite_dcond | | smt()].
 apply dcond_ll.
-smt(most_keys_high_entropy mu_not mu_bounded gamma_gt0 keygen_ll).
+smt(most_keys_high_entropy mu_not mu_bounded dlt_ge0 keygen_ll).
 qed.
 
 (* ----------------------------------------------------------------------*)
@@ -687,7 +684,7 @@ qed.
 lemma FSabort_bound &m : 
    Pr [ EF_CMA_RO(IDS_Sig(P, V), A, RO, O_CMA_Default).main() @ &m : res] 
 <= Pr [ EF_KOA_RO(IDS_Sig(P,V),RedKOA(A,Sim),RO).main() @ &m : res ] 
- + reprog_bound + gamma.
+ + reprog_bound + dlt.
 proof.
 rewrite hop1.
 apply (ler_trans _ _ _ (hop4 &m) _); rewrite !ler_add2r.

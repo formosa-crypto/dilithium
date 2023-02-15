@@ -1481,11 +1481,10 @@ clone import FSa_CMAtoKOA as CMAtoKOA with
   theory OP <- OpBased,
   op p_rej <- p_rej,
   op check_entropy <- check,
-  op alpha <- eps_comm,
-  op gamma <- eps_check
+  op eps <- eps_comm,
+  op dlt <- eps_check
 proof *. 
-realize alpha_gt0 by apply eps_comm_gt0.
-realize gamma_gt0 by apply eps_check_gt0.
+realize eps_gt0 by apply eps_comm_gt0.
 realize check_entropy_correct by apply check_entropy.
 realize most_keys_high_entropy by apply check_most.
 realize p_rej_bounded by smt(p_rej_bounded).
