@@ -1,9 +1,9 @@
 require import AllCore List Distr DBool DList Finite.
 import StdBigop.Bigreal StdOrder.IntOrder.
 
-require Mat.
+require DynMatrix.
 
-clone include Mat.
+clone include DynMatrix.
 import ZR.
 
 lemma is_finite_vector (P : t -> bool) (k : int) :

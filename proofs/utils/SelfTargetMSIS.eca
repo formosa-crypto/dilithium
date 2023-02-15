@@ -1,9 +1,9 @@
 (* Formalization of the SelfTargetMSIS assumption *)
 
 require import AllCore Distr.
-require (*--*) Mat PROM.
+require (*--*) DynMatrix PROM.
 
-clone import Mat as M.
+clone import DynMatrix as M.
 
 type M.
 op dR : R distr.
