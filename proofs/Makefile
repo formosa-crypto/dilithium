@@ -4,6 +4,7 @@
 TESTS ?= utils security
 UID   ?= ${UID}
 ECRJOBS ?= 1
+DOCKEROPTS ?= 
 
 # --------------------------------------------------------------------
 .PHONY: all docker tests clean __force__
@@ -14,7 +15,7 @@ all: tests
 tests: docker $(TESTS:%=__test-%)
 
 docker:
-	docker build \
+	docker build $(DOCKEROPTS) \
 	  --build-arg SOURCE_BRANCH=deploy-expected-cost \
 	  --build-arg UID=1000 \
 	  -t easycrypt docker
