@@ -16,7 +16,7 @@ tests: docker $(TESTS:%=__test-%)
 
 docker:
 	docker build $(DOCKEROPTS) \
-	  --build-arg SOURCE_BRANCH=deploy-expected-cost \
+	  --build-arg SOURCE_BRANCH=dilithium \
 	  --build-arg UID=1000 \
 	  -t easycrypt docker
 
