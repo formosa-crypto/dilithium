@@ -342,8 +342,8 @@ local clone import Means as Mkey with
 proof*.
 
 (* the "workers" for Means are the fixed-key versions of left and right game *)
-local module GSign = { proc work = R1.Game(RedOnce,R1.OReal).main }.
-local module GTrans = { proc work = R1.Game(RedOnce,R1.OSet1_inf).main }.
+local module GSign = { proc work = R1.Game(RedOnce,R1.OSign).main }.
+local module GTrans = { proc work = R1.Game(RedOnce,R1.OTrans).main }.
 
 local op rb_ eps  = 
   2%r * qS%r * (qH + 1)%r * eps  / (1%r - p_rej) +
@@ -370,41 +370,41 @@ case (dlt < 1%r) => [gamm_lt1|]; last first.
 (* We start by expressing both sides as Rand games from Means *)
 have -> : Pr[Game0(A, Oracle1).main() @ &m : res] = Pr[Rand(GSign).main() @ &m : res.`2].
 - byequiv => //. proc. inline{1} 2; inline{2} 2. 
-  inline RedOnce(R1.OReal).distinguish.
+  inline RedOnce(R1.OSign).distinguish.
   swap{1} 2 -1.
   seq 4 9 : (={RO.m,m,sig,pk} /\ O_CMA_Default.qs{1} = RedOnce.SO.qs{2}); 
      last by inline*; auto; sp; if; auto => />.
   call(: ={RO.m}  
           /\ O_CMA_Default.qs{1} = RedOnce.SO.qs{2}
-          /\ O_CMA_Default.sk{1} = R1.OReal.sk{2}); first last.
+          /\ O_CMA_Default.sk{1} = R1.OSign.sk{2}); first last.
   + by proc; inline*; auto => /> /#.
   + by inline*; auto => />.
   proc. inline{2} 2. inline{2} 4. wp.
   while (={oz,w,RO.m} /\ m{1} = m1{2}
           /\ O_CMA_Default.qs{1} = RedOnce.SO.qs{2}
-          /\ O_CMA_Default.sk{1} = R1.OReal.sk{2}).
+          /\ O_CMA_Default.sk{1} = R1.OSign.sk{2}).
   + by inline*; auto.
   by auto => /> /#.
 have -> : Pr[Game0(A, Oracle3).main() @ &m : res] = Pr[Rand(GTrans).main() @ &m : res.`2].
 - byequiv => //. proc. inline{1} 2; inline{2} 2. 
-  inline RedOnce(R1.OSet1_inf).distinguish.
+  inline RedOnce(R1.OTrans).distinguish.
   swap{1} 2 -1.
   seq 4 9 : (={RO.m,m,sig,pk} /\ O_CMA_Default.qs{1} = RedOnce.SO.qs{2}); 
      last by inline*; auto; sp; if; auto => />.
   call(: ={RO.m}  
           /\ O_CMA_Default.qs{1} = RedOnce.SO.qs{2}
-          /\ O_CMA_Default.sk{1} = R1.OReal.sk{2}); first last.
+          /\ O_CMA_Default.sk{1} = R1.OSign.sk{2}); first last.
   + by proc; inline*; auto => /> /#.
   + inline*; auto => />.
   proc. inline{2} 2. inline{2} 4. inline RO.set. wp. 
   while (={oz,w,c,RO.m} /\ m{1} = m1{2}
           /\ O_CMA_Default.qs{1} = RedOnce.SO.qs{2}
-          /\ O_CMA_Default.sk{1} = R1.OReal.sk{2}).
+          /\ O_CMA_Default.sk{1} = R1.OSign.sk{2}).
   + by inline*; auto.
   by auto => />.
 (* Next we prove that the reduction to the distinguisher is correct
 and preserves the query bounds *)
-have R1_bound := R1.GReal_GSet1 RedOnce _ _.
+have R1_bound := R1.GSign_GSet1 RedOnce _ _.
 - move => O ? ?; islossless. 
   by apply (A_ll (<: CountH(RedOnce(O).H)) (<: CountS(RedOnce(O).SO))) => //; islossless.
 move => O; proc. 
