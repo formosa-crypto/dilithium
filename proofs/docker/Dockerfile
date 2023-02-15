@@ -38,7 +38,7 @@ RUN \
 	sudo apt-get -q -y clean && \
 	sudo pip3 install --no-cache-dir pyyaml
 
-ENV ALTERGO=2.4.0 CVC4V=1.8 Z3V=4.8.10 Z3SV= Z3A=ubuntu-18.04
+ENV ALTERGO=2.4.2 CVC4V=1.8 Z3V=4.8.10 Z3SV= Z3A=ubuntu-18.04
 
 RUN \
 	opam pin add -n alt-ergo ${ALTERGO} && \
