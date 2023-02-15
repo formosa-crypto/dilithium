@@ -55,15 +55,18 @@ to set up a docker container with the entire toolchain.
 ### Docker
 
 The configuration of docker is highly OS specific. On Linux, this
-usually amounts to installing docker, enabling the docker daemon,
-adding the local user to the docker group, and rebooting.
+usually amounts to:
+
+- installing docker and enabling the docker daemon
+- adding the local user to the docker group
+- rebooting (to let the group changes take effect)
 
 ### Test Script
 
 If docker is configured correctly,
 
 ```
-$ make test
+$ make tests
 ```
 
 should set up a fresh Debian-based container, install the complete
@@ -76,3 +79,14 @@ If desired, `make shell` provides a shell in the same context as the
 tests. Note: Manually checking the files in the `security` folder
 requires adding `-R utils` to the arguments of `easycrypt`.
 
+### Local installation
+
+Alternatively, EasyCrypt can be installed locally by following the
+instructions at https://github.com/EasyCrypt/easycrypt
+
+The only difference is that, when pinning easycrypt, the correct
+branch needs to be chosen:
+
+```
+$ opam pin -yn add easycrypt https://github.com/EasyCrypt/easycrypt.git#dilithium
+```
