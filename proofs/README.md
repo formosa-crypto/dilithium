@@ -1,9 +1,9 @@
 # Formalized Security Proof for Dilithium in the ROM
 
-This developement is part of the suplementary material of the paper
+This developement is part of the supplementary material of the paper
 
-            Fiat-Shamir with Aborts: Fixing and
-        mechanizing the security proof of Dilithium
+          Fixing and Mechanizing the Security Proof of
+             Fiat-Shamir with Aborts and Dilithium
 
 ## Contents
 
