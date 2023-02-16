@@ -99,6 +99,7 @@ $ opam pin -yn add easycrypt https://github.com/EasyCrypt/easycrypt.git#dilithiu
 As the installation above instructions suggests, one can also install EasyCrypt through nix.
 Our proofs require all three SMT solvers (`alt-ergo`, `Z3`, and `CVC4`) available to EasyCrypt.
 The installation process amounts to the following:
+
 0. [Install nix](https://nixos.org/download.html)
 1. [Install CVC4](https://github.com/CVC4/CVC4-archived/blob/master/INSTALL.md) manually,
    as the corresponding nix package is [currently broken](https://discourse.nixos.org/t/system-no-longer-builds-need-help-interpreting-the-log/24737).
