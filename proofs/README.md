@@ -83,6 +83,9 @@ requires adding `-R utils` to the arguments of `easycrypt`.
 
 Alternatively, EasyCrypt can be installed locally by following the
 instructions at https://github.com/EasyCrypt/easycrypt
+Here we add some details specific to our development version.
+
+#### Opam Installation
 
 The only difference is that, when pinning easycrypt, the correct
 branch needs to be chosen:
@@ -90,3 +93,18 @@ branch needs to be chosen:
 ```
 $ opam pin -yn add easycrypt https://github.com/EasyCrypt/easycrypt.git#dilithium
 ```
+
+#### Nix Installation
+
+As the installation above instructions suggests, one can also install EasyCrypt through nix.
+Our proofs require all three SMT solvers (`alt-ergo`, `Z3`, and `CVC4`) available to EasyCrypt.
+The installation process amounts to the following:
+0. [Install nix](https://nixos.org/download.html)
+1. [Install CVC4](https://github.com/CVC4/CVC4-archived/blob/master/INSTALL.md) manually,
+   as the corresponding nix package is [currently broken](https://discourse.nixos.org/t/system-no-longer-builds-need-help-interpreting-the-log/24737).
+2. Clone the EasyCrypt repository and switch to the `dilithium` branch
+3. In the EasyCrypt folder, run `NIXPKGS_ALLOW_UNFREE=1 nix-shell --arg withProvers true` to start nix.
+   The `alt-ergo` and `Z3` provers should now be available.
+4. `make` to create the `ec.native` which is the "main" executable for EasyCrypt.
+5. `./ec.native why3config` for EasyCrypt to find the three SMT solvers.
+6. `exit` out of nix shell and we can now use EasyCrypt
