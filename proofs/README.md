@@ -108,7 +108,7 @@ The installation process amounts to the following:
    ```
    $ NIXPKGS_ALLOW_UNFREE=1 nix-shell --arg withProvers true
    ```
-   to start nix. The `alt-ergo` and `Z3` provers should now be available.
+   to start nix. The `alt-ergo` and `Z3` provers should now be available as well.
 4. `make` to create the `ec.native` which is the "main" executable for EasyCrypt.
 5. `./ec.native why3config` for EasyCrypt to find the three SMT solvers.
 6. `exit` out of nix shell and we can now use EasyCrypt
