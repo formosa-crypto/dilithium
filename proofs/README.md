@@ -104,8 +104,17 @@ The installation process amounts to the following:
 1. [Install CVC4](https://github.com/CVC4/CVC4-archived/blob/master/INSTALL.md) manually,
    as the corresponding nix package is [currently broken](https://discourse.nixos.org/t/system-no-longer-builds-need-help-interpreting-the-log/24737).
 2. Clone the EasyCrypt repository and switch to the `dilithium` branch
-3. In the EasyCrypt folder, run `NIXPKGS_ALLOW_UNFREE=1 nix-shell --arg withProvers true` to start nix.
-   The `alt-ergo` and `Z3` provers should now be available.
+3. In the EasyCrypt folder, run
+   ```
+   $ NIXPKGS_ALLOW_UNFREE=1 nix-shell --arg withProvers true
+   ```
+   to start nix. The `alt-ergo` and `Z3` provers should now be available.
 4. `make` to create the `ec.native` which is the "main" executable for EasyCrypt.
 5. `./ec.native why3config` for EasyCrypt to find the three SMT solvers.
 6. `exit` out of nix shell and we can now use EasyCrypt
+7. Our EasyCrypt proofs can be checked using
+   ```
+   $ ECRJOBS=1 path/to/ec.native runtest tests.config utils security
+   ```
+   from this folder.
+   Alternatively, you can also symlink `./ec.native` to `EasyCrypt` and use it with proof general.
