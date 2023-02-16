@@ -2,7 +2,7 @@ FROM debian:stable
 
 ARG user=charlie UID=1000
 
-MAINTAINER Pierre-Yves Strub <pierre-yves@strub.nu>
+MAINTAINER anonymous <anon@example.net>
 
 ENV DEBIAN_FRONTEND noninteractive
 
