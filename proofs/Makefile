@@ -34,3 +34,7 @@ __test-%: __force__
 
 clean:
 	rm -f utils/*.eco security/*.eco
+
+pack:
+	tar --owner=0 --group=0 --transform 's,^,dilithium/,' -cvzf DilithiumEC.tar.gz \
+	docker Makefile README.md security tests.config utils
