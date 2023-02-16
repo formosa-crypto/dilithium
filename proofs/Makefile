@@ -39,5 +39,5 @@ clean:
 	rm -f utils/*.eco security/*.eco
 
 pack:
-	tar --owner=0 --group=0 --transform 's,^,dilithium/,' -cvzf DilithiumEC.tar.gz \
+	tar --owner=0 --group=0 --transform 's,^,dilithium/,' -cvf DilithiumEC.tar \
 	docker Makefile README.md security tests.config utils
