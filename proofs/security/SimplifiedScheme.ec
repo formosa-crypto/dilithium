@@ -126,7 +126,7 @@ following minor differences:
 This avoids having to split/merge t (e.g., in the MLWE reduction). We
 eliminate these differences using a separate reduction *)
 
-module (SimplifiedDilithium : SchemeRO)(H: Hash) = {
+module (DilithiumS : SchemeRO)(H: Hash) = {
   proc keygen() : PK * SK = {
     var pk, sk;
     var mA, s1, s2,t;
@@ -220,7 +220,7 @@ module RedMLWE (A : Adv_EFKOA_RO) (H : Hash_i) : RqMLWE.Adversary = {
     H.init();
     pk <- (mA,t);
     (m,sig) <@ A(H).forge(pk);
-    r <@ SimplifiedDilithium(H).verify(pk,m,sig);
+    r <@ DilithiumS(H).verify(pk,m,sig);
     return r;
   }
 }.
@@ -272,16 +272,16 @@ local module S1 (H : Hash) = {
   
   proc sign(sk: SK, m: M) : Sig = { return witness; }
 
-  proc verify = SimplifiedDilithium(H).verify
+  proc verify = DilithiumS(H).verify
 }.
 
 (* Hop 1 : replace keygen with (completely) random public key *)
 local lemma hop1 &m : 
-  Pr [EF_KOA_RO(SimplifiedDilithium,A,H).main() @ &m : res ] <=
+  Pr [EF_KOA_RO(DilithiumS,A,H).main() @ &m : res ] <=
   Pr [EF_KOA_RO(S1,A,H).main() @ &m : res] + 
   `| Pr[ GameL(RedMLWE(A,H)).main() @ &m : res ] - Pr [ GameR(RedMLWE(A,H)).main() @ &m : res ] |.
 proof.
-have -> : Pr [EF_KOA_RO(SimplifiedDilithium,A,H).main() @ &m : res ] = 
+have -> : Pr [EF_KOA_RO(DilithiumS,A,H).main() @ &m : res ] = 
           Pr[ GameL(RedMLWE(A,H)).main() @ &m : res ].
 - byequiv (_: ={glob A,glob H} ==> ={res}) => //; proc. 
   inline{1} 2; inline{1} 2; inline{2} 4. swap{2} 6 -5.
@@ -417,7 +417,7 @@ split => [|_ c_dC normv_z]; last split.
 qed.
 
 lemma KOA_bound &m : 
-     Pr [EF_KOA_RO(SimplifiedDilithium,A,H).main() @ &m : res ] 
+     Pr [EF_KOA_RO(DilithiumS,A,H).main() @ &m : res ] 
   <= `| Pr[ GameL(RedMLWE(A,H)).main() @ &m : res ] - Pr [ GameR(RedMLWE(A,H)).main() @ &m : res ] |
    + Pr [ Game(RedMSIS(A),G).main() @ &m : res]. 
 proof.
@@ -507,7 +507,7 @@ section OpBasedCorrectness.
 declare module H <: Hash {-OpBased.P}.
 
 equiv keygen_opbased_correct :
-  OpBasedSig(H).keygen ~ SimplifiedDilithium(H).keygen :
+  OpBasedSig(H).keygen ~ DilithiumS(H).keygen :
   true ==> ={res}.
 proof. 
 proc; inline *.
@@ -517,7 +517,7 @@ by rewrite /keygen dmap_id.
 qed.
 
 equiv sign_opbased_correct :
-  OpBasedSig(H).sign ~ SimplifiedDilithium(H).sign :
+  OpBasedSig(H).sign ~ DilithiumS(H).sign :
   ={arg,glob H} ==> ={res,glob H}.
 proof.
 proc; inline *; sp. 
@@ -543,7 +543,7 @@ conseq />. auto => /> &m. split => [|pass_chk].
 qed.
 
 equiv verify_opbased_correct :
-  OpBasedSig(H).verify ~ SimplifiedDilithium(H).verify :
+  OpBasedSig(H).verify ~ DilithiumS(H).verify :
   ={arg,glob H} ==> ={res,glob H}.
 proof.
 proc; inline *.
@@ -1446,7 +1446,7 @@ module type SigDist (S : Scheme) (H : Hash_i) = {
 
 
 equiv eqv_code_op (D <: SigDist{-OpBasedSig}) (H <: Hash_i{-OpBased.P,-D}) : 
-  D(SimplifiedDilithium(H),H).distinguish ~ D(OpBasedSig(H),H).distinguish : 
+  D(DilithiumS(H),H).distinguish ~ D(OpBasedSig(H),H).distinguish : 
   ={glob D,glob H} ==> ={glob D,glob H,res}.
 proof.
 proc*; call (: ={glob H}); last done.
@@ -1574,11 +1574,11 @@ local module (SD : SigDist) (S : Scheme) (H : Hash_i) = {
 }.
 
 local lemma pr_code_op &m : 
-  Pr [ EF_CMA_RO(SimplifiedDilithium, A, RO,O_CMA_Default).main() @ &m : res ] = 
+  Pr [ EF_CMA_RO(DilithiumS, A, RO,O_CMA_Default).main() @ &m : res ] = 
   Pr [ EF_CMA_RO(OpBasedSig, A, RO,O_CMA_Default).main() @ &m : res ].
 proof.
 byequiv (_: ={glob A,glob RO,glob O_CMA_Default} ==> ={res}) => //; proc*.
-transitivity*{1} { r <@ SD(SimplifiedDilithium(RO),RO).distinguish();}; 1,2:smt();
+transitivity*{1} { r <@ SD(DilithiumS(RO),RO).distinguish();}; 1,2:smt();
   first by sim.
 transitivity*{2} { r <@ SD(OpBasedSig(RO),RO).distinguish();}; 1,2: smt(); 
   last by sim.
@@ -1795,19 +1795,19 @@ local module (SD' : SigDist) (S : Scheme) (H : Hash_i) = {
 }.
 
 local lemma pr_code_op' &m : 
-  Pr [ EF_KOA_RO(SimplifiedDilithium,RedCR(B),RO).main() @ &m : res ] = 
+  Pr [ EF_KOA_RO(DilithiumS,RedCR(B),RO).main() @ &m : res ] = 
   Pr [ EF_KOA_RO(OpBasedSig, RedCR(B),RO).main() @ &m : res ].
 proof.
 byequiv (_: ={glob A,glob RO,glob ORedKOA} ==> ={res}) => //; proc*.
-transitivity*{1} { r <@ SD'(SimplifiedDilithium(RO),RO).distinguish();}; 1,2:smt();
+transitivity*{1} { r <@ SD'(DilithiumS(RO),RO).distinguish();}; 1,2:smt();
   first by sim.
 transitivity*{2} { r <@ SD'(OpBasedSig(RO),RO).distinguish();}; 1,2: smt(); 
   last by sim.
 by call (eqv_code_op SD' RO). 
 qed.
 
-lemma SimplifiedDilithium_secure &m : 
-  Pr [EF_CMA_RO(SimplifiedDilithium, A, RO,O_CMA_Default).main() @ &m : res ] <= 
+lemma DilithiumS_secure &m : 
+  Pr [EF_CMA_RO(DilithiumS, A, RO,O_CMA_Default).main() @ &m : res ] <= 
     `|Pr[GameL(RedMLWE(RedNMA(A), RO)).main() @ &m : res] -
       Pr[GameR(RedMLWE(RedNMA(A), RO)).main() @ &m : res]|
   + Pr[Game(RedMSIS(RedNMA(A)), G).main() @ &m : res] 

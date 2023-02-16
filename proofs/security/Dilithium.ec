@@ -322,7 +322,7 @@ lemma Dilithium_secure &m :
       qS%r * eps_comm * (qS%r + 1%r) / (2%r * (1%r - p_rej) ^ 2)) + delta_.
 proof.
 (* Instantiate the security proof for SimplifiedDilithium, this is 99% of the proof *)
-have SD_security := SD.SimplifiedDilithium_secure (RedS (A)) _ _ &m.
+have SD_security := SD.DilithiumS_secure (RedS (A)) _ _ &m.
 - by move => H' O'; proc; call (A_bound H' O'); auto.
 - by move => O' H' ? ?; islossless; exact (A_ll O' H').
 apply: ler_trans SD_security. byequiv => //; proc. 
