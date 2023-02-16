@@ -94,8 +94,6 @@ qed.
 op zeroXnD1 = zeror.
 op oneXnD1 = oner.
 
-print ComRingDflInv.exp.
-
 (* -------------------------------------------------------------------- *)
 clone BigComRing as BigXnD1 with
   theory CR <= ComRingDflInv

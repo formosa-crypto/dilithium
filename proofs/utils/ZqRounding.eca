@@ -1303,7 +1303,6 @@ proof.
 move => *.
 rewrite /usehint_preimage.
 apply (choicebP (fun (x : zmod) => highbits alpha x = usehint alpha h r) witness).
-print usehint_im.
 have [x' ?]: exists x, highbits alpha x = usehint alpha h r.
 - exact usehint_im.
 by exists x'.
