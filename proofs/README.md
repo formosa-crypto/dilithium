@@ -117,4 +117,4 @@ The installation process amounts to the following:
    $ ECRJOBS=1 path/to/ec.native runtest tests.config utils security
    ```
    from this folder.
-   Alternatively, you can also symlink `./ec.native` to `EasyCrypt` and use it with proof general.
+   Alternatively, you can also symlink `./ec.native` to `easycrypt` and use it with proof general.
