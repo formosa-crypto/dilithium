@@ -1,17 +1,15 @@
 # Formalized Security Proof for Dilithium in the ROM
 
-This developement is part of the supplementary material of the paper
-
           Fixing and Mechanizing the Security Proof of
              Fiat-Shamir with Aborts and Dilithium
 
 ## Contents
 
-The proofs are split over two directories. The `utils` directory
-contains utility files that are not specific to the security proof of
-Dilithium. This includes various extensions to the EasyCrypt libraries
-(e.g., the yet-to-be-merged new matrix theory) and the games defining
-assumptions like MLWE and SelfTargetMSIS.
+The proofs (see `proofs/`) are split over two directories. The `utils`
+directory contains utility files that are not specific to the security
+proof of Dilithium. This includes various extensions to the EasyCrypt
+libraries (e.g., the yet-to-be-merged new matrix theory) and the games
+defining assumptions like MLWE and SelfTargetMSIS.
 
 The `security` directory contains the specification of Dilithium
 together with the mechanized security proof. The key files are:
@@ -42,7 +40,6 @@ together with the mechanized security proof. The key files are:
   from the specification of Dilithium has all the properties needed in
   the security proof.
 
-
 ## Testing
 
 Checking all the proofs with EasyCrypt (EC) requires a development
@@ -66,7 +63,7 @@ usually amounts to:
 If docker is configured correctly,
 
 ```
-$ make tests
+$ make -C proofs tests
 ```
 
 should set up a fresh Debian-based container, install the complete
@@ -75,9 +72,10 @@ EasyCrypt toolchain based on the `deploy-expected-cost` branch and run
 your internet connection and hardware, the initial setup of the
 container can take a while.
 
-If desired, `make shell` provides a shell in the same context as the
-tests. Note: Manually checking the files in the `security` folder
-requires adding `-R utils` to the arguments of `easycrypt`.
+If desired, `make -C proofs shell` provides a shell in the same
+context as the tests. Note: Manually checking the files in the
+`security` folder requires adding `-R utils` to the arguments of
+`easycrypt`.
 
 ### Local installation
 
@@ -101,20 +99,29 @@ Our proofs require all three SMT solvers (`alt-ergo`, `Z3`, and `CVC4`) availabl
 The installation process amounts to the following:
 
 0. [Install nix](https://nixos.org/download.html)
+
 1. [Install CVC4](https://github.com/CVC4/CVC4-archived/blob/master/INSTALL.md) manually,
    as the corresponding nix package is [currently broken](https://discourse.nixos.org/t/system-no-longer-builds-need-help-interpreting-the-log/24737).
+
 2. Clone the EasyCrypt repository and switch to the `dilithium` branch
+
 3. In the EasyCrypt folder, run
    ```
    $ NIXPKGS_ALLOW_UNFREE=1 nix-shell --arg withProvers true
    ```
    to start nix. The `alt-ergo` and `Z3` provers should now be available as well.
+
 4. `make` to create the `ec.native` which is the "main" executable for EasyCrypt.
+
 5. `./ec.native why3config` for EasyCrypt to find the three SMT solvers.
+
 6. `exit` out of nix shell and we can now use EasyCrypt
+
 7. Our EasyCrypt proofs can be checked using
+
    ```
    $ ECRJOBS=1 path/to/ec.native runtest tests.config utils security
    ```
-   from this folder.
-   Alternatively, you can also symlink `./ec.native` to `easycrypt` and use it with proof general.
+
+   from this folder. Alternatively, you can also symlink `./ec.native`
+   to `easycrypt` and use it with proof general.
