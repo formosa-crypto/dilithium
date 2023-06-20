@@ -1375,10 +1375,10 @@ have -> : (fun (k : PK * SK) => p_max (dfst ((commit k.`2)))) = g \o f.
 rewrite -exp_dmap. 
 - pose d := dmap _ _; rewrite /hasE. 
   rewrite (eq_summable _ (fun x => mu1 d x * g x)) 1:/#. 
-  apply/summable_mu1_wght; smt(ge0_pmax le1_pmax).
+  apply/summable_mu1_wght; smt(pmax_ge0 pmax_le1).
 apply lerr_eq; congr; apply/eq_distr => mA. 
 rewrite (eq_dcond _ _ (check_mx \o f)); 1: smt(keygen_supp_decomp).
-by rewrite dmap_dcond dmap_keygen.
+by rewrite -dcond_dmap dmap_keygen.
 qed.
 
 (* most honestly sampled secret keys pass the check *)

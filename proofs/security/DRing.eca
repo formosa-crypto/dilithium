@@ -146,9 +146,16 @@ axiom alpha_almost_divides_q : alpha %| (q - 1).
 
 lemma rg_alpha : 2 <= alpha <= q %/ 2 by smt(ge2_alpha alpha_halfq_le).
 
+(* op image ['b, 'a] (f : 'a -> 'b) (y : 'b) = exists (x : 'a), f x = y. *)
+
+
+(* pred p=(fun x : Flex.high => image (Flex.highBits alpha) x). *)
+
 clone import Subtype as S with 
   type T <- Flex.high,
-  pred P <- image (Flex.highBits alpha).
+  op P <- (fun x : Flex.high => image (Flex.highBits alpha) x)
+proof*.
+realize inhabited by exists(Flex.highBits alpha witness); exists witness. 
 
 type high = sT.
 

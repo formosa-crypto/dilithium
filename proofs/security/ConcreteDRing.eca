@@ -32,7 +32,7 @@ rewrite ler_ofnat in inf_norm_y_ub.
 case inf_norm_y_ub => _ inf_norm_y_ub.
 rewrite -ler_bigmax in inf_norm_y_ub.
 have ?: forall z, z \in mkseq (fun i => y.[i]) Round.n => `|z| <= b2.
-- smt(ler_ofint').
+- by move => z /inf_norm_y_ub /= /(_ _) //; apply ofint_ler; smt().
 clear inf_norm_y_ub.
 (* from poly to entry-wise ler *)
 apply ler_ofnat.
@@ -178,9 +178,9 @@ proof *.
 realize prime_q by exact prime_q.
 realize gt0_n by exact gt0_n.
 realize dRq_ll by exact dpolyXnD1_ll.
-realize supp_dC by smt(dcond_supp dpolyXnD1_fu).
+realize supp_dC by smt(dcond_supp dpolyXnD1_full dpolyXnD1_uni).
 realize dRq_uni by exact dpolyXnD1_uni.
-realize dRq_fu by exact dpolyXnD1_fu.
+realize dRq_fu by smt(dpolyXnD1_full dpolyXnD1_uni).
 realize dRq__ll.
 move => i; rewrite /dpoly_ball.
 case (0 <= i < Round.q %/ 2) => /= ?; last exact dpolyXnD1_ll.
@@ -194,8 +194,8 @@ qed.
 realize supp_dRq.
 move => p a ?; rewrite /dpoly_ball.
 have -> /=: (0 <= a) = true by smt().
-case (a < Round.q %/ 2) => /= ?; last smt(dpolyXnD1_fu inf_norm_ub).
-rewrite dpolyX_supp.
+case (a < Round.q %/ 2) => /= ?; last smt(dpolyXnD1_full dpolyXnD1_uni inf_norm_ub).
+rewrite dpolyX_suppP.
 split => H.
 - apply inf_norm_le; first smt().
   smt(dball_zp_supp).
@@ -208,13 +208,13 @@ move => i rg_i.
 apply dcond_ll.
 apply witness_support => /=.
 exists (make_valid_challenge i).
-split; last by exact dpolyXnD1_fu.
+split; last by by smt(dpolyXnD1_full dpolyXnD1_uni). 
 split; first by exact make_valid_challenge_infty_norm.
 exact make_valid_challenge_1norm.
 qed.
 realize dC_uni.
 move => i.
-apply uni_dcond.
+apply dcond_uni.
 exact dpolyXnD1_uni.
 qed.
 realize cnorm_ge0 by exact ge0_inf_norm_p.

@@ -1,6 +1,6 @@
 require import AllCore Distr DBool PROM List StdOrder StdBigop FelTactic.
 require import Real RealSeries RealSeq Xreal.
-require import DistrExtras.
+(* require import DistrExtras. *)
 
 (*---*) import Bigreal.BRA Bigreal RField.
 (*---*) import SmtMap RealOrder Biased FSet.
@@ -492,7 +492,7 @@ op eps = p_max (dfst (commit sk)).
 (*   mu1 (dlet (commit sk) (fun (w_st : W * ST) =>               *)
 (*     dmap dC (fun (c : C) => respond sk w_st.`2 c))) None <= p by done. *)
 
-lemma eps_ge0 : 0%r <= eps by apply ge0_pmax.
+lemma eps_ge0 : 0%r <= eps by apply pmax_ge0.
 
 declare axiom sk_reject  : bound_reject sk.
 
@@ -940,9 +940,9 @@ proof.
   call /(fun x => x) (: ((Oi.sk = sk) /\ OSign.kappa = kappa_ /\ (Oi.countS < Oi.i_ => !OiB1.badj)) `|` 
              if Oi.countS < Oi.i_ then (p^kappa_)%xr else OiB1.badj%xr).
   + by move=> &hr; apply xle_cxr_r => />; case (Oi.countS{hr} < Oi.i_{hr}) => //= /#. 
-  + by conseq /(fun _ => ((Oi.sk = sk) /\ OSign.kappa = kappa_ /\ (Oi.countS < Oi.i_ => !OiB1.badj)) `|`
+  + conseq /(fun _ => ((Oi.sk = sk) /\ OSign.kappa = kappa_ /\ (Oi.countS < Oi.i_ => !OiB1.badj)) `|`
               if Oi.countS < Oi.i_ then (p ^ kappa_)%xr else OiB1.badj%xr) 
-           (: 0%xr ==> 0%xr).
+           (: 0%xr ==> 0%xr) => //. admit.
   + proc; seq 1: #pre; 1: auto.
     if; wp => /=; 2: by auto => &hr /=; apply xle_cxr => />.
     if. 

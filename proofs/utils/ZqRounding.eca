@@ -898,7 +898,7 @@ op "`|_|" p = Nat.ofnat (inf_norm (mkseq (fun i => p.[i]) n)).
 
 lemma ge0_inf_norm_p p :
   0 <= `|p|.
-proof. exact StNat.valP. qed.
+proof. exact ofnat_ge0. qed.
 
 lemma abs_polyXN (p : polyXnD1) :
   `|-p| = `|p|.
@@ -944,7 +944,7 @@ rewrite ler_ofnat in H.
 case H => [_ H].
 rewrite /inf_norm /= in H.
 rewrite -ler_bigmax in H.
-suff: p.[i] \in mkseq (fun i => p.[i]) n by smt(ler_ofint').
+suff: p.[i] \in mkseq (fun i => p.[i]) n by smt(ofint_ler).
 smt(mkseqP).
 qed.
 

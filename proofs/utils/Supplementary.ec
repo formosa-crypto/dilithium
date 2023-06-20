@@ -2,8 +2,8 @@ require import AllCore List RealSeries Finite.
 require import StdBigop.
 import Bigreal BRA StdOrder.RealOrder.
 
-pred image (f : 'a -> 'b) y = exists x, f x = y.
-pred injective_in P (f : 'a -> 'b) = 
+op image (f : 'a -> 'b) y = exists x, f x = y.
+op injective_in P (f : 'a -> 'b) = 
   forall x y, P x => P y => f x = f y => x = y.
 
 lemma sumD1_None (f : 'a option -> real) :

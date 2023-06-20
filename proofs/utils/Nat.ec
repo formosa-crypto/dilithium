@@ -3,13 +3,13 @@
 require import StdOrder List.
 require Int Subtype Bigop.
 
-type nat.
-
-clone import Subtype as StNat with
+clone import Subtype as NatSubtype with
   type T <- int,
-  type sT <- nat,
-  op wsT <- 0,
-  pred P <- (fun n : int => Int.(<=) 0 n).
+  op P <- (fun n : int => Int.(<=) 0 n)
+proof*.
+realize inhabited by exists 0.
+
+type nat = NatSubtype.sT.
 
 (* Lifting operators *)
 op (+) = Lift.lift2 Int.(+).
@@ -19,6 +19,9 @@ op (<) = fun n m => Int.(<) (val n) (val m).
 
 op ofint = insubd.
 op ofnat = val.
+
+lemma ofnat_ge0 n : Int.(<=) 0 (ofnat n).
+proof. exact valP. qed.
 
 const zero = ofint 0.
 
@@ -81,14 +84,20 @@ lemma ofnat_inj : injective ofnat by smt.
 
 lemma le0n n : zero <= n by smt. 
 
-lemma le_maxn (n m o : nat) : max n m <= o <=> n <= o /\ m <= o by smt.
+lemma ge0_ler_ofnat (n : nat) (m : int) : Int.(<=) 0 m => Int.(<=) (ofnat n) m <=> n <= ofint m by smt.
+
+lemma le_maxn (n m o : nat) : max n m <= o <=> n <= o /\ m <= o.
+proof.
+move: n m o; apply natW3 => x y z * /=. 
+rewrite /max -ge0_ler_ofnat // /ofnat Lift.lift2E 1:/# /=. smt.
+qed.
 
 lemma lt_maxn (n m o : nat) : max n m < o <=> n < o /\ m < o by smt.
 
 lemma maxnn (n : nat) : max n n = n.
 proof. 
 move: n. apply natW => //= x x_ge0. 
-by apply StNat.val_inj; rewrite StNat.Lift.lift2E /#.
+by apply NatSubtype.val_inj; rewrite NatSubtype.Lift.lift2E /#.
 qed.
 
 clone import Bigop as BigMax with 
@@ -109,9 +118,8 @@ lemma ler_ofint i j : 0 <= i <= j => (ofint i <= ofint j) by smt.
 
 lemma ltr_ofint i j : 0 <= i < j => (ofint i < ofint j) by smt.
 
-lemma ler_ofint' i j :
-  0 <= i /\ 0 <= j /\ ofint i <= ofint j
-  => i <= j.
+lemma ofint_ler i j :
+  0 <= i /\ 0 <= j => ofint i <= ofint j => i <= j.
 proof. smt(ofintK). qed.
 
 lemma ler_ofint_ofnat (n : int) (m : nat) :
@@ -136,7 +144,7 @@ rewrite big_cons /=; case (P x) => [Px|/#].
 by rewrite le_maxn le_s_n //= IHs /#.
 qed.
 
-lemma ltr_elem_is_ltr_big (P : 'a -> bool) F s (n : nat) :
+lemma ltr_elem_is_ltr_big (P : 'a -> bool) F (s : 'a list) (n : nat) :
   0 < ofnat n =>
   (forall x, x \in s => P x => F x < n) => big P F s < n.
 proof.
@@ -150,7 +158,7 @@ lemma ler_big_is_ler_elem (P : 'a -> bool) F (s : 'a list) (n : nat) :
 proof.
 elim: s => [|head tail IHs le_s_n]; first by auto.
 rewrite BigMax.big_cons in le_s_n.
-smt(StNat.Lift.lift2E).
+smt(NatSubtype.Lift.lift2E).
 qed.
 
 lemma ltr_big_is_ltr_elem (P : 'a -> bool) F (s : 'a list) (n : nat) :
@@ -158,7 +166,7 @@ lemma ltr_big_is_ltr_elem (P : 'a -> bool) F (s : 'a list) (n : nat) :
 proof.
 elim: s => [|head tail IHs le_s_n]; first by auto.
 rewrite BigMax.big_cons in le_s_n.
-smt(StNat.Lift.lift2E).
+smt(NatSubtype.Lift.lift2E).
 qed.
 
 lemma ler_bigmax (P : 'a -> bool) F (s : 'a list) (n : nat) :

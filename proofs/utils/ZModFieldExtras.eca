@@ -375,9 +375,9 @@ lemma euclideUl_centered (x x0 d : int) :
   x0 = cmod x d.
 proof.
 move => *.
-rewrite /cmod /=.
-apply (cmod_to_mod_injective _ _ d) => //; 1, 2: smt().
-rewrite mod_to_cmodK; 1, 2: smt().
+apply (cmod_to_mod_injective _ _ d) => //; 2: smt(). 
+- smt(cmod_small).
+rewrite /cmod /= mod_to_cmodK; 1, 2: smt().
 (* Fixing interface to euclideUl *)
 suff: (x - (cmod_to_mod x0 d)) %/ d = x %/ d /\ (cmod_to_mod x0 d) = x %% d by smt().
 apply euclideUl; last by smt().

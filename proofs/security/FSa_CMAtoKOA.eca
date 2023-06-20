@@ -448,14 +448,14 @@ apply (ler_trans (big check Fl' supK)).
 rewrite big_split ler_add2l => {Fl} {Fr} {Fl'}.
 pose f (k : PK * SK) := R1.eps k.`2.
 apply (ler_trans (E (dcond keygen check) (rb_ \o f))).
-- rewrite E_fin ?finite_dcond // -big_filter. 
+- rewrite fin_expE ?finite_dcond // -big_filter. 
   have P : perm_eq (filter check supK) (to_seq (support (dcond keygen check))).
   + apply uniq_perm_eq; rewrite ?filter_uniq // ?uniq_to_seq // => x.
     by rewrite mem_filter !mem_to_seq // dcond_supp.     
   rewrite -(@eq_big_perm _ _ _ _ P); apply ler_sum_seq => k /=.
   rewrite mem_filter /f /(\o) => -[chk_k sup_k] _.
-  rewrite ler_wpmul2r; 1: exact/rb_ge0/ge0_pmax.
-  exact/ler_mu_dcond.
+  rewrite mulrC ler_wpmul2l; 1: exact/rb_ge0/pmax_ge0.
+  exact/mu_dcond_ge.
 apply (ler_trans (rb_ ex)); last exact/rb_mono/check_entropy_correct.
 apply Jensen_fin_concave; [exact finite_dcond | | smt()].
 apply dcond_ll.
