@@ -734,7 +734,7 @@ proof. apply finite_dRq_vect; smt(Params.gt0_l beta_gamma1_lt gt0_beta). qed.
 lemma mask_size :
   size (to_seq (support dsimz)) <= size (to_seq (support dy)).
 proof.
-apply leq_size_to_seq => [v|]; last exact is_finite_dy.
+apply sub_size_to_seq => [v|]; last exact is_finite_dy.
 rewrite !supp_dRq_vect; smt(Params.gt0_l gt0_beta beta_gamma1_lt).
 qed.
 
@@ -795,7 +795,7 @@ proof.
 move => c s1 c_valid s1_valid.
 have sumz : (sum (fun z => mu1 (transz c s1) z) = 1%r).
 - by rewrite - weightE; apply dmap_ll; apply dy_ll.
-rewrite sumD1_None /= in sumz.
+rewrite sumD1_None /(\o) /= in sumz.
 - by apply summable_mu1.
 suff: sum (fun (y : vector) => mu1 (transz c s1) (Some y)) = 
   (size (to_seq (support dsimz)))%r / (size (to_seq (support dy)))%r by smt().
@@ -806,7 +806,7 @@ have -> :
   (fun z => if z \in dsimz then 1%r / (size (to_seq (support dy)))%r else 0%r).
 - apply fun_ext.
   smt(line12_magic_some supportPn line12_outofbound).
-by rewrite sum_characteristic // is_finite_dsimz.
+by rewrite fin_sum_const // is_finite_dsimz.
 qed.
 
 local lemma line12_magic c s1 :
@@ -816,13 +816,13 @@ proof.
 move => c_valid s1_valid.
 apply eq_distr => z; case z.
 - rewrite line12_magic_none //.
-  rewrite eq_sym dlet1E sum_over_bool /=.
+  rewrite eq_sym dlet1E sum_bool /=.
   rewrite dmap1E /pred1 /(\o) mu0 /=.
   by rewrite dunit1E dbiased1E clamp_magic.
 - move => z.
   case (z \in dsimz).
   + move => z_valid.
-    rewrite line12_magic_some // dlet1E sum_over_bool /=.
+    rewrite line12_magic_some // dlet1E sum_bool /=.
     rewrite dunit1E /= dmap1E /pred1 /(\o) /=.
     rewrite dsimz1E //= dbiased1E /=. 
     rewrite clamp_magic; smt(mask_nonzero mask_size).

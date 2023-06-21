@@ -907,7 +907,7 @@ rewrite /"`|_|"; congr.
 rewrite /inf_norm.
 apply BigMax.eq_big_perm_map.
 apply perm_eq_refl_eq.
-rewrite !map_mkseq /(\o); 1, 2: exact ge0_n.
+rewrite !map_mkseq /(\o).
 congr; rewrite fun_ext => x /=; congr.
 by rewrite -rcoeffN -abs_zpN.
 qed.
