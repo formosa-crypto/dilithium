@@ -1,5 +1,12 @@
 # Formalized Security Proof for Dilithium in the ROM
 
+> [!NOTE]
+> This repository is the artifact of the paper
+> [Fixing and Mechanizing the Security Proof of Fiat-Shamir with Aborts and Dilithium](https://eprint.iacr.org/2023/246).
+> It is kept as it was for the paper and is no longer developed. The latest developments,
+> including the security proof of ML-DSA (the standardized Dilithium) and its verified
+> implementations, are in [formosa-libjade](https://github.com/formosa-crypto/formosa-libjade).
+
           Fixing and Mechanizing the Security Proof of
              Fiat-Shamir with Aborts and Dilithium
 
